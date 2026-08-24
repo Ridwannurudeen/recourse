@@ -9,6 +9,7 @@ import {
     IrrelevantEvidence,
     NotAdjudicator,
     NotLender,
+    ProofAlreadyUsed,
     ProvenTx,
     TransactionReverted,
     WrongState
@@ -34,6 +35,7 @@ contract OutflowCapCovenant is ICovenant {
 
     mapping(uint256 facilityId => Configuration configuration) private configurations;
     mapping(uint256 facilityId => uint256 amount) public accumulated;
+    mapping(uint256 facilityId => mapping(bytes32 queryId => bool processed)) private processedQueries;
 
     constructor(IRecourseFacility facility_) {
         facility = facility_;
@@ -85,9 +87,13 @@ contract OutflowCapCovenant is ICovenant {
                     || provenTx.blockHeight > configuration.endSourceBlock
             ) continue;
 
+            bytes32 queryId = keccak256(abi.encodePacked(provenTx.chainKey, provenTx.blockHeight, provenTx.txIndex));
+            if (processedQueries[facilityId][queryId]) revert ProofAlreadyUsed(queryId);
+
             EvmV1Decoder.ReceiptFields memory receipt = EvmV1Decoder.decodeReceiptFields(provenTx.encodedTransaction);
             if (receipt.receiptStatus != 1) revert TransactionReverted();
 
+            bool transactionRelevant;
             uint256 logCount = receipt.receiptLogs.length;
             for (uint256 j; j < logCount; ++j) {
                 EvmV1Decoder.LogEntry memory logEntry = receipt.receiptLogs[j];
@@ -100,9 +106,12 @@ contract OutflowCapCovenant is ICovenant {
                 address to = address(uint160(uint256(logEntry.topics[2])));
                 if (from != configuration.treasury || to == configuration.treasury) continue;
 
+                transactionRelevant = true;
                 relevant = true;
                 batchOutflow += abi.decode(logEntry.data, (uint256));
             }
+
+            if (transactionRelevant) processedQueries[facilityId][queryId] = true;
         }
 
         if (!relevant) revert IrrelevantEvidence();

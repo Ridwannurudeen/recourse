@@ -3,13 +3,17 @@ pragma solidity ^0.8.30;
 
 import {Test} from "forge-std/Test.sol";
 import {EvmV1Decoder} from "@gluwa/usc-contracts/contracts/write-ability/common/EvmV1Decoder.sol";
+import {INativeQueryVerifier} from "@gluwa/usc-contracts/contracts/write-ability/common/INativeQueryVerifier.sol";
+import {AttestcoinAdjudicator} from "../../contracts/AttestcoinAdjudicator.sol";
 import {OutflowCapCovenant} from "../../contracts/covenants/OutflowCapCovenant.sol";
 import {RecourseFacility} from "../../contracts/RecourseFacility.sol";
+import {MockVerifier} from "../mocks/MockVerifier.sol";
 import {
     FacilityState,
     IrrelevantEvidence,
     NotAdjudicator,
     NotLender,
+    ProofAlreadyUsed,
     ProvenTx,
     TransactionReverted,
     WrongState
@@ -107,6 +111,29 @@ contract OutflowCapCovenantTest is Test {
         assertEq(covenant.accumulated(facilityId), 20);
     }
 
+    function test_wrongEventSignatureIsIgnored() public {
+        _configureAndActivate(100);
+        EvmV1Decoder.LogEntryTuple[] memory logs = new EvmV1Decoder.LogEntryTuple[](2);
+        logs[0] = _transfer(TOKEN, TREASURY, RECIPIENT, 90);
+        logs[0].topics[0] = keccak256("Approval(address,address,uint256)");
+        logs[1] = _transfer(TOKEN, TREASURY, RECIPIENT, 20);
+
+        covenant.evaluate(facilityId, _singleProven(CHAIN_KEY, START_BLOCK, _receipt(1, logs)));
+
+        assertEq(covenant.accumulated(facilityId), 20);
+    }
+
+    function test_fourTopicLogIsIgnored() public {
+        _configureAndActivate(100);
+        EvmV1Decoder.LogEntryTuple[] memory logs = new EvmV1Decoder.LogEntryTuple[](2);
+        logs[0] = _malformedTransfer(TOKEN, 4, abi.encode(uint256(90)));
+        logs[1] = _transfer(TOKEN, TREASURY, RECIPIENT, 20);
+
+        covenant.evaluate(facilityId, _singleProven(CHAIN_KEY, START_BLOCK, _receipt(1, logs)));
+
+        assertEq(covenant.accumulated(facilityId), 20);
+    }
+
     function test_blockOutsideInclusiveWindowIsIgnored() public {
         _configureAndActivate(100);
         ProvenTx[] memory proven = new ProvenTx[](3);
@@ -195,6 +222,44 @@ contract OutflowCapCovenantTest is Test {
         assertFalse(firstBreached);
         assertTrue(secondBreached);
         assertEq(covenant.accumulated(facilityId), 110);
+    }
+
+    function test_sameReceiptUnderAliasedCovenantIdsIsCountedOnce() public {
+        MockVerifier verifier = new MockVerifier();
+        RecourseFacility replayFacility = new RecourseFacility();
+        AttestcoinAdjudicator adjudicator = new AttestcoinAdjudicator(verifier, replayFacility);
+        replayFacility.setAdjudicator(address(adjudicator));
+        OutflowCapCovenant replayCovenant = new OutflowCapCovenant(replayFacility);
+        uint256 replayFacilityId = replayFacility.openFacility(
+            lender, borrower, 1000 ether, 200 ether, 200, uint64(block.number + 100_000), 10
+        );
+
+        vm.startPrank(lender);
+        replayCovenant.configure(replayFacilityId, CHAIN_KEY, TOKEN, TREASURY, START_BLOCK, END_BLOCK, 100);
+        adjudicator.registerCovenant(replayFacilityId, 1, replayCovenant);
+        adjudicator.registerCovenant(replayFacilityId, 2, replayCovenant);
+        replayFacility.fundAsLender{value: 1000 ether}(replayFacilityId);
+        vm.stopPrank();
+        vm.prank(borrower);
+        replayFacility.postBond{value: 200 ether}(replayFacilityId);
+        vm.prank(borrower);
+        replayFacility.activate(replayFacilityId);
+
+        bytes memory encodedTransaction = _receipt(1, _logs(_transfer(TOKEN, TREASURY, RECIPIENT, 60)));
+        INativeQueryVerifier.MerkleProof memory merkleProof;
+        INativeQueryVerifier.ContinuityProof memory continuityProof;
+        adjudicator.submitSingle(
+            replayFacilityId, 1, CHAIN_KEY, START_BLOCK, encodedTransaction, merkleProof, continuityProof
+        );
+
+        bytes32 queryId = adjudicator.queryId(CHAIN_KEY, START_BLOCK, 0);
+        vm.expectRevert(abi.encodeWithSelector(ProofAlreadyUsed.selector, queryId));
+        adjudicator.submitSingle(
+            replayFacilityId, 2, CHAIN_KEY, START_BLOCK, encodedTransaction, merkleProof, continuityProof
+        );
+
+        assertEq(replayCovenant.accumulated(replayFacilityId), 60);
+        assertEq(uint256(replayFacility.state(replayFacilityId)), uint256(FacilityState.Active));
     }
 
     function test_realMainnetFixtureCountsProductionEncodedTransfer() public {
