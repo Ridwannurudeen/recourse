@@ -695,11 +695,18 @@ The only contract that touches the precompile.
   - `function isProcessed(uint256 facilityId, uint256 covenantId, bytes32 qid) external view returns (bool)`
 
 Behaviour, in this exact order:
+
+0. **`nonReentrant` guard on both `submitBatch` and `submitSingle`.** This is mandatory, not
+   defensive padding. Step 4 deliberately defers replay-marking until after an external call
+   to `covenant.evaluate(...)`, which would otherwise let a malicious covenant reenter with
+   the same proof while `isProcessed` is still false. The guard closes that window; any
+   revert (including `IrrelevantEvidence`) rolls the guard and all state back together.
 1. Call `verifier.verify(...)` (the `view` overload) for the whole batch. Revert `VerificationFailed()` if false.
-2. For each transaction: decode the receipt; require `receiptStatus == 1` else revert `TransactionReverted()`; derive `txIndex` via `calculateTxIndex`; compute `queryId = keccak256(abi.encodePacked(chainKey, blockHeight, txIndex))`; revert `ProofAlreadyUsed` if already processed for `(facilityId, covenantId)`, including duplicates within the same batch.
-3. Build `ProvenTx[]` and call `covenant.evaluate(facilityId, proven)`.
-4. **Only after `evaluate` returns without reverting**, mark each `queryId` processed. This is the finding-4 fix: irrelevant evidence reverts and is never consumed.
-5. If `evaluate` returned `true`, call `facility.reportBreach(facilityId, msg.sender)`.
+2. **Immediately after successful verification**, require that the covenant is registered for `(facilityId, covenantId)` and that the facility state is `Active`. Both checks belong here — before any query id is inspected — so that a submission against a breached or unregistered facility consumes nothing. Without the `Active` check a *non-breaching* evaluation could still succeed after a breach and burn query ids.
+3. For each transaction: decode the receipt; require `receiptStatus == 1` else revert `TransactionReverted()`; derive `txIndex` via `calculateTxIndex`; compute `queryId = keccak256(abi.encodePacked(chainKey, blockHeight, txIndex))`; revert `ProofAlreadyUsed` if already processed for `(facilityId, covenantId)`, including duplicates within the same batch.
+4. Build `ProvenTx[]` and call `covenant.evaluate(facilityId, proven)`.
+5. **Only after `evaluate` returns without reverting**, mark each `queryId` processed. This is the finding-4 fix: irrelevant evidence reverts and is never consumed.
+6. If `evaluate` returned `true`, call `facility.reportBreach(facilityId, msg.sender)`.
 
 - [ ] **Step 1: Write the failing tests `test/AttestcoinAdjudicator.t.sol`**
 
@@ -739,6 +746,12 @@ git commit -m "feat: attestcoin adjudicator with replay-safe proof intake"
 **Interfaces:**
 - Consumes: `ICovenant`, `ProvenTx`, `EvmV1Decoder`.
 - Produces: `function configure(uint256 facilityId, uint64 chainKey, address token, address treasury, uint64 startSourceBlock, uint64 endSourceBlock, uint256 capBaseUnits) external` and `function accumulated(uint256 facilityId) external view returns (uint256)`.
+
+**`configure` carries the same authorization rule as `registerCovenant`: lender-only,
+`Created`-only, non-overwritable.** Registering an immutable covenant *address* does not
+freeze its mutable *parameters* — without this, a lender could re-point the cap or the
+treasury after the borrower activated and consented. The covenant reads facility state and
+the configured lender from the facility contract to enforce this.
 
 Semantics (spec §3, audit finding 9):
 - A log qualifies when `log.address_ == token`, `topics[0] == keccak256("Transfer(address,address,uint256)")`, `from == treasury`, and `to != treasury`.
