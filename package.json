@@ -1,0 +1,17 @@
+{
+  "name": "recourse",
+  "version": "0.1.0",
+  "description": "Undercollateralized, covenant-enforced credit on Creditcoin, powered by Attestcoin proofs",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "balances": "node scripts/balances.mjs",
+    "wallets:new": "node scripts/new-wallets.mjs"
+  },
+  "dependencies": {
+    "@gluwa/usc-sdk": "^0.18.0",
+    "dotenv": "^17.0.0",
+    "ethers": "^6.17.0"
+  }
+}
