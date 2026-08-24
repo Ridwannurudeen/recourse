@@ -753,6 +753,15 @@ freeze its mutable *parameters* — without this, a lender could re-point the ca
 treasury after the borrower activated and consented. The covenant reads facility state and
 the configured lender from the facility contract to enforce this.
 
+**Dependency wiring (applies to every covenant, Tasks 4 and 6).** Each covenant takes an
+**immutable `IRecourseFacility`** in its constructor and authorizes `evaluate` dynamically
+against `facility.adjudicator()` — never against a separately stored adjudicator address,
+which could drift from the facility's own. `IRecourseFacility` must therefore expose
+`function adjudicator() external view returns (address);`, and `RecourseFacility`'s public
+variable is marked `override`. The facility stays the single source of truth for both the
+lender identity and the authorized adjudicator. Deployment order in Task 5 is consequently:
+facility → adjudicator → covenant(facility).
+
 Semantics (spec §3, audit finding 9):
 - A log qualifies when `log.address_ == token`, `topics[0] == keccak256("Transfer(address,address,uint256)")`, `from == treasury`, and `to != treasury`.
 - `from` is `address(uint160(uint256(topics[1])))`; `to` is `address(uint160(uint256(topics[2])))`; value is `abi.decode(log.data, (uint256))`.
@@ -809,7 +818,13 @@ The checkpoint that matters. Until a real mainnet batch triggers a real breach o
 
 - [ ] **Step 1: Write `scripts/deploy.mjs`**
 
-Read artifacts from `out/<Name>.sol/<Name>.json`, deploy `RecourseFacility`, then `AttestcoinAdjudicator` (constructor takes the real precompile address from `BLOCK_PROVER_PRECOMPILE` and the facility address), then `OutflowCapCovenant`. Call `setAdjudicator`. Write `deployments.json`. Apply the gas fallback from Global Constraints on estimation failure.
+Read artifacts from `out/<Name>.sol/<Name>.json`. Deploy in this order, which the constructor wiring forces:
+1. `RecourseFacility` (no args)
+2. `AttestcoinAdjudicator(verifier, facility)` — verifier is the real precompile address from `BLOCK_PROVER_PRECOMPILE`
+3. `facility.setAdjudicator(adjudicator)` — must happen before any covenant authorizes against it
+4. `OutflowCapCovenant(facility)` — the covenant reads the lender and the adjudicator from the facility at call time
+
+Write `deployments.json`. Apply the gas fallback from Global Constraints on estimation failure.
 
 - [ ] **Step 2: Deploy**
 
