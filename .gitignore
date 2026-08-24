@@ -16,3 +16,4 @@ broadcast/
 # Misc
 .DS_Store
 *.log
+lib/
