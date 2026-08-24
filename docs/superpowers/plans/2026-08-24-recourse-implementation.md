@@ -38,7 +38,7 @@ Every task inherits these. All values were verified live on 2026-08-24 — do no
 - `INativeQueryVerifier.verify(...)` is `view`; `verifyAndEmit(...)` is state-changing and emits `TransactionVerified`. **Use the `view` `verify` overload** — we emit our own domain events.
 - Batch proofs: use the SDK's `getBatchProof(hashes)`. It **does** support non-contiguous blocks.
 - **`mergeProofs` requires strictly contiguous blocks** and throws `Proofs are not contiguous` otherwise. Do not build the batch path on it.
-- Verified batch spans: 5, 20, 30, 40 and 55 blocks all returned `verifyBatch = true`; a 60-block span failed. The binding limit appears to be total calldata, not span alone. **Keep the evidence window ≤ 30 blocks and total calldata under ~15 KB.**
+- Verified batch spans: 5, 20, 30, 40 and 55 blocks all returned `verifyBatch = true`; a 60-block span failed. The binding limit appears to be total calldata, not span alone. **Keep total calldata under ~20 KB** (18.8 KB verified working; 73.8 KB fails). Calldata is dominated by receipt size, not block span, so prefer transactions with few logs (a plain treasury emits 1-2; a router emits 15-35).
 - Attestation lag is ~8 minutes. Only blocks at or below the current attested height are provable. All demo evidence must be pre-attested and pre-warmed.
 - Gas estimation against the precompile fails spuriously (a pallet-evm quirk). On estimation failure fall back to `21000 + 5000 * continuityRoots + 20000`, and apply a 35% buffer when estimation succeeds. That formula covers *verification only* — measure real end-to-end `submitBatch` gas in Task 5.
 
@@ -120,7 +120,11 @@ Note the field name is `address_` (trailing underscore) and `MerkleProofEntry.ha
 
 ### Task 0: Lock the demo evidence set
 
-Nothing downstream is real until this exists. The hero demo needs one mainnet address with several outbound USDC transfers inside a ≤30-block window, where no single transfer exceeds the cap but the cumulative total does.
+Nothing downstream is real until this exists. The hero demo needs one mainnet address with several outbound USDC transfers where no single transfer exceeds the cap but the cumulative total does.
+
+**The selection criterion that matters is receipt SIZE, not transaction count.** A busy router or aggregator emits 15–35 logs per transaction and its encoded receipts blow the calldata budget immediately. A plain treasury emits 1–2 logs. Rank candidates by *average log count ascending* and reject any transaction with more than 3 logs.
+
+Verified live on 2026-08-24: address `0x8f0d024e780b7e2fd633a4d6d43631a96e8cb059` averages 1.0 logs and yields 7.3 KB for 4 transactions, 9.3 KB for 5, and 11.2 KB for 6 — all returning `verifyBatch = true`. Ranking by transaction count instead selects a 12.5-logs-per-transaction router and produces 73.8 KB, which fails.
 
 **Files:**
 - Create: `scripts/lib/proofs.mjs`
@@ -130,8 +134,10 @@ Nothing downstream is real until this exists. The hero demo needs one mainnet ad
 **Interfaces:**
 - Consumes: nothing.
 - Produces: `docs/demo-evidence.json` with shape
-  `{ chainKey: 3, token, treasury, startSourceBlock, endSourceBlock, capBaseUnits, expectedTotalBaseUnits, txs: [{ hash, block, valueBaseUnits, to }] }`.
+  `{ chainKey: 3, token, treasury, startSourceBlock, endSourceBlock, capBaseUnits, expectedTotalBaseUnits, txs: [{ hash, block, valueBaseUnits, to, logCount }] }`.
   `scripts/lib/proofs.mjs` exports `getProvider()`, `getSourceProvider(chainKey)`, `getAttestedHeight(chainKey)`, `fetchBatchProof(chainKey, hashes)` returning `{ heights, txBytes, merkleProofs, continuityProof }`, and `prewarm(chainKey, hashes)`.
+
+> Note: spec §6 refers to `docs/demo-evidence.md` and `prove.ts`. This plan supersedes those names — the artefact is `docs/demo-evidence.json` and the script is `scripts/evidence.mjs`.
 
 - [ ] **Step 1: Write `scripts/lib/proofs.mjs`**
 
@@ -194,27 +200,31 @@ export async function prewarm(chainKey, hashes) {
 
 - [ ] **Step 2: Write `scripts/evidence.mjs`**
 
-Scan single blocks (range queries are rejected by the public RPC as archive requests) below the attested height, group outbound USDC transfers by sender, and pick a sender with at least 4 distinct transactions inside a ≤30-block window. Exclude self-transfers. Choose `capBaseUnits` strictly between the largest single transfer and the cumulative total.
+Scan single blocks (multi-block ranges are rejected by the public RPC as archive requests), group outbound transfers by sender, **rank by average receipt log count ascending**, and verify the chosen subset actually passes `verifyBatch` on-chain before writing anything.
 
 ```javascript
 import 'dotenv/config';
 import { Interface, formatUnits, id } from 'ethers';
 import { writeFileSync } from 'node:fs';
-import { getSourceProvider, getAttestedHeight, fetchBatchProof } from './lib/proofs.mjs';
+import pkg from '@gluwa/usc-sdk';
+import { getSourceProvider, getProvider, getAttestedHeight, fetchBatchProof } from './lib/proofs.mjs';
 
+const { blockProver } = pkg;
 const CHAIN_KEY = 3;
 const USDC = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48';
 const TRANSFER = id('Transfer(address,address,uint256)');
-const WINDOW = 30;
+const WINDOW = 40;          // blocks scanned; simple receipts tolerate this span
+const MAX_LOGS = 3;         // reject router-style transactions
+const MAX_CALLDATA = 20480; // 20KB; 18.8KB verified working, 73.8KB fails
 const iface = new Interface(['event Transfer(address indexed from, address indexed to, uint256 value)']);
 
 const eth = getSourceProvider(CHAIN_KEY);
 const attested = await getAttestedHeight(CHAIN_KEY);
-const to = attested - 5;
-const from = to - WINDOW;
+const hi = attested - 5;
+const lo = hi - WINDOW;
 
 const bySender = new Map();
-for (let b = from; b <= to; b++) {
+for (let b = lo; b <= hi; b++) {
   const logs = await eth.getLogs({ fromBlock: b, toBlock: b, address: USDC, topics: [TRANSFER] });
   for (const log of logs) {
     const parsed = iface.parseLog({ topics: log.topics, data: log.data });
@@ -231,46 +241,69 @@ for (let b = from; b <= to; b++) {
   }
 }
 
-const candidates = [...bySender.entries()]
-  .map(([treasury, seen]) => ({ treasury, txs: [...seen.values()].sort((a, b) => a.block - b.block) }))
-  .filter((c) => c.txs.length >= 4)
-  .sort((a, b) => b.txs.length - a.txs.length);
-
+// Rank by receipt simplicity. This is the step the first version of this plan got wrong.
+const candidates = [];
+for (const [treasury, seen] of bySender) {
+  const txs = [...seen.values()].sort((a, b) => a.block - b.block);
+  if (txs.length < 4) continue;
+  const sampled = [];
+  for (const tx of txs.slice(0, 8)) {
+    const receipt = await eth.getTransactionReceipt(tx.hash);
+    sampled.push({ ...tx, logCount: receipt.logs.length });
+  }
+  const simple = sampled.filter((t) => t.logCount <= MAX_LOGS);
+  if (simple.length < 4) continue;
+  const avgLogs = simple.reduce((s, t) => s + t.logCount, 0) / simple.length;
+  candidates.push({ treasury, txs: simple, avgLogs });
+}
+candidates.sort((a, b) => a.avgLogs - b.avgLogs);
 if (candidates.length === 0) {
-  throw new Error('No treasury with >=4 outbound txs in window. Raise WINDOW to 60 and retry.');
+  throw new Error(`No treasury with >=4 simple (<=${MAX_LOGS} log) outbound txs. Raise WINDOW and retry.`);
 }
 
-const chosen = candidates[0];
-const txs = chosen.txs.slice(0, 8);
-const total = txs.reduce((s, t) => s + BigInt(t.valueBaseUnits), 0n);
-const largest = txs.reduce((m, t) => (BigInt(t.valueBaseUnits) > m ? BigInt(t.valueBaseUnits) : m), 0n);
-if (largest >= total) throw new Error('Largest single transfer is not below the cumulative total.');
-const cap = largest + (total - largest) / 2n; // strictly between largest and total
+const verifier = new blockProver.PrecompileBlockProver(getProvider());
 
-const evidence = {
-  chainKey: CHAIN_KEY, token: USDC, treasury: chosen.treasury,
-  startSourceBlock: txs[0].block, endSourceBlock: txs[txs.length - 1].block,
-  capBaseUnits: cap.toString(), expectedTotalBaseUnits: total.toString(), txs,
-};
+for (const candidate of candidates.slice(0, 5)) {
+  for (const n of [6, 5, 4]) {
+    const txs = candidate.txs.slice(0, n);
+    if (txs.length < n) continue;
+    const total = txs.reduce((s, t) => s + BigInt(t.valueBaseUnits), 0n);
+    const largest = txs.reduce((m, t) => (BigInt(t.valueBaseUnits) > m ? BigInt(t.valueBaseUnits) : m), 0n);
+    if (largest >= total) continue;                 // need a cumulative-only breach
+    const cap = largest + (total - largest) / 2n;   // strictly between largest and total
+    if (!(largest < cap && cap < total)) continue;
 
-const proof = await fetchBatchProof(CHAIN_KEY, txs.map((t) => t.hash));
-const calldataBytes = proof.continuityProof.roots.length * 32
-  + proof.txBytes.reduce((s, b) => s + (b.length - 2) / 2, 0);
-console.log(`treasury ${chosen.treasury}`);
-console.log(`  txs=${txs.length} blocks ${evidence.startSourceBlock}..${evidence.endSourceBlock}`);
-console.log(`  largest=${formatUnits(largest, 6)} cap=${formatUnits(cap, 6)} total=${formatUnits(total, 6)} USDC`);
-console.log(`  continuityRoots=${proof.continuityProof.roots.length} calldata=${(calldataBytes / 1024).toFixed(1)}KB`);
-if (calldataBytes > 15360) throw new Error('Calldata exceeds the ~15KB safe budget. Narrow the window.');
+    const proof = await fetchBatchProof(CHAIN_KEY, txs.map((t) => t.hash));
+    const calldata = proof.continuityProof.roots.length * 32
+      + proof.txBytes.reduce((s, b) => s + (b.length - 2) / 2, 0);
+    if (calldata > MAX_CALLDATA) continue;
 
-writeFileSync('docs/demo-evidence.json', JSON.stringify(evidence, null, 2));
-console.log('Wrote docs/demo-evidence.json');
+    const ok = await verifier.verifyBatch(CHAIN_KEY, proof.heights, proof.txBytes,
+      proof.merkleProofs, proof.continuityProof);
+    if (!ok) continue;
+
+    const evidence = {
+      chainKey: CHAIN_KEY, token: USDC, treasury: candidate.treasury,
+      startSourceBlock: txs[0].block, endSourceBlock: txs[txs.length - 1].block,
+      capBaseUnits: cap.toString(), expectedTotalBaseUnits: total.toString(), txs,
+    };
+    writeFileSync('docs/demo-evidence.json', JSON.stringify(evidence, null, 2));
+    console.log(`treasury ${candidate.treasury} (avgLogs=${candidate.avgLogs.toFixed(1)})`);
+    console.log(`  txs=${n} blocks ${evidence.startSourceBlock}..${evidence.endSourceBlock}`);
+    console.log(`  largest=${formatUnits(largest, 6)} cap=${formatUnits(cap, 6)} total=${formatUnits(total, 6)} USDC`);
+    console.log(`  roots=${proof.continuityProof.roots.length} calldata=${(calldata / 1024).toFixed(1)}KB verifyBatch=true`);
+    console.log('Wrote docs/demo-evidence.json');
+    process.exit(0);
+  }
+}
+throw new Error('No candidate satisfied cap + calldata + verifyBatch. Raise WINDOW and retry.');
 ```
 
 - [ ] **Step 3: Run it**
 
 Run: `node scripts/evidence.mjs`
-Expected: prints a treasury with ≥4 transactions, `largest < cap < total`, continuity roots and calldata under 15 KB, and writes `docs/demo-evidence.json`.
-If it throws "No treasury with >=4 outbound txs", raise `WINDOW` to 60 and rerun; if calldata then exceeds budget, keep only the 4 largest transactions that still satisfy `largest < cap < total`.
+Expected: prints a treasury with a low average log count, `largest < cap < total`, calldata under 20 KB, `verifyBatch=true`, and writes `docs/demo-evidence.json`.
+If it throws, raise `WINDOW` to 80 and rerun. Do not relax `MAX_LOGS` — that is the constraint keeping calldata in budget.
 
 - [ ] **Step 4: Commit**
 
