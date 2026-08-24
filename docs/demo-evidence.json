@@ -1,0 +1,46 @@
+{
+  "chainKey": 3,
+  "token": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+  "treasury": "0xbaa67174531f0c031f91a373f6788c7e821af2c5",
+  "startSourceBlock": 25826525,
+  "endSourceBlock": 25826559,
+  "capBaseUnits": "232545000",
+  "expectedTotalBaseUnits": "274790000",
+  "txs": [
+    {
+      "hash": "0xa44c5e3f40201583bfa3329b8b4da1851c34f4dbabcc723743c4ca82e2f5dcaa",
+      "block": 25826525,
+      "valueBaseUnits": "8580000",
+      "to": "0xEE00968C140c6Fd48C7748b87A60Ba48e976A68C",
+      "logCount": 1
+    },
+    {
+      "hash": "0x2456f121b5402fb3cd42ea45714f4072965b6ef1b85a05f0e3a67e78c13b0d8b",
+      "block": 25826526,
+      "valueBaseUnits": "31240000",
+      "to": "0xc9581C8106465D283e4B32E434Dd8EeF71C9770e",
+      "logCount": 1
+    },
+    {
+      "hash": "0x1c9a4bf94a28bd8b7da9e676e2259b05a0cce7815c757b1fa77ef8588218addc",
+      "block": 25826544,
+      "valueBaseUnits": "190300000",
+      "to": "0x9FBB4956cd9e741a841A79EbdeA46DE615c6c933",
+      "logCount": 1
+    },
+    {
+      "hash": "0xbddccb82e91cf16def50c3bad6003b4b6e7e68f8d2c35541d0890bdcc117fdc9",
+      "block": 25826548,
+      "valueBaseUnits": "14580000",
+      "to": "0xa7c34B3F8b904BA1eFDa1C036a7B9be3d7237FC5",
+      "logCount": 1
+    },
+    {
+      "hash": "0xb22894683c336ffd74ad115b705babd9e60bb1df40444f160eb6248067855465",
+      "block": 25826559,
+      "valueBaseUnits": "30090000",
+      "to": "0xc4F4e32062D88375c027b8E252B597edA46dCb3F",
+      "logCount": 1
+    }
+  ]
+}
