@@ -20,7 +20,7 @@ Every task inherits these. All values were verified live on 2026-08-24 — do no
 - Solidity `0.8.30`. `foundry.toml` already committed and verified working.
 - **`via_ir = true` is mandatory.** `@gluwa/usc-contracts` 0.2.0 fails with "Stack too deep" without it. (The upstream examples repo says `via_ir = false`; that is for their older 0.1.2 and is wrong for us.)
 - `libs = ["node_modules"]`; import as `@gluwa/usc-contracts/contracts/write-ability/common/<File>.sol`.
-- Foundry `forge 1.7.1`. Add `~/.foundry/bin` to PATH in every new shell: `export PATH="$HOME/.foundry/bin:$PATH"`.
+- Foundry `forge 1.7.1`. Add `~/.foundry/bin` to PATH in every new shell — bash: `export PATH="$HOME/.foundry/bin:$PATH"`; PowerShell: `$env:PATH = "$HOME\.foundry\bin;$env:PATH"`. Run-commands below are written bash-style; translate as needed for your shell.
 - `forge-std` is installed under `lib/` and `lib/` is gitignored. If missing, run `forge install foundry-rs/forge-std`.
 
 **Network (CC3 Testnet)**
@@ -58,6 +58,17 @@ interface INativeQueryVerifier {
     function verify(uint64 chainKey, uint64[] calldata heights, bytes[] calldata encodedTransactions,
         MerkleProof[] calldata merkleProofs, ContinuityProof calldata sharedContinuityProof)
         external view returns (bool);
+
+    // Both verifyAndEmit overloads also exist. We do not call them (we emit our own
+    // domain events), but any contract implementing this interface — notably
+    // MockVerifier — MUST implement all four verify/verifyAndEmit overloads to compile.
+    function verifyAndEmit(uint64 chainKey, uint64 height, bytes calldata encodedTransaction,
+        MerkleProof calldata merkleProof, ContinuityProof calldata continuityProof)
+        external returns (bool);
+
+    function verifyAndEmit(uint64 chainKey, uint64[] calldata heights, bytes[] calldata encodedTransactions,
+        MerkleProof[] calldata merkleProofs, ContinuityProof calldata sharedContinuityProof)
+        external returns (bool);
 
     function calculateTxIndex(MerkleProof calldata merkleProof) external view returns (uint64);
 }
@@ -323,7 +334,7 @@ git commit -m "feat: lock demo evidence set from real mainnet USDC transfers"
 - Test: `test/mocks/MockVerifier.t.sol`
 
 **Interfaces:**
-- Consumes: `INativeQueryVerifier`, `EvmV1Decoder` from `@gluwa/usc-contracts`.
+- Consumes: `INativeQueryVerifier` from `@gluwa/usc-contracts`. (`EvmV1Decoder` is not used until Task 3.)
 - Produces:
   - `enum FacilityState { Created, Active, Repaid, Breached, Defaulted, Cancelled }`
   - `struct ProvenTx { uint64 chainKey; uint64 blockHeight; uint64 txIndex; bytes encodedTransaction; }`
