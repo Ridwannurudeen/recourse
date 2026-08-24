@@ -19,7 +19,7 @@ contract RecourseFacility is IRecourseFacility {
     uint256 private constant LENDER_SLASH_BPS = 8_000;
 
     address public immutable owner;
-    address public adjudicator;
+    address public override adjudicator;
     uint256 private nextFacilityId = 1;
 
     mapping(uint256 facilityId => Facility) private facilities;

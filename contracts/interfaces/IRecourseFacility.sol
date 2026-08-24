@@ -52,6 +52,7 @@ interface IRecourseFacility {
     function claimBorrowerRefund(uint256 facilityId) external;
     function setAdjudicator(address adjudicator) external;
 
+    function adjudicator() external view returns (address);
     function state(uint256 facilityId) external view returns (FacilityState);
     function outstandingDebt(uint256 facilityId) external view returns (uint256);
     function availableCredit(uint256 facilityId) external view returns (uint256);

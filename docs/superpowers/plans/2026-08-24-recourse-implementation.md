@@ -771,6 +771,13 @@ Semantics (spec §3, audit finding 9):
 - Revert `IrrelevantEvidence()` when the batch contains no qualifying log at all.
 - Breach strictly when `accumulated > capBaseUnits`.
 - Only the adjudicator may call `evaluate`.
+- **Covenant-local replay keys `(facilityId, chainKey, blockHeight, txIndex)` are required,
+  in addition to the adjudicator's.** The adjudicator scopes replay by `covenantId`, but an
+  accumulating covenant keeps state per *facility*. Registering the same covenant address
+  under two different `covenantId`s would therefore let identical evidence be counted twice
+  and falsely breach the cap. The covenant must reject evidence it has already counted for
+  that facility. This does not change Task 3 and still allows genuinely different covenant
+  contracts to consume the same receipt.
 
 - [ ] **Step 1: Write the failing tests**
 

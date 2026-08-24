@@ -7,6 +7,7 @@ import {EvmV1Decoder} from "@gluwa/usc-contracts/contracts/write-ability/common/
 import {INativeQueryVerifier} from "@gluwa/usc-contracts/contracts/write-ability/common/INativeQueryVerifier.sol";
 import {AttestcoinAdjudicator} from "../contracts/AttestcoinAdjudicator.sol";
 import {RecourseFacility} from "../contracts/RecourseFacility.sol";
+import {OutflowCapCovenant} from "../contracts/covenants/OutflowCapCovenant.sol";
 import {ICovenant} from "../contracts/interfaces/ICovenant.sol";
 import {
     FacilityState,
@@ -88,6 +89,7 @@ contract AttestcoinAdjudicatorTest is Test {
     uint256 private constant COVENANT_ID = 1;
     uint256 private constant REENTRANT_COVENANT_ID = 2;
     uint256 private constant SECOND_COVENANT_ID = 3;
+    uint256 private constant OUTFLOW_COVENANT_ID = 4;
     uint64 private constant CHAIN_KEY = 3;
     uint64 private constant HEIGHT = 25_826_525;
 
@@ -97,6 +99,7 @@ contract AttestcoinAdjudicatorTest is Test {
     StubCovenant covenant;
     StubCovenant secondCovenant;
     ReentrantCovenant reentrantCovenant;
+    OutflowCapCovenant outflowCovenant;
 
     address lender = address(0xA1);
     address borrower = address(0xB2);
@@ -110,6 +113,7 @@ contract AttestcoinAdjudicatorTest is Test {
         covenant = new StubCovenant();
         secondCovenant = new StubCovenant();
         reentrantCovenant = new ReentrantCovenant(adjudicator);
+        outflowCovenant = new OutflowCapCovenant(facility);
         facility.setAdjudicator(address(adjudicator));
 
         vm.deal(lender, 2000 ether);
@@ -119,6 +123,8 @@ contract AttestcoinAdjudicatorTest is Test {
         adjudicator.registerCovenant(facilityId, COVENANT_ID, covenant);
         adjudicator.registerCovenant(facilityId, REENTRANT_COVENANT_ID, reentrantCovenant);
         adjudicator.registerCovenant(facilityId, SECOND_COVENANT_ID, secondCovenant);
+        adjudicator.registerCovenant(facilityId, OUTFLOW_COVENANT_ID, outflowCovenant);
+        outflowCovenant.configure(facilityId, CHAIN_KEY, address(0x1000), address(0x2000), HEIGHT, HEIGHT + 2, 100);
         vm.stopPrank();
         _activate(facilityId);
     }
@@ -359,6 +365,30 @@ contract AttestcoinAdjudicatorTest is Test {
         assertTrue(adjudicator.isProcessed(facilityId, COVENANT_ID, adjudicator.queryId(CHAIN_KEY, HEIGHT, 0)));
     }
 
+    function test_outflowBatchCumulativeCrossingBreachesFacility() public {
+        uint64[] memory heights = new uint64[](3);
+        heights[0] = HEIGHT;
+        heights[1] = HEIGHT + 1;
+        heights[2] = HEIGHT + 2;
+        bytes[] memory encodedTransactions = new bytes[](3);
+        encodedTransactions[0] = _encodedTransferTransaction(40, address(0x3000));
+        encodedTransactions[1] = _encodedTransferTransaction(35, address(0x4000));
+        encodedTransactions[2] = _encodedTransferTransaction(30, address(0x5000));
+        INativeQueryVerifier.MerkleProof[] memory merkleProofs = new INativeQueryVerifier.MerkleProof[](3);
+
+        _submitBatch(OUTFLOW_COVENANT_ID, heights, encodedTransactions, merkleProofs);
+
+        assertEq(outflowCovenant.accumulated(facilityId), 105);
+        assertEq(uint256(facility.state(facilityId)), uint256(FacilityState.Breached));
+        assertTrue(adjudicator.isProcessed(facilityId, OUTFLOW_COVENANT_ID, adjudicator.queryId(CHAIN_KEY, HEIGHT, 0)));
+        assertTrue(
+            adjudicator.isProcessed(facilityId, OUTFLOW_COVENANT_ID, adjudicator.queryId(CHAIN_KEY, HEIGHT + 1, 0))
+        );
+        assertTrue(
+            adjudicator.isProcessed(facilityId, OUTFLOW_COVENANT_ID, adjudicator.queryId(CHAIN_KEY, HEIGHT + 2, 0))
+        );
+    }
+
     function _openFacility() internal returns (uint256) {
         return facility.openFacility(lender, borrower, 1000 ether, 200 ether, 200, uint64(block.number + 100_000), 10);
     }
@@ -402,6 +432,19 @@ contract AttestcoinAdjudicatorTest is Test {
         bytes[] memory chunks = new bytes[](3);
         EvmV1Decoder.LogEntryTuple[] memory logs = new EvmV1Decoder.LogEntryTuple[](0);
         chunks[2] = abi.encode(receiptStatus, uint64(1), logs, bytes(""));
+        return abi.encode(uint8(2), chunks);
+    }
+
+    function _encodedTransferTransaction(uint256 value, address to) internal pure returns (bytes memory) {
+        bytes32[] memory topics = new bytes32[](3);
+        topics[0] = keccak256("Transfer(address,address,uint256)");
+        topics[1] = bytes32(uint256(uint160(address(0x2000))));
+        topics[2] = bytes32(uint256(uint160(to)));
+
+        EvmV1Decoder.LogEntryTuple[] memory logs = new EvmV1Decoder.LogEntryTuple[](1);
+        logs[0] = EvmV1Decoder.LogEntryTuple({address_: address(0x1000), topics: topics, data: abi.encode(value)});
+        bytes[] memory chunks = new bytes[](3);
+        chunks[2] = abi.encode(uint8(1), uint64(1), logs, bytes(""));
         return abi.encode(uint8(2), chunks);
     }
 }
