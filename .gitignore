@@ -1,0 +1,18 @@
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+*.key
+keystore/
+
+# Dependencies
+node_modules/
+
+# Foundry
+cache/
+out/
+broadcast/
+
+# Misc
+.DS_Store
+*.log
