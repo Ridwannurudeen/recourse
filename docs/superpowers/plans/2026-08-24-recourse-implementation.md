@@ -496,8 +496,9 @@ The credit product, with no Attestcoin knowledge at all. Fully testable without 
   - `function reportBreach(uint256 facilityId, address hunter) external` — adjudicator only
   - `function markDefaulted(uint256 facilityId) external`
   - `function cancel(uint256 facilityId) external` — either party, only while `Created`; refunds both deposits
-  - `function lenderWithdraw(uint256 facilityId) external` — lender, any terminal state, once
-  - `function claimBorrowerRefund(uint256 facilityId) external` — borrower, any terminal state, once
+  - `function lenderWithdraw(uint256 facilityId) external` — lender, any terminal state, **repeatable** (drains `lenderClaimable`)
+  - `function claimBorrowerRefund(uint256 facilityId) external` — borrower, any terminal state, **repeatable** (drains `borrowerClaimable`)
+  - Views: `lenderClaimable(uint256)`, `borrowerClaimable(uint256)`
   - `function setAdjudicator(address adjudicator) external` — owner, one-time
   - Views: `state(uint256)`, `outstandingDebt(uint256)`, `availableCredit(uint256)`, `facilityOf(uint256)`
 
@@ -505,7 +506,9 @@ Economics (spec §2 — read the worked example there, it pins every number):
 - **One fee only.** The draw fee (bps) is added to debt at draw time and accrues to the lender. There is no origination fee and no protocol treasury. If you find a reference to one anywhere, it is stale — the spec's §2 is authoritative.
 - On breach the bond splits 80% lender / 20% hunter. **The lender's 80% is applied against outstanding debt, capped by that debt**; `lenderShare - debtReduction` is the borrower's refundable remainder.
 - Terminal states (`Repaid`, `Breached`, `Defaulted`) permit no further draws, but repayment stays open in `Breached` and `Defaulted`.
-- `lenderWithdraw` pays undrawn principal + repayments + applied slash. Over a facility's life the lender nets principal plus draw fees charged, never more.
+- **Claims are a repeatable pull pattern, never one-shot.** `lenderClaimable` accrues on each repayment and on the breach slash, and gains the undrawn principal when a terminal state is entered; `lenderWithdraw` drains it and may be called again after a late repayment tops it up. A one-shot withdrawal would strand any repayment arriving afterwards — that is a real bug, not a theoretical one.
+- `borrowerClaimable` is the whole bond in `Repaid` and `Defaulted` (only an adjudicated breach slashes), and `lenderShare - debtReduction` after a breach.
+- **Late repayment:** if maturity has passed while still `Active`, `repay` records `Defaulted` first, then applies the payment. Clearing the debt from `Defaulted` never promotes back to `Repaid`.
 
 - [ ] **Step 1: Write the failing tests `test/RecourseFacility.t.sol`**
 

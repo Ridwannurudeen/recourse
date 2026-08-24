@@ -69,15 +69,26 @@ Created ──(either party exits before activation)─────────�
 - **Repaid / Defaulted / Breached — closure and withdrawals.** All three are
   terminal states for *credit* purposes (no further draws, ever), but repayment
   stays open in `Breached` and `Defaulted` so the borrower can still clear the
-  debt and the record. Two claim paths, each callable once the facility is in
-  any terminal state:
-  - `lenderWithdraw` pays the lender everything the contract holds on their
-    behalf: undrawn principal + repayments received + any slash applied against
-    debt. Over the life of a facility the lender nets their principal plus the
-    draw fees actually charged, and never more.
-  - `claimBorrowerRefund` pays the borrower their bond remainder: in `Repaid`
-    the whole bond; after a breach, only `lenderShare - debtReduction` (zero
-    whenever the debt was at least the lender's 80% share).
+  debt and the record. Claims use a **pull pattern over running balances**, not
+  one-shot withdrawals — a one-shot lender withdrawal would strand any repayment
+  that arrived afterwards:
+  - `lenderClaimable` accrues as value arrives: each repayment, plus the slash
+    applied against debt on breach. On entry to any terminal state, the undrawn
+    principal is added to it.
+  - `lenderWithdraw` pays out the whole `lenderClaimable` balance, zeroes it,
+    and may be called **repeatedly** while the facility is terminal. A late
+    repayment simply tops the balance back up. Over a facility's life the lender
+    nets principal plus the draw fees actually charged, never more.
+  - `borrowerClaimable` holds the bond remainder: the whole bond in `Repaid` and
+    in `Defaulted` (only an adjudicated breach ever slashes), and after a breach
+    only `lenderShare - debtReduction` — zero whenever the debt was at least the
+    lender's 80% share. `claimBorrowerRefund` drains it under the same
+    repeatable pull pattern.
+- **Late repayment.** If maturity has passed while the facility is still
+  `Active`, `repay` first records `Defaulted`, then applies the payment. The
+  borrower can always clear the debt, but the permanent performance record shows
+  `Defaulted` — paying late is not the same as paying on time. Reaching zero
+  debt from `Defaulted` does not promote the facility back to `Repaid`.
 - **Cancelled:** before activation either party may `cancel`, which refunds
   whatever each has deposited. No fees, no penalties.
 - Authorization: only the configured borrower draws/repays; only the configured
