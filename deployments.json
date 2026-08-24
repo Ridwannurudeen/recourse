@@ -3,5 +3,10 @@
   "adjudicator": "0xB672992Ce9b5C0924CA94F309b8747Ba0d90bbdc",
   "outflowCovenant": "0x6C1F4e5926206df4e472e1319b7a72be13048eA1",
   "facilityId": 1,
-  "blockNumber": 5368414
+  "blockNumber": 5368414,
+  "breachTx": "0x632087ba44e64e89657f34394871b6115eb4cddc7836f7f5b1380546a8c513da",
+  "breachBlock": 5368442,
+  "breachGasUsed": 698898,
+  "explorer": "https://creditcoin-testnet.blockscout.com",
+  "chainId": 102031
 }
