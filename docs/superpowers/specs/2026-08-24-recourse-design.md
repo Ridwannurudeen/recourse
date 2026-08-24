@@ -33,10 +33,12 @@ Actors: **Lender** funds the facility vault (demo: 1,000 tCTC). **Borrower**
 posts a **penalty bond** (demo: 200 tCTC), commits named Ethereum positions,
 draws, repays. **Hunter** (anyone) submits violation proofs.
 
-**Interest (immutable, simple):** fixed fee in basis points charged per draw
-(demo: 200 bps), added to outstanding debt at draw time. No accrual model.
-**Origination fee** (demo: 50 bps of facility size, paid by borrower at
-activation) — the protocol revenue line for the CEIP story.
+**Interest (immutable, simple):** a fixed fee in basis points charged per draw
+(demo: 200 bps), added to outstanding debt at draw time and accruing to the
+**lender** as their return. No accrual model, no origination fee, no protocol
+treasury — v1 has exactly one fee. (An earlier draft also specified an
+origination fee; it was cut because it required a treasury and a fee-recipient
+decision that contradicted the lender-earns-fees rule, for no demo value.)
 
 **State machine (exact):**
 
@@ -64,13 +66,34 @@ Created ──(either party exits before activation)─────────�
   that debt**; any excess bond is returned to the borrower at closure. The
   hunter's 20% (40 tCTC) is the explicit breach penalty. No lender windfall:
   a borrower who repays after breach owes debt minus the applied slash.
-- **Repaid / Defaulted:** permanent on-chain performance record. Lender
-  withdraws principal + fees; bond returns to borrower only in Repaid.
+- **Repaid / Defaulted / Breached — closure and withdrawals.** All three are
+  terminal states for *credit* purposes (no further draws, ever), but repayment
+  stays open in `Breached` and `Defaulted` so the borrower can still clear the
+  debt and the record. Two claim paths, each callable once the facility is in
+  any terminal state:
+  - `lenderWithdraw` pays the lender everything the contract holds on their
+    behalf: undrawn principal + repayments received + any slash applied against
+    debt. Over the life of a facility the lender nets their principal plus the
+    draw fees actually charged, and never more.
+  - `claimBorrowerRefund` pays the borrower their bond remainder: in `Repaid`
+    the whole bond; after a breach, only `lenderShare - debtReduction` (zero
+    whenever the debt was at least the lender's 80% share).
+- **Cancelled:** before activation either party may `cancel`, which refunds
+  whatever each has deposited. No fees, no penalties.
 - Authorization: only the configured borrower draws/repays; only the configured
   lender withdraws; only the adjudicator reports breaches; addresses fixed at
   activation. Checks-effects-interactions around all native-token transfers.
   Invariants (tested): total facility assets conserved; bond distributed at
-  most once.
+  most once; the contract can never owe more than it holds.
+
+**Worked example (the demo numbers, so the arithmetic is unambiguous).** Lender
+funds 1,000; borrower bonds 200; contract holds 1,200. Borrower draws 400 at
+200 bps, so debt = 408 and the contract holds 800. Breach: hunter is paid 40
+(20% of bond); the lender's 160 (80%) reduces debt to 248; excess bond is
+`160 - 160 = 0`. Contract now holds 760 = 600 undrawn + 160 slash. Borrower
+repays 248; contract holds 1,008; lender withdraws 1,008 = 1,000 principal +
+8 draw fee. The borrower's net cost is 48 — the 8 fee plus the 40 hunter
+penalty — and the 160 is never paid twice.
 
 ## 3. Covenant types (exactly three; no DSL)
 
@@ -260,8 +283,9 @@ against *conduct* instead of posting 150% collateral. Creditcoin is the
 settlement venue because adjudication must be cheap, fast (~15 s
 verification), and oracle-free. Parameters are negotiated bilaterally
 (lender sets covenant menu; borrower consents; both freeze at activation).
-Revenue: origination fee (bps at activation) + draw fee (bps per draw), both
-implemented in v1. Lender loss model: penalty bond first-loss against debt,
+Revenue in v1 is the draw fee (bps per draw), which accrues to the lender as
+their return; a protocol cut of that fee is the production revenue line and is
+deliberately not implemented here. Lender loss model: penalty bond first-loss against debt,
 then unsecured exposure priced into the rate. Production path requires:
 Attestcoin writability (auto-repayment sweeps), more source chains, hunter
 commit/reveal, and covenant templates audited per protocol integrated.

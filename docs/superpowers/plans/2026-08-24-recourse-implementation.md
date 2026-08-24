@@ -486,7 +486,7 @@ The credit product, with no Attestcoin knowledge at all. Fully testable without 
 **Interfaces:**
 - Consumes: `FacilityState` and the custom errors from Task 1.
 - Produces:
-  - `function openFacility(address lender, address borrower, uint256 facilityLimit, uint256 bondRequired, uint16 drawFeeBps, uint16 originationFeeBps, uint64 maturityBlock, uint32 drawDelayBlocks) external returns (uint256 facilityId)`
+  - `function openFacility(address lender, address borrower, uint256 facilityLimit, uint256 bondRequired, uint16 drawFeeBps, uint64 maturityBlock, uint32 drawDelayBlocks) external returns (uint256 facilityId)`
   - `function fundAsLender(uint256 facilityId) external payable`
   - `function postBond(uint256 facilityId) external payable`
   - `function activate(uint256 facilityId) external`
@@ -495,10 +495,17 @@ The credit product, with no Attestcoin knowledge at all. Fully testable without 
   - `function repay(uint256 facilityId) external payable`
   - `function reportBreach(uint256 facilityId, address hunter) external` — adjudicator only
   - `function markDefaulted(uint256 facilityId) external`
+  - `function cancel(uint256 facilityId) external` — either party, only while `Created`; refunds both deposits
+  - `function lenderWithdraw(uint256 facilityId) external` — lender, any terminal state, once
+  - `function claimBorrowerRefund(uint256 facilityId) external` — borrower, any terminal state, once
   - `function setAdjudicator(address adjudicator) external` — owner, one-time
   - Views: `state(uint256)`, `outstandingDebt(uint256)`, `availableCredit(uint256)`, `facilityOf(uint256)`
 
-Economics (spec §2): bond splits 80% lender / 20% hunter on breach. **The lender's 80% is applied against outstanding debt and capped by it**; any excess returns to the borrower at closure. The draw fee is added to debt at draw time; the origination fee is charged at activation.
+Economics (spec §2 — read the worked example there, it pins every number):
+- **One fee only.** The draw fee (bps) is added to debt at draw time and accrues to the lender. There is no origination fee and no protocol treasury. If you find a reference to one anywhere, it is stale — the spec's §2 is authoritative.
+- On breach the bond splits 80% lender / 20% hunter. **The lender's 80% is applied against outstanding debt, capped by that debt**; `lenderShare - debtReduction` is the borrower's refundable remainder.
+- Terminal states (`Repaid`, `Breached`, `Defaulted`) permit no further draws, but repayment stays open in `Breached` and `Defaulted`.
+- `lenderWithdraw` pays undrawn principal + repayments + applied slash. Over a facility's life the lender nets principal plus draw fees charged, never more.
 
 - [ ] **Step 1: Write the failing tests `test/RecourseFacility.t.sol`**
 
@@ -523,7 +530,7 @@ contract RecourseFacilityTest is Test {
         facility.setAdjudicator(adjudicator);
         vm.deal(lender, 2000 ether);
         vm.deal(borrower, 2000 ether);
-        id = facility.openFacility(lender, borrower, 1000 ether, 200 ether, 200, 50, uint64(block.number + 100000), 10);
+        id = facility.openFacility(lender, borrower, 1000 ether, 200 ether, 200, uint64(block.number + 100000), 10);
     }
 
     function _activate() internal {
