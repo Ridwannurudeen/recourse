@@ -687,7 +687,8 @@ The only contract that touches the precompile.
 - Consumes: `INativeQueryVerifier`, `EvmV1Decoder`, `ICovenant`, `IRecourseFacility`, `ProvenTx`.
 - Produces:
   - `constructor(INativeQueryVerifier verifier, IRecourseFacility facility)`
-  - `function registerCovenant(uint256 facilityId, uint256 covenantId, ICovenant covenant) external`
+  - `function registerCovenant(uint256 facilityId, uint256 covenantId, ICovenant covenant) external` — **lender-only, `Created`-only, non-zero address, no overwrites.** Submissions targeting an unregistered covenant revert. Without this, anyone could install an always-true covenant against another party's facility and slash their bond. The borrower consents to the registered set by calling `activate`.
+  - `function covenantOf(uint256 facilityId, uint256 covenantId) external view returns (ICovenant)`
   - `function submitBatch(uint256 facilityId, uint256 covenantId, uint64 chainKey, uint64[] calldata heights, bytes[] calldata encodedTransactions, INativeQueryVerifier.MerkleProof[] calldata merkleProofs, INativeQueryVerifier.ContinuityProof calldata sharedContinuityProof) external`
   - `function submitSingle(uint256 facilityId, uint256 covenantId, uint64 chainKey, uint64 height, bytes calldata encodedTransaction, INativeQueryVerifier.MerkleProof calldata merkleProof, INativeQueryVerifier.ContinuityProof calldata continuityProof) external`
   - `function queryId(uint64 chainKey, uint64 blockHeight, uint64 txIndex) public pure returns (bytes32)`

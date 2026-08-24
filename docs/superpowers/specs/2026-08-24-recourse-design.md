@@ -53,6 +53,13 @@ Created ──(either party exits before activation)─────────�
 - **Created:** configuration assembled (facility size, bond size, rate, fees,
   maturity, covenant set with all parameters). Both lender and borrower must
   consent to the *complete* configuration; all terms freeze at activation.
+  **Covenant registration is lender-only and `Created`-only.** The lender
+  registers each covenant against the facility before activation; the covenant
+  address must be non-zero; an existing registration can never be overwritten;
+  and a proof submission targeting an unregistered covenant reverts. The
+  borrower consents to the whole covenant set by calling `activate`, after
+  which the set is immutable. Without this rule anyone could install an
+  always-true covenant against someone else's facility and slash their bond.
 - **Active:** borrower draws via **two-stage draws** (front-running defense,
   audit finding 3): `requestDraw(amount)` → fixed challenge delay (demo: 10
   Creditcoin blocks ≈ 2.5 min) → `executeDraw()` succeeds only if the facility
