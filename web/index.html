@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <meta
+      name="description"
+      content="Read-only view of a covenant-enforced credit facility on Creditcoin."
+    />
+    <title>Recourse · Facility monitor</title>
+    <link rel="stylesheet" href="./style.css" />
+    <script src="./ethers.umd.min.js"></script>
+    <script src="./app.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to facility</a>
+
+    <header class="site-header">
+      <div class="shell header-inner">
+        <div class="brand-lockup" aria-label="Recourse">
+          <span class="brand-mark" aria-hidden="true">R</span>
+          <div>
+            <p class="brand-name">Recourse</p>
+            <p class="brand-line">Credit with consequences.</p>
+          </div>
+        </div>
+        <div class="header-tools">
+          <div
+            class="network-status"
+            id="network-status"
+            role="status"
+            aria-live="polite"
+          >
+            <span class="network-dot" aria-hidden="true"></span>
+            <span id="network-label">Connecting to CC3</span>
+          </div>
+          <button
+            class="theme-toggle"
+            id="theme-toggle"
+            type="button"
+            aria-label="Change color theme"
+          >
+            Theme · Auto
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <main class="shell" id="main">
+      <section class="load-panel" id="load-panel" aria-live="polite">
+        <div class="load-line" aria-hidden="true"></div>
+        <p class="eyebrow">Creditcoin · facility #1</p>
+        <h1 id="load-title">Reading live facility state</h1>
+        <p id="load-copy">
+          Verifying the network and loading a consistent CC3 block snapshot.
+        </p>
+        <button class="retry-button" id="retry-button" type="button" hidden>
+          Retry connection
+        </button>
+      </section>
+
+      <div id="dashboard" data-load-state="loading" hidden>
+        <section class="facility-hero" aria-labelledby="facility-title">
+          <div class="facility-heading">
+            <div>
+              <p class="eyebrow" id="snapshot-label">Creditcoin · live state</p>
+              <div class="title-line">
+                <h1 id="facility-title">Facility #1</h1>
+                <span class="status-badge" id="state-badge">Loading</span>
+              </div>
+              <p class="facility-summary" id="facility-summary"></p>
+            </div>
+            <a
+              class="quiet-link"
+              id="facility-contract-link"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Facility contract <span aria-hidden="true">↗</span>
+            </a>
+          </div>
+
+          <div class="roles" aria-label="Facility roles">
+            <div class="role-row">
+              <span class="role-label">Lender</span>
+              <a
+                class="address-link"
+                id="lender-link"
+                target="_blank"
+                rel="noopener noreferrer"
+              ></a>
+            </div>
+            <div class="role-row">
+              <span class="role-label">Borrower</span>
+              <a
+                class="address-link"
+                id="borrower-link"
+                target="_blank"
+                rel="noopener noreferrer"
+              ></a>
+            </div>
+            <div class="role-row hunter-role" id="hunter-role">
+              <div>
+                <span class="role-label">Hunter</span>
+                <p class="hunter-note" id="hunter-note"></p>
+              </div>
+              <a
+                class="address-link"
+                id="hunter-link"
+                target="_blank"
+                rel="noopener noreferrer"
+              ></a>
+              <p class="open-role" id="hunter-open"></p>
+            </div>
+          </div>
+        </section>
+
+        <section class="credit-section" aria-labelledby="credit-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Credit position</p>
+              <h2 id="credit-title">Credit capacity</h2>
+            </div>
+            <p class="section-note" id="credit-note"></p>
+          </div>
+
+          <div class="credit-layout">
+            <div class="available-block">
+              <span class="metric-label">Available credit</span>
+              <p
+                class="signature-number"
+                id="available-credit"
+                aria-live="polite"
+              ></p>
+              <p class="metric-context" id="available-context"></p>
+              <div
+                class="capacity-rail"
+                id="capacity-rail"
+                aria-label="Facility capacity allocation"
+              >
+                <span class="rail-drawn" id="rail-drawn"></span>
+                <span class="rail-available" id="rail-available"></span>
+                <span class="rail-frozen" id="rail-frozen"></span>
+              </div>
+              <div class="rail-legend" aria-hidden="true">
+                <span><i class="key-drawn"></i>Drawn</span>
+                <span><i class="key-available"></i>Available</span>
+                <span id="frozen-legend"><i class="key-frozen"></i>Frozen</span>
+              </div>
+            </div>
+
+            <dl class="metric-grid">
+              <div class="metric-cell">
+                <dt>Facility limit</dt>
+                <dd id="facility-limit"></dd>
+              </div>
+              <div class="metric-cell">
+                <dt>Principal drawn</dt>
+                <dd id="drawn-principal"></dd>
+              </div>
+              <div class="metric-cell debt-cell">
+                <dt>Outstanding debt</dt>
+                <dd id="outstanding-debt"></dd>
+                <span id="debt-context"></span>
+              </div>
+              <div class="metric-cell">
+                <dt>Penalty bond</dt>
+                <dd id="facility-bond"></dd>
+                <span id="bond-context"></span>
+              </div>
+            </dl>
+          </div>
+        </section>
+
+        <section class="covenant-section" aria-labelledby="covenant-title">
+          <div class="section-heading covenant-heading">
+            <div>
+              <p class="eyebrow">Covenant 01 · cumulative outflow</p>
+              <h2 id="covenant-title">
+                The line a single transfer never crossed
+              </h2>
+            </div>
+            <a
+              class="quiet-link"
+              id="covenant-contract-link"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Covenant contract <span aria-hidden="true">↗</span>
+            </a>
+          </div>
+
+          <div class="covenant-measure">
+            <div class="measure-primary">
+              <span class="metric-label">Accumulated proven outflow</span>
+              <p
+                class="covenant-number"
+                id="accumulated-outflow"
+                aria-live="polite"
+              ></p>
+            </div>
+            <div class="measure-cap">
+              <span class="metric-label">Covenant cap</span>
+              <p id="covenant-cap"></p>
+            </div>
+          </div>
+
+          <div
+            class="covenant-progress"
+            id="covenant-progress"
+            role="progressbar"
+            aria-label="Accumulated outflow against covenant cap"
+            aria-valuemin="0"
+            aria-valuemax="100"
+          >
+            <span class="progress-fill" id="progress-fill"></span>
+            <span class="threshold-line" aria-hidden="true"></span>
+          </div>
+          <div class="progress-copy">
+            <p id="progress-status"></p>
+            <p id="progress-percent"></p>
+          </div>
+          <p class="covenant-explanation" id="covenant-explanation"></p>
+
+          <dl class="covenant-terms">
+            <div>
+              <dt>Committed treasury</dt>
+              <dd>
+                <a
+                  id="treasury-link"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                ></a>
+              </dd>
+            </div>
+            <div>
+              <dt>Tracked token</dt>
+              <dd>
+                <a
+                  id="token-link"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                ></a>
+              </dd>
+            </div>
+            <div>
+              <dt>Ethereum block window</dt>
+              <dd id="block-window"></dd>
+            </div>
+          </dl>
+          <p class="provenance-note">
+            Covenant terms come from the checked-in public evidence snapshot.
+            Accumulation is read live from the covenant on CC3.
+          </p>
+        </section>
+
+        <section class="evidence-section" aria-labelledby="evidence-title">
+          <div class="section-heading evidence-heading">
+            <div>
+              <p class="eyebrow">Cross-chain enforcement record</p>
+              <h2 id="evidence-title">
+                Ethereum evidence. Creditcoin consequence.
+              </h2>
+            </div>
+            <p class="evidence-count" id="evidence-count"></p>
+          </div>
+
+          <div class="evidence-empty" id="evidence-empty" hidden>
+            <p class="empty-title">
+              No breach evidence submitted at this block.
+            </p>
+            <p>
+              The hunter role remains open. A valid public proof can still
+              trigger enforcement.
+            </p>
+          </div>
+
+          <div class="evidence-layout" id="evidence-layout" hidden>
+            <div>
+              <div class="column-label">
+                <span>Ethereum mainnet receipts</span>
+                <span id="evidence-total"></span>
+              </div>
+              <div class="evidence-list" id="evidence-list"></div>
+            </div>
+
+            <aside class="outcome-panel" aria-labelledby="outcome-title">
+              <p class="eyebrow alert-eyebrow">Creditcoin consequence</p>
+              <h3 id="outcome-title">The covenant enforced</h3>
+              <a
+                class="breach-link"
+                id="breach-link"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                View breach transaction on Blockscout
+                <span aria-hidden="true">↗</span>
+              </a>
+
+              <dl class="outcome-metrics">
+                <div>
+                  <dt>Hunter paid</dt>
+                  <dd id="hunter-payout"></dd>
+                </div>
+                <div>
+                  <dt>Debt reduced</dt>
+                  <dd id="debt-reduction"></dd>
+                </div>
+                <div>
+                  <dt>Debt after slash</dt>
+                  <dd id="debt-after"></dd>
+                </div>
+                <div>
+                  <dt>Execution gas</dt>
+                  <dd id="breach-gas"></dd>
+                </div>
+              </dl>
+
+              <p class="outcome-copy" id="outcome-copy"></p>
+              <p class="proof-note">
+                Historical Ethereum mainnet evidence, enforced in a live CC3
+                transaction through Attestcoin. Receipt inclusion and logs were
+                verified on Creditcoin—not reported by an oracle.
+              </p>
+            </aside>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <footer class="site-footer">
+      <div class="shell footer-inner">
+        <p>Recourse · CC3 chain ID 102031 · Read-only</p>
+        <p id="block-readout"></p>
+      </div>
+    </footer>
+  </body>
+</html>

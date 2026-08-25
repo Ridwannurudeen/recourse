@@ -1,6 +1,8 @@
 {
   "chainKey": 3,
   "token": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+  "tokenSymbol": "USDC",
+  "tokenDecimals": 6,
   "treasury": "0xbaa67174531f0c031f91a373f6788c7e821af2c5",
   "startSourceBlock": 25826525,
   "endSourceBlock": 25826559,
