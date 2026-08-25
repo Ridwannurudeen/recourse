@@ -118,12 +118,85 @@ const COVENANT_ABI = [
   "function accumulated(uint256) view returns (uint256)",
   "function configHash(uint256) view returns (bytes32)",
 ];
+const OUTFLOW_COVENANT_ABI = [
+  ...COVENANT_ABI,
+  "function configure(uint256,uint64,address,address,uint64,uint64,uint256)",
+  "error CovenantAlreadyConfigured()",
+  "error CovenantAlreadyRegistered()",
+  "error CovenantNotConfigured()",
+  "error NotLender()",
+  "error WrongState(uint8 expected,uint8 actual)",
+];
+const NEW_BORROW_COVENANT_ABI = [
+  ...COVENANT_ABI,
+  "function configure(uint256,uint64,address,address,uint64,uint64)",
+  "error CovenantAlreadyConfigured()",
+  "error CovenantAlreadyRegistered()",
+  "error CovenantNotConfigured()",
+  "error NotLender()",
+  "error WrongState(uint8 expected,uint8 actual)",
+];
+const LP_LOCK_COVENANT_ABI = [
+  ...COVENANT_ABI,
+  "function configure(uint256,uint64,address,uint256,uint64,uint64)",
+  "error CovenantAlreadyConfigured()",
+  "error CovenantAlreadyRegistered()",
+  "error CovenantNotConfigured()",
+  "error NotLender()",
+  "error WrongState(uint8 expected,uint8 actual)",
+];
 const ADJUDICATOR_ABI = [
   "function covenantSetCommitment(uint256) view returns (bytes32)",
+  "function registerCovenant(uint256,uint256,address)",
   "event CovenantRegistered(uint256 indexed facilityId,uint256 indexed covenantId,address indexed covenant)",
   "event EvidenceAccepted(uint256 indexed facilityId,uint256 indexed covenantId,bytes32 indexed queryId,address submitter)",
   "event BreachReported(uint256 indexed facilityId,uint256 indexed covenantId,address indexed submitter)",
+  "error CovenantAlreadyRegistered()",
+  "error NotLender()",
+  "error WrongState(uint8 expected,uint8 actual)",
 ];
+const COVENANT_DEFINITIONS = Object.freeze([
+  Object.freeze({
+    key: "outflow",
+    label: "Cumulative outflow cap",
+    address: CONFIG.deployments.outflowCovenant,
+    abi: OUTFLOW_COVENANT_ABI,
+    hashTypes: Object.freeze([
+      "uint64",
+      "address",
+      "address",
+      "uint64",
+      "uint64",
+      "uint256",
+    ]),
+  }),
+  Object.freeze({
+    key: "newBorrow",
+    label: "New Aave borrowing",
+    address: CONFIG.deployments.newBorrowCovenant,
+    abi: NEW_BORROW_COVENANT_ABI,
+    hashTypes: Object.freeze([
+      "uint64",
+      "address",
+      "address",
+      "uint64",
+      "uint64",
+    ]),
+  }),
+  Object.freeze({
+    key: "lpLock",
+    label: "LP liquidity lock",
+    address: CONFIG.deployments.lpLockCovenant,
+    abi: LP_LOCK_COVENANT_ABI,
+    hashTypes: Object.freeze([
+      "uint64",
+      "address",
+      "uint256",
+      "uint64",
+      "uint64",
+    ]),
+  }),
+]);
 const STATE_NAMES = [
   "Created",
   "Active",
@@ -444,6 +517,40 @@ async function readSnapshot() {
       ).configHash(facilityId, readOverrides),
     })),
   );
+  const covenantConfigs = await Promise.all(
+    COVENANT_DEFINITIONS.map(async (definition) => {
+      const definitionConfigHash = await new ethers.Contract(
+        definition.address,
+        COVENANT_ABI,
+        provider,
+      ).configHash(facilityId, readOverrides);
+      const browserMetadata = readCovenantMetadata(
+        facilityId,
+        definition,
+        definitionConfigHash,
+      );
+      const checkedInMetadata = checkedInCovenantMetadata(
+        facilityId,
+        definition,
+        definitionConfigHash,
+      );
+      return {
+        ...definition,
+        configHash: definitionConfigHash,
+        metadata: browserMetadata ?? checkedInMetadata,
+        metadataSource: browserMetadata
+          ? "this browser"
+          : checkedInMetadata
+            ? CONFIG.facilityMetadata[facilityId].provenance.toLowerCase()
+            : null,
+        registered: registrationDetails.some(
+          (registration) =>
+            registration.address.toLowerCase() ===
+            definition.address.toLowerCase(),
+        ),
+      };
+    }),
+  );
   let registration =
     registrations.find(
       (event) =>
@@ -629,6 +736,7 @@ async function readSnapshot() {
     covenantAddress,
     registrations,
     registrationDetails,
+    covenantConfigs,
     isOutflow,
     metadata,
     metadataVerified,
@@ -1145,6 +1253,76 @@ function parseUnsigned(value, label, maximum) {
   return parsed;
 }
 
+function parseAddress(value, label) {
+  try {
+    const address = ethers.getAddress(value);
+    if (address === ethers.ZeroAddress) throw new Error();
+    return address;
+  } catch {
+    throw new Error(`${label} must be a nonzero EVM address.`);
+  }
+}
+
+function covenantMetadataKey(facilityId, covenantAddress) {
+  return `recourse:covenant:${CONFIG.chainId}:${facilityId}:${covenantAddress.toLowerCase()}`;
+}
+
+function saveCovenantMetadata(facilityId, definition, values) {
+  try {
+    window.localStorage.setItem(
+      covenantMetadataKey(facilityId, definition.address),
+      JSON.stringify({ key: definition.key, values: values.map(String) }),
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function configuredHash(definition, values) {
+  return ethers.keccak256(
+    ethers.AbiCoder.defaultAbiCoder().encode(definition.hashTypes, values),
+  );
+}
+
+function readCovenantMetadata(facilityId, definition, liveConfigHash) {
+  if (liveConfigHash === ethers.ZeroHash) return null;
+  try {
+    const stored = JSON.parse(
+      window.localStorage.getItem(
+        covenantMetadataKey(facilityId, definition.address),
+      ),
+    );
+    if (
+      stored?.key !== definition.key ||
+      !Array.isArray(stored.values) ||
+      stored.values.length !== definition.hashTypes.length ||
+      configuredHash(definition, stored.values) !== liveConfigHash
+    ) {
+      return null;
+    }
+    return stored.values;
+  } catch {
+    return null;
+  }
+}
+
+function checkedInCovenantMetadata(facilityId, definition, liveConfigHash) {
+  const metadata = CONFIG.facilityMetadata[facilityId];
+  if (!metadata || definition.key !== "outflow") return null;
+  const values = [
+    metadata.chainKey,
+    metadata.token,
+    metadata.treasury,
+    metadata.startSourceBlock,
+    metadata.endSourceBlock,
+    metadata.capBaseUnits,
+  ];
+  return configuredHash(definition, values) === liveConfigHash
+    ? values.map(String)
+    : null;
+}
+
 function transactionDescriptor({
   label,
   summary,
@@ -1153,6 +1331,9 @@ function transactionDescriptor({
   details,
   value,
   maturityBlock,
+  address = CONFIG.deployments.facility,
+  abi = FACILITY_ABI,
+  onConfirmed,
 }) {
   return {
     label,
@@ -1162,10 +1343,11 @@ function transactionDescriptor({
     details,
     value,
     maturityBlock,
+    onConfirmed,
     reviewedAccount: walletState.account,
     reviewedChainId: walletState.chainId,
-    address: CONFIG.deployments.facility,
-    abi: FACILITY_ABI,
+    address,
+    abi,
   };
 }
 
@@ -1396,6 +1578,348 @@ function activationAction(snapshot) {
   });
 }
 
+function covenantFields(definition) {
+  const common = [
+    {
+      id: `${definition.key}-chain-key`,
+      name: "chainKey",
+      label: "Source chain key",
+      type: "number",
+      min: "0",
+      step: "1",
+      value: "3",
+    },
+  ];
+  if (definition.key === "outflow") {
+    return [
+      ...common,
+      {
+        id: "outflow-token",
+        name: "token",
+        label: "Token address",
+        placeholder: "0xâ€¦",
+      },
+      {
+        id: "outflow-treasury",
+        name: "treasury",
+        label: "Treasury address",
+        placeholder: "0xâ€¦",
+      },
+      {
+        id: "outflow-start",
+        name: "start",
+        label: "Start source block Â· inclusive",
+        type: "number",
+        min: "0",
+        step: "1",
+      },
+      {
+        id: "outflow-end",
+        name: "end",
+        label: "End source block Â· inclusive",
+        type: "number",
+        min: "0",
+        step: "1",
+      },
+      {
+        id: "outflow-cap",
+        name: "cap",
+        label: "Cap Â· token base units",
+        type: "number",
+        min: "1",
+        step: "1",
+      },
+    ];
+  }
+  if (definition.key === "newBorrow") {
+    return [
+      ...common,
+      {
+        id: "borrow-pool",
+        name: "pool",
+        label: "Aave pool address",
+        placeholder: "0xâ€¦",
+      },
+      {
+        id: "borrow-account",
+        name: "borrower",
+        label: "On-behalf-of borrower",
+        placeholder: "0xâ€¦",
+      },
+      {
+        id: "borrow-start",
+        name: "start",
+        label: "Start source block Â· inclusive",
+        type: "number",
+        min: "0",
+        step: "1",
+      },
+      {
+        id: "borrow-end",
+        name: "end",
+        label: "End source block Â· inclusive",
+        type: "number",
+        min: "0",
+        step: "1",
+      },
+    ];
+  }
+  return [
+    ...common,
+    {
+      id: "lp-manager",
+      name: "manager",
+      label: "Position manager address",
+      placeholder: "0xâ€¦",
+    },
+    {
+      id: "lp-token-id",
+      name: "tokenId",
+      label: "Position token ID",
+      type: "number",
+      min: "0",
+      step: "1",
+    },
+    {
+      id: "lp-start",
+      name: "start",
+      label: "Start source block Â· inclusive",
+      type: "number",
+      min: "0",
+      step: "1",
+    },
+    {
+      id: "lp-end",
+      name: "end",
+      label: "End source block Â· exclusive",
+      type: "number",
+      min: "1",
+      step: "1",
+    },
+  ];
+}
+
+function configureCovenantAction(snapshot, definition) {
+  return actionCard({
+    title: `Configure ${definition.label}`,
+    role: "Lender Â· step 1",
+    copy:
+      definition.key === "lpLock"
+        ? "Fix this predicate's source-chain parameters. The end block is exclusive. Configuration is permanent and must precede registration."
+        : "Fix this predicate's source-chain parameters. The block window is inclusive. Configuration is permanent and must precede registration.",
+    fields: covenantFields(definition),
+    submitLabel: "Review configuration",
+    build: (data) => {
+      const chainKey = parseUnsigned(
+        data.get("chainKey"),
+        "Source chain key",
+        (1n << 64n) - 1n,
+      );
+      const start = parseUnsigned(
+        data.get("start"),
+        "Start source block",
+        (1n << 64n) - 1n,
+      );
+      const end = parseUnsigned(
+        data.get("end"),
+        "End source block",
+        (1n << 64n) - 1n,
+      );
+      if (definition.key === "lpLock" ? end <= start : end < start) {
+        throw new Error(
+          definition.key === "lpLock"
+            ? "The exclusive end block must be later than the start block."
+            : "The end block cannot be earlier than the start block.",
+        );
+      }
+      let values;
+      if (definition.key === "outflow") {
+        const token = parseAddress(data.get("token"), "Token address");
+        const treasury = parseAddress(data.get("treasury"), "Treasury address");
+        const cap = parseUnsigned(
+          data.get("cap"),
+          "Outflow cap",
+          (1n << 256n) - 1n,
+        );
+        if (cap === 0n)
+          throw new Error("Outflow cap must be greater than zero.");
+        values = [chainKey, token, treasury, start, end, cap];
+      } else if (definition.key === "newBorrow") {
+        values = [
+          chainKey,
+          parseAddress(data.get("pool"), "Aave pool address"),
+          parseAddress(data.get("borrower"), "Borrower address"),
+          start,
+          end,
+        ];
+      } else {
+        values = [
+          chainKey,
+          parseAddress(data.get("manager"), "Position manager address"),
+          parseUnsigned(
+            data.get("tokenId"),
+            "Position token ID",
+            (1n << 256n) - 1n,
+          ),
+          start,
+          end,
+        ];
+      }
+      const hash = configuredHash(definition, values);
+      return transactionDescriptor({
+        label: `Configure ${definition.label}`,
+        summary: `Permanently configure ${definition.label} for facility #${snapshot.facilityId}. Registration must happen in a later transaction.`,
+        method: "configure",
+        args: [snapshot.facilityId, ...values],
+        details: [
+          ["Facility", `#${snapshot.facilityId}`],
+          ["Template", definition.label],
+          ["Configuration hash", hash],
+          ["Ordering", "Configure before register"],
+        ],
+        address: definition.address,
+        abi: definition.abi,
+        onConfirmed: () =>
+          saveCovenantMetadata(snapshot.facilityId, definition, values),
+      });
+    },
+  });
+}
+
+function registerCovenantAction(snapshot, definition) {
+  const usedIds = new Set(
+    snapshot.registrationDetails.map((registration) =>
+      String(registration.covenantId),
+    ),
+  );
+  let suggestedId = 1n;
+  while (usedIds.has(String(suggestedId))) suggestedId += 1n;
+  return actionCard({
+    title: `Register ${definition.label}`,
+    role: "Lender Â· step 2",
+    copy: "Append this configured predicate to the ordered covenant set. Its ID, address, configuration hash, and position are bound into the commitment.",
+    fields: [
+      {
+        id: `${definition.key}-covenant-id`,
+        name: "covenantId",
+        label: "Covenant ID Â· order matters",
+        type: "number",
+        min: "0",
+        step: "1",
+        value: String(suggestedId),
+      },
+    ],
+    submitLabel: "Review registration",
+    build: (data) => {
+      const covenantId = parseUnsigned(
+        data.get("covenantId"),
+        "Covenant ID",
+        (1n << 256n) - 1n,
+      );
+      if (usedIds.has(String(covenantId))) {
+        throw new Error(`Covenant ID ${covenantId} is already registered.`);
+      }
+      return transactionDescriptor({
+        label: `Register ${definition.label}`,
+        summary: `Append covenant ID ${covenantId} to facility #${snapshot.facilityId}. This permanently changes the commitment the borrower must accept.`,
+        method: "registerCovenant",
+        args: [snapshot.facilityId, covenantId, definition.address],
+        details: [
+          ["Facility", `#${snapshot.facilityId}`],
+          ["Covenant ID", String(covenantId)],
+          ["Template", definition.label],
+          ["Configuration hash", definition.configHash],
+          ["Ordering", `Registration ${snapshot.registrations.length + 1}`],
+        ],
+        address: CONFIG.deployments.adjudicator,
+        abi: ADJUDICATOR_ABI,
+      });
+    },
+  });
+}
+
+function renderCovenantWorkflow(snapshot) {
+  const workflow = byId("covenant-workflow");
+  if (!workflow) return;
+  const configured = snapshot.covenantConfigs.filter(
+    (definition) => definition.configHash !== ethers.ZeroHash,
+  ).length;
+  const stages = [
+    {
+      number: "01",
+      title: "Configure",
+      copy: `${configured} of ${snapshot.covenantConfigs.length} deployed templates configured for this facility. Parameters become immutable.`,
+      complete: configured > 0,
+    },
+    {
+      number: "02",
+      title: "Register in order",
+      copy: `${snapshot.registrations.length} covenant${snapshot.registrations.length === 1 ? "" : "s"} bound into the rolling commitment. Later registrations change it.`,
+      complete: snapshot.registrations.length > 0,
+    },
+    {
+      number: "03",
+      title: "Borrower activates",
+      copy:
+        snapshot.stateName === "Created"
+          ? "The borrower must accept the final exact commitment. No configuration or registration is possible afterward."
+          : `Facility is ${snapshot.stateName}. The covenant set is closed.`,
+      complete: snapshot.stateName !== "Created",
+    },
+  ];
+  const heading = document.createElement("div");
+  heading.className = "workflow-heading";
+  const title = document.createElement("h3");
+  title.textContent = "Covenant-set ceremony";
+  const note = document.createElement("p");
+  note.textContent = "Contract-enforced order Â· each step is permanent";
+  heading.append(title, note);
+  const list = document.createElement("ol");
+  list.className = "workflow-stages";
+  for (const stage of stages) {
+    const item = document.createElement("li");
+    if (stage.complete) item.classList.add("complete");
+    const marker = document.createElement("span");
+    marker.textContent = stage.complete ? "Done" : stage.number;
+    const content = document.createElement("div");
+    const stageTitle = document.createElement("strong");
+    stageTitle.textContent = stage.title;
+    const copy = document.createElement("p");
+    copy.textContent = stage.copy;
+    content.append(stageTitle, copy);
+    item.append(marker, content);
+    list.append(item);
+  }
+  const templateList = document.createElement("div");
+  templateList.className = "workflow-templates";
+  for (const definition of snapshot.covenantConfigs) {
+    const row = document.createElement("p");
+    const name = document.createElement("strong");
+    name.textContent = definition.label;
+    const state = document.createElement("span");
+    if (definition.configHash === ethers.ZeroHash) {
+      state.textContent = definition.registered
+        ? "Registered without configuration Â· locked and unsafe to activate"
+        : "Not configured";
+    } else if (definition.metadata) {
+      const values = definition.metadata;
+      if (definition.key === "outflow") {
+        state.textContent = `Chain ${values[0]} Â· token ${truncateHex(values[1])} Â· treasury ${truncateHex(values[2])} Â· blocks ${formatInteger(values[3])}â€“${formatInteger(values[4])} inclusive Â· cap ${formatInteger(values[5])} base units`;
+      } else if (definition.key === "newBorrow") {
+        state.textContent = `Chain ${values[0]} Â· pool ${truncateHex(values[1])} Â· borrower ${truncateHex(values[2])} Â· blocks ${formatInteger(values[3])}â€“${formatInteger(values[4])} inclusive`;
+      } else {
+        state.textContent = `Chain ${values[0]} Â· manager ${truncateHex(values[1])} Â· token ID ${formatInteger(values[2])} Â· blocks ${formatInteger(values[3])}â€“${formatInteger(values[4])}, end exclusive`;
+      }
+      state.textContent += ` Â· parameters verified from ${definition.metadataSource}`;
+    } else {
+      state.textContent = `Configured${definition.registered ? " and registered" : ""} Â· parameters unavailable; only the on-chain hash is readable`;
+    }
+    row.append(name, state);
+    templateList.append(row);
+  }
+  workflow.replaceChildren(heading, list, templateList);
+}
+
 function connectedRole(snapshot, role) {
   return (
     walletState.account?.toLowerCase() === snapshot.facility[role].toLowerCase()
@@ -1410,6 +1934,7 @@ function renderActions() {
   const account = byId("action-account");
   list.replaceChildren();
   notice.className = "action-notice";
+  renderCovenantWorkflow(snapshot);
 
   if (!window.ethereum) {
     account.textContent = "Read-only · no injected wallet detected";
@@ -1443,6 +1968,18 @@ function renderActions() {
   const facility = snapshot.facility;
 
   if (snapshot.stateName === "Created") {
+    if (isLender) {
+      for (const definition of snapshot.covenantConfigs) {
+        if (
+          definition.configHash === ethers.ZeroHash &&
+          !definition.registered
+        ) {
+          actions.push(configureCovenantAction(snapshot, definition));
+        } else if (!definition.registered) {
+          actions.push(registerCovenantAction(snapshot, definition));
+        }
+      }
+    }
     if (isLender && facility.lenderFunded < facility.facilityLimit) {
       actions.push(
         valueAction({
@@ -1705,6 +2242,12 @@ function plainTransactionError(error, descriptor) {
       "The contract could not transfer tCTC to the receiving account.",
     CovenantSetMismatch:
       "The covenant set changed after this review. Refresh and verify the new commitment before activating.",
+    CovenantAlreadyConfigured:
+      "This covenant template is already configured for the facility. Configuration cannot be replaced.",
+    CovenantAlreadyRegistered:
+      "That covenant template or covenant ID is already registered for the facility.",
+    CovenantNotConfigured:
+      "Configure this covenant template before registering it.",
   };
   if (messages[parsed.name]) return messages[parsed.name];
   if (parsed.name === "WrongState") {
@@ -1750,6 +2293,7 @@ async function confirmTransaction() {
   const close = byId("transaction-close");
   const status = byId("transaction-dialog-status");
   let transaction = null;
+  let metadataSaved = true;
   transactionBusy = true;
   confirm.disabled = true;
   cancel.disabled = true;
@@ -1815,9 +2359,16 @@ async function confirmTransaction() {
     if (!receipt || receipt.status !== 1) {
       throw new Error("Transaction did not confirm successfully.");
     }
+    if (descriptor.onConfirmed) {
+      metadataSaved = descriptor.onConfirmed(receipt);
+    }
     status.className = "dialog-status success";
     status.replaceChildren(
-      document.createTextNode("Confirmed on CC3. "),
+      document.createTextNode(
+        metadataSaved
+          ? "Confirmed on CC3. "
+          : "Confirmed on CC3. This browser could not retain a local copy of the covenant parameters; the on-chain configuration hash remains authoritative. ",
+      ),
       Object.assign(document.createElement("a"), {
         href: `${CONFIG.deployments.explorer}/tx/${transaction.hash}`,
         target: "_blank",

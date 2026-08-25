@@ -644,6 +644,114 @@ h3 {
   color: var(--alert);
 }
 
+.covenant-workflow {
+  margin-top: 16px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.workflow-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.workflow-heading h3 {
+  font-size: 18px;
+}
+
+.workflow-heading p {
+  margin: 0;
+  color: var(--ink-faint);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.workflow-stages {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0;
+  margin: 20px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.workflow-stages li {
+  display: grid;
+  grid-template-columns: 38px 1fr;
+  gap: 12px;
+  min-width: 0;
+  padding-right: 18px;
+  border-right: 1px solid var(--line);
+}
+
+.workflow-stages li + li {
+  padding-left: 18px;
+}
+
+.workflow-stages li:last-child {
+  padding-right: 0;
+  border-right: 0;
+}
+
+.workflow-stages li > span {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  color: var(--ink-faint);
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.workflow-stages li.complete > span {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+
+.workflow-stages strong {
+  font-size: 13px;
+}
+
+.workflow-stages p {
+  margin: 5px 0 0;
+  color: var(--ink-soft);
+  font-size: 11px;
+}
+
+.workflow-templates {
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.workflow-templates p {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.35fr) minmax(0, 1fr);
+  gap: 14px;
+  margin: 0;
+  color: var(--ink-faint);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.workflow-templates strong {
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 11px;
+}
+
 .action-list {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
@@ -1453,6 +1561,36 @@ h3 {
   .action-fields,
   .review-list {
     grid-template-columns: 1fr;
+  }
+
+  .workflow-heading {
+    display: block;
+  }
+
+  .workflow-heading p {
+    margin-top: 6px;
+  }
+
+  .workflow-stages {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .workflow-stages li,
+  .workflow-stages li + li {
+    padding: 0 0 14px;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .workflow-stages li:last-child {
+    padding-bottom: 0;
+    border-bottom: 0;
+  }
+
+  .workflow-templates p {
+    grid-template-columns: 1fr;
+    gap: 3px;
   }
 
   .primary-button,
