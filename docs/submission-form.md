@@ -43,7 +43,7 @@ The proof does not release an escrow. It changes credit risk.
 
 Recourse uses Attestcoin as an adjudication layer, not a trigger.
 
-A hunter submits up to ten real Ethereum mainnet transactions in one batch, sharing a single
+A hunter submits several real Ethereum mainnet transactions in one batch, sharing a single
 continuity proof. The adjudicator calls the BlockProver precompile's `verify` to establish
 inclusion and continuity, then decodes each receipt on-chain with `EvmV1Decoder`. Four things
 are load-bearing:
@@ -58,11 +58,12 @@ are load-bearing:
    `keccak256(chainKey, blockHeight, txIndex)`, scoped per facility and per covenant, with a
    second covenant-local key preventing the same evidence being counted twice through an
    aliased registration.
-4. **Batch continuity.** Five transactions spanning 35 non-contiguous Ethereum blocks
+4. **Batch continuity.** Five transactions in five distinct blocks across a 35-block span
    verify under one shared continuity proof in a single call. Proof size is not static:
-   the continuity chain runs from a moving lower endpoint, so the same five transactions
-   needed 36 roots when the evidence was locked and 76 roots (~10.7 KB) two thousand
-   source blocks later.
+   every proof runs up to a common moving checkpoint, so roots grow as the chain advances
+   past fixed historical evidence — the same five transactions needed 36 roots when the
+   evidence was locked and 76 roots when re-measured on 2026-08-25 (10,752 bytes of
+   proof-plus-receipt data; 15,044 bytes of full ABI calldata).
 
 The cumulative predicate is what makes this depth necessary rather than decorative. A
 centralized oracle could report the same facts, but a bonded credit consequence backed by an
