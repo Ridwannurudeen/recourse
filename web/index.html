@@ -6,9 +6,10 @@
     <meta name="color-scheme" content="light dark" />
     <meta
       name="description"
-      content="Read-only view of a covenant-enforced credit facility on Creditcoin."
+      content="Open, fund, monitor, and enforce covenant-backed credit facilities on Creditcoin."
     />
-    <title>Recourse · Facility monitor</title>
+    <title>Recourse · Covenant credit</title>
+    <link rel="icon" href="data:," />
     <link rel="stylesheet" href="./style.css" />
     <script src="./ethers.umd.min.js"></script>
     <script src="./app.js" defer></script>
@@ -53,7 +54,7 @@
     <main class="shell" id="main">
       <section class="load-panel" id="load-panel" aria-live="polite">
         <div class="load-line" aria-hidden="true"></div>
-        <p class="eyebrow">Creditcoin · facility #1</p>
+        <p class="eyebrow">Creditcoin · facility registry</p>
         <h1 id="load-title">Reading live facility state</h1>
         <p id="load-copy">
           Verifying the network and loading a consistent CC3 block snapshot.
@@ -64,12 +65,27 @@
       </section>
 
       <div id="dashboard" data-load-state="loading" hidden>
+        <section class="facility-browser" aria-labelledby="browser-title">
+          <div class="browser-heading">
+            <div>
+              <p class="eyebrow">Live registry</p>
+              <h2 id="browser-title">Facilities</h2>
+            </div>
+            <p class="browser-count" id="browser-count"></p>
+          </div>
+          <div
+            class="facility-list"
+            id="facility-list"
+            aria-label="Choose a facility"
+          ></div>
+        </section>
+
         <section class="facility-hero" aria-labelledby="facility-title">
           <div class="facility-heading">
             <div>
               <p class="eyebrow" id="snapshot-label">Creditcoin · live state</p>
               <div class="title-line">
-                <h1 id="facility-title">Facility #1</h1>
+                <h1 id="facility-title">Facility</h1>
                 <span class="status-badge" id="state-badge">Loading</span>
               </div>
               <p class="facility-summary" id="facility-summary"></p>
@@ -228,6 +244,10 @@
 
           <dl class="covenant-terms">
             <div>
+              <dt>Predicate</dt>
+              <dd id="covenant-kind"></dd>
+            </div>
+            <div>
               <dt>Committed treasury</dt>
               <dd>
                 <a
@@ -251,11 +271,16 @@
               <dt>Ethereum block window</dt>
               <dd id="block-window"></dd>
             </div>
+            <div>
+              <dt>Configuration hash</dt>
+              <dd id="config-hash"></dd>
+            </div>
+            <div>
+              <dt>Covenant-set commitment</dt>
+              <dd id="covenant-commitment"></dd>
+            </div>
           </dl>
-          <p class="provenance-note">
-            Covenant terms come from the checked-in public evidence snapshot.
-            Accumulation is read live from the covenant on CC3.
-          </p>
+          <p class="provenance-note" id="covenant-provenance"></p>
         </section>
 
         <section class="evidence-section" aria-labelledby="evidence-title">
@@ -282,7 +307,7 @@
           <div class="evidence-layout" id="evidence-layout" hidden>
             <div>
               <div class="column-label">
-                <span>Ethereum mainnet receipts</span>
+                <span id="evidence-column-label">Accepted proofs</span>
                 <span id="evidence-total"></span>
               </div>
               <div class="evidence-list" id="evidence-list"></div>
@@ -334,7 +359,7 @@
 
     <footer class="site-footer">
       <div class="shell footer-inner">
-        <p>Recourse · CC3 chain ID 102031 · Read-only</p>
+        <p>Recourse · CC3 chain ID 102031 · Testnet application</p>
         <p id="block-readout"></p>
       </div>
     </footer>

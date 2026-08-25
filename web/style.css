@@ -79,6 +79,7 @@ html {
 }
 
 body {
+  position: relative;
   margin: 0;
   min-width: 320px;
   background: var(--page);
@@ -87,6 +88,36 @@ body {
   font-size: 14px;
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
+}
+
+body::before,
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+
+body::before {
+  background-image: radial-gradient(
+    color-mix(in srgb, var(--ink-faint) 18%, transparent) 0.8px,
+    transparent 0.8px
+  );
+  background-size: 32px 32px;
+  mask-image: radial-gradient(
+    ellipse 90% 70% at 50% 0%,
+    #000 25%,
+    transparent 85%
+  );
+}
+
+body::after {
+  background: radial-gradient(
+    ellipse 64% 36% at 50% -10%,
+    color-mix(in srgb, var(--accent) 10%, transparent),
+    transparent 70%
+  );
 }
 
 button,
@@ -333,6 +364,107 @@ dt {
   font-weight: 600;
   letter-spacing: 0.09em;
   text-transform: uppercase;
+}
+
+.facility-browser {
+  margin-bottom: 88px;
+}
+
+.browser-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 24px;
+}
+
+.browser-heading h2 {
+  margin-top: 8px;
+  font-size: 28px;
+}
+
+.browser-count {
+  margin: 0;
+  color: var(--ink-faint);
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.facility-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  border-top: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+}
+
+.facility-card {
+  min-width: 0;
+  min-height: 176px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 22px;
+  border: 0;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 120ms ease-out,
+    box-shadow 120ms ease-out;
+}
+
+.facility-card:hover {
+  background: var(--surface);
+}
+
+.facility-card[data-selected="true"] {
+  background: var(--surface-raised);
+  box-shadow: inset 0 3px 0 var(--accent);
+}
+
+.facility-card-heading,
+.facility-card-metrics {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.facility-card-heading strong {
+  font-size: 19px;
+  letter-spacing: -0.025em;
+}
+
+.facility-card-metrics > span {
+  color: var(--ink-soft);
+  font-family: var(--mono);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.facility-card-metrics small {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--ink-faint);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.facility-card-role {
+  overflow: hidden;
+  color: var(--ink-faint);
+  font-family: var(--mono);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .facility-hero {
@@ -750,7 +882,7 @@ h3 {
 
 .covenant-terms {
   display: grid;
-  grid-template-columns: 1.25fr 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 1px;
   margin: 48px 0 0;
   border: 1px solid var(--line);
@@ -1038,6 +1170,24 @@ h3 {
 
   .facility-hero {
     padding-bottom: 44px;
+  }
+
+  .facility-browser {
+    margin-bottom: 64px;
+  }
+
+  .browser-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .facility-list {
+    grid-template-columns: 1fr;
+  }
+
+  .facility-card {
+    min-height: 164px;
   }
 
   .facility-heading,
