@@ -1940,16 +1940,27 @@ async function fetchProofBatch(chainKey, requestedHashes) {
       },
     );
   } catch (error) {
+    window.clearTimeout(timeout);
     throw new Error(
       error.name === "AbortError"
         ? "Proof construction timed out after 60 seconds. The evidence may not be attested yet."
         : "The Proof Builder could not be reached from this browser.",
     );
+  }
+
+  let data;
+  try {
+    data = await limitedJson(response, 2_000_000);
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error(
+        "Proof construction timed out after 60 seconds. The evidence may not be attested yet.",
+      );
+    }
+    throw error;
   } finally {
     window.clearTimeout(timeout);
   }
-
-  const data = await limitedJson(response, 2_000_000);
   if (!response.ok) {
     throw new Error(
       typeof data?.message === "string"
