@@ -37,6 +37,8 @@ if (deployer.address !== getAddress(process.env.DEPLOYER_ADDRESS)) {
 const facilityArtifact = artifact('RecourseFacility');
 const adjudicatorArtifact = artifact('AttestcoinAdjudicator');
 const covenantArtifact = artifact('OutflowCapCovenant');
+const newBorrowCovenantArtifact = artifact('NewBorrowCovenant');
+const lpLockCovenantArtifact = artifact('LpLockCovenant');
 
 const facilityDeployment = await deploy('RecourseFacility', facilityArtifact, deployer);
 const facilityAddress = await facilityDeployment.contract.getAddress();
@@ -55,24 +57,49 @@ console.log(`setAdjudicator: ${setAdjudicatorReceipt.hash}`);
 const covenantDeployment = await deploy('OutflowCapCovenant', covenantArtifact, deployer, [facilityAddress]);
 const outflowCovenantAddress = await covenantDeployment.contract.getAddress();
 
+const newBorrowCovenantDeployment = await deploy(
+  'NewBorrowCovenant',
+  newBorrowCovenantArtifact,
+  deployer,
+  [facilityAddress],
+);
+const newBorrowCovenantAddress = await newBorrowCovenantDeployment.contract.getAddress();
+
+const lpLockCovenantDeployment = await deploy('LpLockCovenant', lpLockCovenantArtifact, deployer, [facilityAddress]);
+const lpLockCovenantAddress = await lpLockCovenantDeployment.contract.getAddress();
+
 const facility = new Contract(facilityAddress, facilityArtifact.abi, provider);
 const adjudicator = new Contract(adjudicatorAddress, adjudicatorArtifact.abi, provider);
 const covenant = new Contract(outflowCovenantAddress, covenantArtifact.abi, provider);
+const newBorrowCovenant = new Contract(newBorrowCovenantAddress, newBorrowCovenantArtifact.abi, provider);
+const lpLockCovenant = new Contract(lpLockCovenantAddress, lpLockCovenantArtifact.abi, provider);
 const code = await Promise.all(
-  [facilityAddress, adjudicatorAddress, outflowCovenantAddress].map((address) => provider.getCode(address)),
+  [
+    facilityAddress,
+    adjudicatorAddress,
+    outflowCovenantAddress,
+    newBorrowCovenantAddress,
+    lpLockCovenantAddress,
+  ].map((address) => provider.getCode(address)),
 );
 if (code.some((value) => value === '0x')) throw new Error('A deployed contract has no bytecode');
 if ((await facility.adjudicator()) !== adjudicatorAddress) throw new Error('Facility adjudicator wiring mismatch');
 if ((await adjudicator.verifier()) !== verifier) throw new Error('Adjudicator verifier wiring mismatch');
 if ((await adjudicator.facility()) !== facilityAddress) throw new Error('Adjudicator facility wiring mismatch');
 if ((await covenant.facility()) !== facilityAddress) throw new Error('Covenant facility wiring mismatch');
+if ((await newBorrowCovenant.facility()) !== facilityAddress) {
+  throw new Error('NewBorrowCovenant facility wiring mismatch');
+}
+if ((await lpLockCovenant.facility()) !== facilityAddress) throw new Error('LpLockCovenant facility wiring mismatch');
 
 const deployments = {
   facility: facilityAddress,
   adjudicator: adjudicatorAddress,
   outflowCovenant: outflowCovenantAddress,
+  newBorrowCovenant: newBorrowCovenantAddress,
+  lpLockCovenant: lpLockCovenantAddress,
   facilityId: FACILITY_ID,
-  blockNumber: covenantDeployment.receipt.blockNumber,
+  blockNumber: lpLockCovenantDeployment.receipt.blockNumber,
 };
 writeFileSync('deployments.json', `${JSON.stringify(deployments, null, 2)}\n`);
 console.log(`deployments.json written at block ${deployments.blockNumber}`);

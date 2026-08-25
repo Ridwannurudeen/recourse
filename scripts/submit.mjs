@@ -6,6 +6,7 @@ import { fetchBatchProof, getProvider, prewarm } from './lib/proofs.mjs';
 const EXPECTED_CHAIN_ID = 102031n;
 const COVENANT_ID = 1n;
 const EXPECTED_TOTAL = 274_790_000n;
+const GAS_LIMIT = 1_500_000n;
 const STATE_NAMES = ['Created', 'Active', 'Repaid', 'Breached', 'Defaulted', 'Cancelled'];
 
 function artifact(name) {
@@ -73,36 +74,7 @@ const args = [
   proof.merkleProofs,
   proof.continuityProof,
 ];
-const request = await adjudicator.submitBatch.populateTransaction(...args);
-let gasLimit;
-try {
-  const estimate = await provider.estimateGas({ ...request, from: hunter.address });
-  gasLimit = (estimate * 135n + 99n) / 100n;
-  console.log(`gas estimate=${estimate}; buffered limit=${gasLimit}`);
-} catch (error) {
-  const verificationFallback = 21_000n + 5_000n * BigInt(proof.continuityProof.roots.length) + 20_000n;
-  const latestBlock = await provider.getBlock('latest');
-  let candidate = verificationFallback;
-  let lastError = error;
-  while (candidate <= latestBlock.gasLimit) {
-    try {
-      await provider.call({ ...request, from: hunter.address, gasLimit: candidate });
-      gasLimit = candidate;
-      break;
-    } catch (simulationError) {
-      lastError = simulationError;
-      candidate *= 2n;
-    }
-  }
-  if (!gasLimit) {
-    throw new Error(
-      `submitBatch simulation failed through the block gas limit: ${lastError.shortMessage ?? lastError.message}`,
-    );
-  }
-  console.log(`estimation failed; verification fallback=${verificationFallback}; simulated limit=${gasLimit}`);
-}
-
-const transaction = await adjudicator.submitBatch(...args, { gasLimit });
+const transaction = await adjudicator.submitBatch(...args, { gasLimit: GAS_LIMIT });
 console.log(`submitBatch: ${transaction.hash}`);
 const receipt = await transaction.wait();
 if (receipt.status !== 1) throw new Error('submitBatch failed');

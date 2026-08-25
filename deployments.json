@@ -1,12 +1,14 @@
 {
-  "facility": "0x7b0a56Ea5cd466B87676eaE57765AEB182D8302f",
-  "adjudicator": "0xB672992Ce9b5C0924CA94F309b8747Ba0d90bbdc",
-  "outflowCovenant": "0x6C1F4e5926206df4e472e1319b7a72be13048eA1",
+  "facility": "0x144048E22e822269814D592aeaC34734c603dCA7",
+  "adjudicator": "0x6abB74F57c99986Ff205d4EF396Dd6d61d2659eB",
+  "outflowCovenant": "0x873C1344B850bB80c758E191D1DCA31CE86030Ef",
+  "newBorrowCovenant": "0x5f1DCF18622663a046a55Ad86c61dd339E1e5dE4",
+  "lpLockCovenant": "0x2826913E2917d905F7658AAa81288f3C4b98A53d",
   "facilityId": 1,
-  "blockNumber": 5368414,
-  "breachTx": "0x632087ba44e64e89657f34394871b6115eb4cddc7836f7f5b1380546a8c513da",
-  "breachBlock": 5368442,
-  "breachGasUsed": 698898,
+  "blockNumber": 5371433,
+  "breachTx": "0x7c180209bedaa64b4e1acff02d2822e8c76b0db98f105b7b75e3b95ac7e5d5b6",
+  "breachBlock": 5371462,
+  "breachGasUsed": 699409,
   "explorer": "https://creditcoin-testnet.blockscout.com",
   "chainId": 102031
 }
