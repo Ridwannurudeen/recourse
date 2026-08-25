@@ -31,6 +31,7 @@ contract AttestcoinAdjudicator is ReentrancyGuard {
     IRecourseFacility public immutable facility;
 
     mapping(uint256 facilityId => mapping(uint256 covenantId => ICovenant covenant)) private covenants;
+    mapping(uint256 facilityId => mapping(address covenant => bool registered)) private registeredCovenants;
     mapping(uint256 facilityId => bytes32 commitment) public covenantSetCommitment;
     mapping(uint256 facilityId => mapping(uint256 covenantId => mapping(bytes32 queryId => bool processed))) private
         processedQueries;
@@ -49,14 +50,20 @@ contract AttestcoinAdjudicator is ReentrancyGuard {
         if (address(covenant) == address(0)) revert ZeroAmount();
         if (address(covenants[facilityId][covenantId]) != address(0)) revert CovenantAlreadyRegistered();
 
+        bytes32 configurationHash = covenant.configHash(facilityId);
         covenants[facilityId][covenantId] = covenant;
+        registeredCovenants[facilityId][address(covenant)] = true;
         covenantSetCommitment[facilityId] =
-            keccak256(abi.encode(covenantSetCommitment[facilityId], covenantId, address(covenant)));
+            keccak256(abi.encode(covenantSetCommitment[facilityId], covenantId, address(covenant), configurationHash));
         emit CovenantRegistered(facilityId, covenantId, address(covenant));
     }
 
     function covenantOf(uint256 facilityId, uint256 covenantId) external view returns (ICovenant) {
         return covenants[facilityId][covenantId];
+    }
+
+    function isCovenantRegistered(uint256 facilityId, address covenant) external view returns (bool) {
+        return registeredCovenants[facilityId][covenant];
     }
 
     function submitBatch(

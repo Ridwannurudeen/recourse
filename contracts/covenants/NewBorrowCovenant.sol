@@ -2,7 +2,7 @@
 pragma solidity ^0.8.30;
 
 import {EvmV1Decoder} from "@gluwa/usc-contracts/contracts/write-ability/common/EvmV1Decoder.sol";
-import {ICovenant} from "../interfaces/ICovenant.sol";
+import {ICovenant, ICovenantRegistry} from "../interfaces/ICovenant.sol";
 import {IRecourseFacility} from "../interfaces/IRecourseFacility.sol";
 import {
     FacilityState,
@@ -17,6 +17,7 @@ import {
 
 contract NewBorrowCovenant is ICovenant {
     error CovenantAlreadyConfigured();
+    error CovenantAlreadyRegistered();
     error CovenantNotConfigured();
 
     // Aave V3 IPool ABI (official repository, commit 782f519):
@@ -55,6 +56,9 @@ contract NewBorrowCovenant is ICovenant {
         if (facilityData.state != FacilityState.Created) {
             revert WrongState(FacilityState.Created, facilityData.state);
         }
+        if (ICovenantRegistry(facility.adjudicator()).isCovenantRegistered(facilityId, address(this))) {
+            revert CovenantAlreadyRegistered();
+        }
 
         Configuration storage configuration = configurations[facilityId];
         if (configuration.configured) revert CovenantAlreadyConfigured();
@@ -67,6 +71,20 @@ contract NewBorrowCovenant is ICovenant {
             endSourceBlock: endSourceBlock,
             configured: true
         });
+    }
+
+    function configHash(uint256 facilityId) external view returns (bytes32) {
+        Configuration memory configuration = configurations[facilityId];
+        if (!configuration.configured) return bytes32(0);
+        return keccak256(
+            abi.encode(
+                configuration.chainKey,
+                configuration.aavePool,
+                configuration.borrower,
+                configuration.startSourceBlock,
+                configuration.endSourceBlock
+            )
+        );
     }
 
     function evaluate(uint256 facilityId, ProvenTx[] calldata proven) external returns (bool breached) {

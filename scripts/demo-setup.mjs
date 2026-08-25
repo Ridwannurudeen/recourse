@@ -124,18 +124,19 @@ if (!opened || opened.args.facilityId !== BigInt(deployments.facilityId)) {
   throw new Error('Opened facility ID does not match deployments.json');
 }
 
-await send(
-  'registerCovenant',
-  adjudicator.connect(lender).registerCovenant(deployments.facilityId, COVENANT_ID, deployments.outflowCovenant),
-);
-const expectedCovenantSet = keccak256(
+const expectedConfigHash = keccak256(
   AbiCoder.defaultAbiCoder().encode(
-    ['bytes32', 'uint256', 'address'],
-    [ZeroHash, COVENANT_ID, deployments.outflowCovenant],
+    ['uint64', 'address', 'address', 'uint64', 'uint64', 'uint256'],
+    [
+      evidence.chainKey,
+      evidence.token,
+      evidence.treasury,
+      evidence.startSourceBlock,
+      evidence.endSourceBlock,
+      evidence.capBaseUnits,
+    ],
   ),
 );
-const actualCovenantSet = await adjudicator.covenantSetCommitment(deployments.facilityId);
-if (actualCovenantSet !== expectedCovenantSet) throw new Error('Covenant set commitment mismatch');
 await send(
   'configure outflow covenant',
   covenant
@@ -150,6 +151,20 @@ await send(
       evidence.capBaseUnits,
     ),
 );
+const actualConfigHash = await covenant.configHash(deployments.facilityId);
+if (actualConfigHash !== expectedConfigHash) throw new Error('Covenant configuration hash mismatch');
+await send(
+  'registerCovenant',
+  adjudicator.connect(lender).registerCovenant(deployments.facilityId, COVENANT_ID, deployments.outflowCovenant),
+);
+const expectedCovenantSet = keccak256(
+  AbiCoder.defaultAbiCoder().encode(
+    ['bytes32', 'uint256', 'address', 'bytes32'],
+    [ZeroHash, COVENANT_ID, deployments.outflowCovenant, expectedConfigHash],
+  ),
+);
+const actualCovenantSet = await adjudicator.covenantSetCommitment(deployments.facilityId);
+if (actualCovenantSet !== expectedCovenantSet) throw new Error('Covenant set commitment mismatch');
 await send(
   'fundAsLender',
   facility.connect(lender).fundAsLender(deployments.facilityId, { value: FACILITY_LIMIT }),

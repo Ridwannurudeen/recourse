@@ -33,6 +33,7 @@ contract OutflowCapCovenantTest is Test {
     address private borrower = address(0xB2);
     address private outsider = address(0xC3);
     uint256 private facilityId;
+    bool private covenantRegistered;
 
     function setUp() public {
         facility = new RecourseFacility();
@@ -324,6 +325,26 @@ contract OutflowCapCovenantTest is Test {
         covenant.configure(facilityId, CHAIN_KEY, TOKEN, TREASURY, START_BLOCK, END_BLOCK, 100);
     }
 
+    function test_configHashIsZeroBeforeConfigurationAndBindsEveryParameter() public {
+        assertEq(covenant.configHash(facilityId), bytes32(0));
+
+        vm.prank(lender);
+        covenant.configure(facilityId, CHAIN_KEY, TOKEN, TREASURY, START_BLOCK, END_BLOCK, 100);
+
+        assertEq(
+            covenant.configHash(facilityId),
+            keccak256(abi.encode(CHAIN_KEY, TOKEN, TREASURY, START_BLOCK, END_BLOCK, uint256(100)))
+        );
+    }
+
+    function test_configureAfterRegistrationReverts() public {
+        covenantRegistered = true;
+
+        vm.expectRevert(OutflowCapCovenant.CovenantAlreadyRegistered.selector);
+        vm.prank(lender);
+        covenant.configure(facilityId, CHAIN_KEY, TOKEN, TREASURY, START_BLOCK, END_BLOCK, 100);
+    }
+
     function test_configureAfterActivationReverts() public {
         _activate();
 
@@ -369,6 +390,10 @@ contract OutflowCapCovenantTest is Test {
 
     function covenantSetCommitment(uint256) external pure returns (bytes32) {
         return bytes32(0);
+    }
+
+    function isCovenantRegistered(uint256 id, address candidate) external view returns (bool) {
+        return covenantRegistered && id == facilityId && candidate == address(covenant);
     }
 
     function _singleProven(uint64 chainKey, uint64 height, address token, address from, address to, uint256 value)

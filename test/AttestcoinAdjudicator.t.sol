@@ -41,9 +41,18 @@ contract StubCovenant is ICovenant {
     }
 
     Result public result;
+    bytes32 public configurationHash;
 
     function setResult(Result value) external {
         result = value;
+    }
+
+    function setConfigHash(bytes32 value) external {
+        configurationHash = value;
+    }
+
+    function configHash(uint256) external view returns (bytes32) {
+        return configurationHash;
     }
 
     function evaluate(uint256, ProvenTx[] calldata) external view returns (bool breached) {
@@ -91,6 +100,10 @@ contract ReentrantCovenant is ICovenant {
         return false;
     }
 
+    function configHash(uint256) external pure returns (bytes32) {
+        return bytes32(0);
+    }
+
     function covenantKind() external pure returns (string memory) {
         return "reentrant";
     }
@@ -131,11 +144,11 @@ contract AttestcoinAdjudicatorTest is Test {
         vm.deal(borrower, 2000 ether);
         facilityId = _openFacility();
         vm.startPrank(lender);
+        outflowCovenant.configure(facilityId, CHAIN_KEY, address(0x1000), address(0x2000), HEIGHT, HEIGHT + 2, 100);
         adjudicator.registerCovenant(facilityId, COVENANT_ID, covenant);
         adjudicator.registerCovenant(facilityId, REENTRANT_COVENANT_ID, reentrantCovenant);
         adjudicator.registerCovenant(facilityId, SECOND_COVENANT_ID, secondCovenant);
         adjudicator.registerCovenant(facilityId, OUTFLOW_COVENANT_ID, outflowCovenant);
-        outflowCovenant.configure(facilityId, CHAIN_KEY, address(0x1000), address(0x2000), HEIGHT, HEIGHT + 2, 100);
         vm.stopPrank();
         _activate(facilityId);
     }
@@ -358,31 +371,131 @@ contract AttestcoinAdjudicatorTest is Test {
 
     function test_registrationUpdatesCommitmentAndEmitsEvent() public {
         uint256 otherFacilityId = _openFacility();
+        bytes32 firstConfigHash = keccak256("first configuration");
+        bytes32 secondConfigHash = keccak256("second configuration");
+        covenant.setConfigHash(firstConfigHash);
+        secondCovenant.setConfigHash(secondConfigHash);
 
         vm.expectEmit(true, true, true, true, address(adjudicator));
         emit ICovenantCommitmentView.CovenantRegistered(otherFacilityId, 10, address(covenant));
         vm.prank(lender);
         adjudicator.registerCovenant(otherFacilityId, 10, covenant);
 
-        bytes32 firstCommitment = keccak256(abi.encode(bytes32(0), uint256(10), address(covenant)));
+        bytes32 firstCommitment = keccak256(abi.encode(bytes32(0), uint256(10), address(covenant), firstConfigHash));
         assertEq(ICovenantCommitmentView(address(adjudicator)).covenantSetCommitment(otherFacilityId), firstCommitment);
 
         vm.prank(lender);
         adjudicator.registerCovenant(otherFacilityId, 11, secondCovenant);
         assertEq(
             ICovenantCommitmentView(address(adjudicator)).covenantSetCommitment(otherFacilityId),
-            keccak256(abi.encode(firstCommitment, uint256(11), address(secondCovenant)))
+            keccak256(abi.encode(firstCommitment, uint256(11), address(secondCovenant), secondConfigHash))
         );
+    }
+
+    function test_registrationOrderChangesCommitment() public {
+        uint256 forwardFacilityId = _openFacility();
+        uint256 reverseFacilityId = _openFacility();
+
+        vm.startPrank(lender);
+        adjudicator.registerCovenant(forwardFacilityId, 10, covenant);
+        adjudicator.registerCovenant(forwardFacilityId, 11, secondCovenant);
+        adjudicator.registerCovenant(reverseFacilityId, 11, secondCovenant);
+        adjudicator.registerCovenant(reverseFacilityId, 10, covenant);
+        vm.stopPrank();
+
+        assertNotEq(
+            adjudicator.covenantSetCommitment(forwardFacilityId), adjudicator.covenantSetCommitment(reverseFacilityId)
+        );
+    }
+
+    function test_differentConfigurationChangesCommitment() public {
+        uint256 firstFacilityId = _openFacility();
+        uint256 secondFacilityId = _openFacility();
+        OutflowCapCovenant sharedCovenant = new OutflowCapCovenant(facility);
+
+        vm.startPrank(lender);
+        sharedCovenant.configure(firstFacilityId, CHAIN_KEY, address(0x1000), address(0x2000), HEIGHT, HEIGHT + 2, 100);
+        sharedCovenant.configure(secondFacilityId, CHAIN_KEY, address(0x1000), address(0x2000), HEIGHT, HEIGHT + 2, 200);
+        adjudicator.registerCovenant(firstFacilityId, 10, sharedCovenant);
+        adjudicator.registerCovenant(secondFacilityId, 10, sharedCovenant);
+        vm.stopPrank();
+
+        assertNotEq(
+            adjudicator.covenantSetCommitment(firstFacilityId), adjudicator.covenantSetCommitment(secondFacilityId)
+        );
+    }
+
+    function test_configureAfterBorrowerCommitsReverts() public {
+        uint256 otherFacilityId = _openFacility();
+        OutflowCapCovenant otherCovenant = new OutflowCapCovenant(facility);
+        vm.prank(lender);
+        adjudicator.registerCovenant(otherFacilityId, 10, otherCovenant);
+        bytes32 expected = adjudicator.covenantSetCommitment(otherFacilityId);
+
+        vm.expectRevert(OutflowCapCovenant.CovenantAlreadyRegistered.selector);
+        vm.prank(lender);
+        otherCovenant.configure(otherFacilityId, CHAIN_KEY, address(0x1000), address(0x2000), HEIGHT, HEIGHT + 2, 0);
+
+        assertEq(adjudicator.covenantSetCommitment(otherFacilityId), expected);
+        assertEq(uint256(facility.state(otherFacilityId)), uint256(FacilityState.Created));
+    }
+
+    function test_configureThenRegisterThenActivateSucceeds() public {
+        uint256 otherFacilityId = _openFacility();
+        OutflowCapCovenant otherCovenant = new OutflowCapCovenant(facility);
+        bytes32 configurationHash =
+            keccak256(abi.encode(CHAIN_KEY, address(0x1000), address(0x2000), HEIGHT, HEIGHT + 2, uint256(100)));
+        bytes32 expected = keccak256(abi.encode(bytes32(0), uint256(10), address(otherCovenant), configurationHash));
+
+        vm.startPrank(lender);
+        otherCovenant.configure(otherFacilityId, CHAIN_KEY, address(0x1000), address(0x2000), HEIGHT, HEIGHT + 2, 100);
+        adjudicator.registerCovenant(otherFacilityId, 10, otherCovenant);
+        facility.fundAsLender{value: 1000 ether}(otherFacilityId);
+        vm.stopPrank();
+        vm.prank(borrower);
+        facility.postBond{value: 200 ether}(otherFacilityId);
+
+        assertEq(adjudicator.covenantSetCommitment(otherFacilityId), expected);
+        vm.prank(borrower);
+        facility.activate(otherFacilityId, expected);
+        assertEq(uint256(facility.state(otherFacilityId)), uint256(FacilityState.Active));
+    }
+
+    function test_activationRejectsCommitmentThatOmitsConfiguration() public {
+        uint256 otherFacilityId = _openFacility();
+        OutflowCapCovenant otherCovenant = new OutflowCapCovenant(facility);
+        vm.startPrank(lender);
+        otherCovenant.configure(otherFacilityId, CHAIN_KEY, address(0x1000), address(0x2000), HEIGHT, HEIGHT + 2, 0);
+        adjudicator.registerCovenant(otherFacilityId, 10, otherCovenant);
+        facility.fundAsLender{value: 1000 ether}(otherFacilityId);
+        vm.stopPrank();
+        vm.prank(borrower);
+        facility.postBond{value: 200 ether}(otherFacilityId);
+
+        bytes32 expected = keccak256(abi.encode(bytes32(0), uint256(10), address(otherCovenant)));
+        bytes32 actual = keccak256(
+            abi.encode(
+                bytes32(0),
+                uint256(10),
+                address(otherCovenant),
+                keccak256(abi.encode(CHAIN_KEY, address(0x1000), address(0x2000), HEIGHT, HEIGHT + 2, uint256(0)))
+            )
+        );
+        vm.expectRevert(abi.encodeWithSelector(CovenantSetMismatch.selector, expected, actual));
+        vm.prank(borrower);
+        facility.activate(otherFacilityId, expected);
     }
 
     function test_activationRejectsCovenantRegisteredAfterBorrowerCommits() public {
         uint256 otherFacilityId = _openFacility();
         vm.prank(lender);
         adjudicator.registerCovenant(otherFacilityId, 10, covenant);
-        bytes32 expected = keccak256(abi.encode(bytes32(0), uint256(10), address(covenant)));
+        bytes32 expected =
+            keccak256(abi.encode(bytes32(0), uint256(10), address(covenant), covenant.configurationHash()));
         vm.prank(lender);
         adjudicator.registerCovenant(otherFacilityId, 11, secondCovenant);
-        bytes32 actual = keccak256(abi.encode(expected, uint256(11), address(secondCovenant)));
+        bytes32 actual =
+            keccak256(abi.encode(expected, uint256(11), address(secondCovenant), secondCovenant.configurationHash()));
 
         vm.prank(lender);
         facility.fundAsLender{value: 1000 ether}(otherFacilityId);
