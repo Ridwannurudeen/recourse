@@ -40,7 +40,15 @@ Every task inherits these. All values were verified live on 2026-08-24 — do no
 - **`mergeProofs` requires strictly contiguous blocks** and throws `Proofs are not contiguous` otherwise. Do not build the batch path on it.
 - Verified batch spans: 5, 20, 30, 40 and 55 blocks all returned `verifyBatch = true`; a 60-block span failed. The binding limit appears to be total calldata, not span alone. **Keep total calldata under ~20 KB** (18.8 KB verified working; 73.8 KB fails). Calldata is dominated by receipt size, not block span, so prefer transactions with few logs (a plain treasury emits 1-2; a router emits 15-35).
 - Attestation lag is ~8 minutes. Only blocks at or below the current attested height are provable. All demo evidence must be pre-attested and pre-warmed.
-- Gas estimation against the precompile fails spuriously (a pallet-evm quirk). On estimation failure fall back to `21000 + 5000 * continuityRoots + 20000`, and apply a 35% buffer when estimation succeeds. That formula covers *verification only*. **MEASURED on live CC3 (Task 5): a 5-transaction / 36-continuity-root `submitBatch` that decodes receipts, writes replay keys, accumulates and performs breach accounting used `698,898` gas** — roughly 3.2× the 221,000 the verification-only formula predicts. Use 1,000,000 as the demo ceiling for a batch of this shape. The breach transaction hash is recorded in `deployments.json` under `breachTx`.
+- Gas estimation against the precompile fails spuriously (a pallet-evm quirk). On estimation failure fall back to `21000 + 5000 * continuityRoots + 20000`, and apply a 35% buffer when estimation succeeds. That formula covers *verification only*. **MEASURED on live CC3 (Task 5): the 5-transaction `submitBatch` that decodes receipts, writes replay keys, accumulates and performs breach accounting used `698,898` gas.** The breach transaction hash is in `deployments.json` under `breachTx`.
+
+- **CONTINUITY PROOFS GROW OVER TIME — verified, and it has real consequences.** The continuity chain runs from a moving lower endpoint up to the evidence height, so the root count for a *fixed* set of historical transactions increases as the attested chain advances past them. The locked evidence set measured **36 roots when it was created**; re-fetching the exact same five transactions ~2,000 source blocks later returned **76 roots** (8,320 bytes of txBytes, 10,752 bytes by the `roots*32 + txBytes` approximation, 15,044 bytes of full ABI calldata). Same transactions, same proof service, larger proof.
+
+  Consequences to respect:
+  - **Gas for the same evidence rises over time.** Against 76 roots the verification-only formula predicts 421,000 and the measured 698,898 is a 1.66× gap — not the 3.2× a 36-root baseline would suggest. Any ratio quoted must name the root count it was measured against.
+  - **Re-measure gas shortly before recording the demo**, and set the ceiling from that measurement plus headroom (1,500,000 is safe for a batch of this shape today).
+  - If the proof ever grows past a comfortable calldata/gas budget, **re-lock a fresher evidence set** rather than raising limits indefinitely.
+  - Never quote a root count without the date it was observed.
 
 **Exact library surfaces (copied from source — do not guess)**
 
