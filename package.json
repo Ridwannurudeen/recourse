@@ -7,6 +7,7 @@
   "type": "module",
   "scripts": {
     "balances": "node scripts/balances.mjs",
+    "daemon": "node daemon/index.mjs",
     "wallets:new": "node scripts/new-wallets.mjs"
   },
   "dependencies": {
