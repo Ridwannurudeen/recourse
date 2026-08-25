@@ -1,0 +1,8 @@
+{
+  "chainKey": 3,
+  "token": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+  "treasury": "0x000000000004444c5dc75cb358380d2e3de08a90",
+  "startSourceBlock": 25832534,
+  "endSourceBlock": 25833134,
+  "capBaseUnits": "100000000"
+}

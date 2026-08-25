@@ -1,7 +1,8 @@
 import 'dotenv/config';
-import { AbiCoder, Contract, Wallet, ZeroHash, formatEther, getAddress, keccak256, parseEther } from 'ethers';
+import { AbiCoder, Wallet, ZeroHash, formatEther, getAddress, keccak256, parseEther } from 'ethers';
 import { readFileSync } from 'node:fs';
 import { getProvider } from './lib/proofs.mjs';
+import { contractFromArtifact, send } from './lib/setup.mjs';
 
 const EXPECTED_CHAIN_ID = 102031n;
 const COVENANT_ID = 1n;
@@ -16,18 +17,6 @@ const ROLE_TARGETS = [
   ['borrower', 'BORROWER', parseEther('300')],
   ['hunter', 'HUNTER', parseEther('100')],
 ];
-
-function artifact(name) {
-  return JSON.parse(readFileSync(`out/${name}.sol/${name}.json`, 'utf8'));
-}
-
-async function send(label, transactionPromise) {
-  const transaction = await transactionPromise;
-  const receipt = await transaction.wait();
-  if (receipt.status !== 1) throw new Error(`${label} failed`);
-  console.log(`${label}: ${receipt.hash}`);
-  return receipt;
-}
 
 const provider = getProvider();
 const network = await provider.getNetwork();
@@ -56,12 +45,9 @@ if (new Set([deployer.address, ...[...roles.values()].map((wallet) => wallet.add
   throw new Error('Deployer and role addresses must be distinct');
 }
 
-const facilityArtifact = artifact('RecourseFacility');
-const adjudicatorArtifact = artifact('AttestcoinAdjudicator');
-const covenantArtifact = artifact('OutflowCapCovenant');
-const facility = new Contract(deployments.facility, facilityArtifact.abi, provider);
-const adjudicator = new Contract(deployments.adjudicator, adjudicatorArtifact.abi, provider);
-const covenant = new Contract(deployments.outflowCovenant, covenantArtifact.abi, provider);
+const facility = contractFromArtifact(deployments.facility, 'RecourseFacility', provider);
+const adjudicator = contractFromArtifact(deployments.adjudicator, 'AttestcoinAdjudicator', provider);
+const covenant = contractFromArtifact(deployments.outflowCovenant, 'OutflowCapCovenant', provider);
 
 const code = await Promise.all(
   [deployments.facility, deployments.adjudicator, deployments.outflowCovenant].map((address) =>
