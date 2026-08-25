@@ -229,7 +229,8 @@ button {
 }
 
 .theme-toggle,
-.retry-button {
+.retry-button,
+.wallet-button {
   min-height: 40px;
   padding: 0 12px;
   border: 1px solid var(--line-strong);
@@ -244,9 +245,26 @@ button {
 }
 
 .theme-toggle:hover,
-.retry-button:hover {
+.retry-button:hover,
+.wallet-button:hover {
   border-color: var(--accent);
   color: var(--ink);
+}
+
+.wallet-button {
+  min-width: 132px;
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+.wallet-button.connected {
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+
+.wallet-button.wrong-network {
+  border-color: var(--alert-line);
+  color: var(--alert);
 }
 
 main {
@@ -992,6 +1010,12 @@ h3 {
   .theme-toggle {
     min-height: 44px;
     padding-inline: 9px;
+  }
+
+  .wallet-button {
+    min-width: 0;
+    min-height: 44px;
+    padding-inline: 10px;
   }
 
   .retry-button,

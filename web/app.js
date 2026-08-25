@@ -57,6 +57,18 @@ const CONFIG = Object.freeze({
   }),
 });
 
+const CC3_NETWORK = Object.freeze({
+  chainId: `0x${CONFIG.chainId.toString(16)}`,
+  chainName: "Creditcoin Testnet",
+  nativeCurrency: Object.freeze({
+    name: "Test Creditcoin",
+    symbol: "tCTC",
+    decimals: 18,
+  }),
+  rpcUrls: Object.freeze([CONFIG.rpcUrl]),
+  blockExplorerUrls: Object.freeze([CONFIG.deployments.explorer]),
+});
+
 const FACILITY_ABI = [
   "function facilityOf(uint256) view returns (tuple(address lender,address borrower,uint256 facilityLimit,uint256 bondRequired,uint16 drawFeeBps,uint64 maturityBlock,uint32 drawDelayBlocks,uint8 state,uint256 lenderFunded,uint256 bondPosted,uint256 drawnPrincipal,uint256 outstandingDebt,uint256 pendingDrawAmount,uint256 drawReadyAtBlock))",
   "function availableCredit(uint256) view returns (uint256)",
@@ -128,6 +140,97 @@ function setAmount(
 
 function truncateHex(value, leading = 8, trailing = 6) {
   return `${value.slice(0, leading)}…${value.slice(-trailing)}`;
+}
+
+function walletLabel(account) {
+  return account ? truncateHex(account, 7, 5) : "Connect wallet";
+}
+
+function setWalletButton(account, chainId) {
+  const button = byId("wallet-button");
+  button.className = "wallet-button";
+  if (!window.ethereum) {
+    button.textContent = "Wallet unavailable";
+    button.disabled = true;
+    button.title = "Install an injected EVM wallet to sign transactions.";
+    return;
+  }
+  button.disabled = false;
+  if (!account) {
+    button.textContent = "Connect wallet";
+    button.title = "Connect an injected wallet";
+    return;
+  }
+  if (chainId?.toLowerCase() !== CC3_NETWORK.chainId) {
+    button.classList.add("wrong-network");
+    button.textContent = "Switch to CC3";
+    button.title = `${walletLabel(account)} connected on the wrong network`;
+    return;
+  }
+  button.classList.add("connected");
+  button.textContent = walletLabel(account);
+  button.title = `Connected account ${account}`;
+}
+
+async function currentWalletState() {
+  if (!window.ethereum) return { account: null, chainId: null };
+  const [accounts, chainId] = await Promise.all([
+    window.ethereum.request({ method: "eth_accounts" }),
+    window.ethereum.request({ method: "eth_chainId" }),
+  ]);
+  return { account: accounts[0] ?? null, chainId };
+}
+
+async function switchToCc3() {
+  try {
+    await window.ethereum.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: CC3_NETWORK.chainId }],
+    });
+  } catch (error) {
+    if (error.code !== 4902) throw error;
+    await window.ethereum.request({
+      method: "wallet_addEthereumChain",
+      params: [CC3_NETWORK],
+    });
+  }
+}
+
+async function connectWallet() {
+  if (!window.ethereum) return;
+  const button = byId("wallet-button");
+  button.disabled = true;
+  button.textContent = "Check wallet";
+  try {
+    let { account, chainId } = await currentWalletState();
+    if (!account) {
+      const accounts = await window.ethereum.request({
+        method: "eth_requestAccounts",
+      });
+      account = accounts[0] ?? null;
+      chainId = await window.ethereum.request({ method: "eth_chainId" });
+    }
+    if (account && chainId.toLowerCase() !== CC3_NETWORK.chainId) {
+      await switchToCc3();
+      chainId = await window.ethereum.request({ method: "eth_chainId" });
+    }
+    setWalletButton(account, chainId);
+  } catch (error) {
+    console.error(error);
+    const state = await currentWalletState().catch(() => ({
+      account: null,
+      chainId: null,
+    }));
+    setWalletButton(state.account, state.chainId);
+    if (error.code === 4001) {
+      button.title = "Wallet request rejected. No transaction was sent.";
+    }
+  }
+}
+
+async function refreshWalletButton() {
+  const { account, chainId } = await currentWalletState();
+  setWalletButton(account, chainId);
 }
 
 function setExplorerLink(element, value, href, label) {
@@ -665,5 +768,12 @@ byId("theme-toggle").addEventListener("click", () => {
     `Theme · ${theme[0].toUpperCase()}${theme.slice(1)}`;
 });
 byId("retry-button").addEventListener("click", loadDashboard);
+byId("wallet-button").addEventListener("click", connectWallet);
 
+if (window.ethereum?.on) {
+  window.ethereum.on("accountsChanged", refreshWalletButton);
+  window.ethereum.on("chainChanged", refreshWalletButton);
+}
+
+refreshWalletButton().catch(console.error);
 loadDashboard();
