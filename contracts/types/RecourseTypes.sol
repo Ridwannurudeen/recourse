@@ -1,7 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.30;
 
-enum FacilityState { Created, Active, Repaid, Breached, Defaulted, Cancelled }
+enum FacilityState {
+    Created,
+    Active,
+    Repaid,
+    Breached,
+    Defaulted,
+    Cancelled
+}
 
 /// @notice A source-chain transaction whose inclusion has already been verified.
 struct ProvenTx {
@@ -20,6 +27,8 @@ error VerificationFailed();
 error TransactionReverted();
 error IrrelevantEvidence();
 error DrawNotReady(uint256 readyAtBlock);
+error MaturityPassed(uint256 maturityBlock);
+error CovenantSetMismatch(bytes32 expected, bytes32 actual);
 error ExceedsFacility(uint256 requested, uint256 available);
 error ZeroAmount();
 error TransferFailed();

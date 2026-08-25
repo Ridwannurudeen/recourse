@@ -187,7 +187,11 @@ contract NewBorrowCovenantTest is Test {
         vm.prank(borrower);
         facility.postBond{value: 200 ether}(facilityId);
         vm.prank(borrower);
-        facility.activate(facilityId);
+        facility.activate(facilityId, bytes32(0));
+    }
+
+    function covenantSetCommitment(uint256) external pure returns (bytes32) {
+        return bytes32(0);
     }
 
     function _singleProven(uint64 chainKey, uint64 height, address emitter, address onBehalfOf, uint64 txIndex)

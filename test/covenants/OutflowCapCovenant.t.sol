@@ -224,6 +224,41 @@ contract OutflowCapCovenantTest is Test {
         assertEq(covenant.accumulated(facilityId), 110);
     }
 
+    function test_exactUintMaxBatchDoesNotBreach() public {
+        _configureAndActivate(type(uint256).max);
+        EvmV1Decoder.LogEntryTuple[] memory logs = new EvmV1Decoder.LogEntryTuple[](2);
+        logs[0] = _transfer(TOKEN, TREASURY, RECIPIENT, type(uint256).max - 1);
+        logs[1] = _transfer(TOKEN, TREASURY, address(0xE5), 1);
+
+        bool breached = covenant.evaluate(facilityId, _singleProven(CHAIN_KEY, START_BLOCK, _receipt(1, logs)));
+
+        assertFalse(breached);
+        assertEq(covenant.accumulated(facilityId), type(uint256).max);
+    }
+
+    function test_batchOverflowReturnsBreach() public {
+        _configureAndActivate(type(uint256).max);
+        EvmV1Decoder.LogEntryTuple[] memory logs = new EvmV1Decoder.LogEntryTuple[](2);
+        logs[0] = _transfer(TOKEN, TREASURY, RECIPIENT, type(uint256).max);
+        logs[1] = _transfer(TOKEN, TREASURY, address(0xE5), 1);
+
+        assertTrue(covenant.evaluate(facilityId, _singleProven(CHAIN_KEY, START_BLOCK, _receipt(1, logs))));
+    }
+
+    function test_accumulatorOverflowAcrossSubmissionsReturnsBreach() public {
+        _configureAndActivate(type(uint256).max);
+        assertFalse(
+            covenant.evaluate(
+                facilityId, _singleProven(CHAIN_KEY, START_BLOCK, TOKEN, TREASURY, RECIPIENT, type(uint256).max)
+            )
+        );
+
+        assertTrue(
+            covenant.evaluate(facilityId, _singleProven(CHAIN_KEY, START_BLOCK + 1, TOKEN, TREASURY, RECIPIENT, 1))
+        );
+        assertEq(covenant.accumulated(facilityId), type(uint256).max);
+    }
+
     function test_sameReceiptUnderAliasedCovenantIdsIsCountedOnce() public {
         MockVerifier verifier = new MockVerifier();
         RecourseFacility replayFacility = new RecourseFacility();
@@ -242,8 +277,9 @@ contract OutflowCapCovenantTest is Test {
         vm.stopPrank();
         vm.prank(borrower);
         replayFacility.postBond{value: 200 ether}(replayFacilityId);
+        bytes32 expectedCovenantSet = adjudicator.covenantSetCommitment(replayFacilityId);
         vm.prank(borrower);
-        replayFacility.activate(replayFacilityId);
+        replayFacility.activate(replayFacilityId, expectedCovenantSet);
 
         bytes memory encodedTransaction = _receipt(1, _logs(_transfer(TOKEN, TREASURY, RECIPIENT, 60)));
         INativeQueryVerifier.MerkleProof memory merkleProof;
@@ -328,7 +364,11 @@ contract OutflowCapCovenantTest is Test {
         vm.prank(borrower);
         facility.postBond{value: 200 ether}(facilityId);
         vm.prank(borrower);
-        facility.activate(facilityId);
+        facility.activate(facilityId, bytes32(0));
+    }
+
+    function covenantSetCommitment(uint256) external pure returns (bytes32) {
+        return bytes32(0);
     }
 
     function _singleProven(uint64 chainKey, uint64 height, address token, address from, address to, uint256 value)

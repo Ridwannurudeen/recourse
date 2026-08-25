@@ -41,7 +41,7 @@ interface IRecourseFacility {
 
     function fundAsLender(uint256 facilityId) external payable;
     function postBond(uint256 facilityId) external payable;
-    function activate(uint256 facilityId) external;
+    function activate(uint256 facilityId, bytes32 expectedCovenantSet) external;
     function requestDraw(uint256 facilityId, uint256 amount) external;
     function executeDraw(uint256 facilityId) external;
     function repay(uint256 facilityId) external payable;

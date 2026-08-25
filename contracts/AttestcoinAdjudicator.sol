@@ -25,11 +25,13 @@ contract AttestcoinAdjudicator is ReentrancyGuard {
         uint256 indexed facilityId, uint256 indexed covenantId, bytes32 indexed queryId, address submitter
     );
     event BreachReported(uint256 indexed facilityId, uint256 indexed covenantId, address indexed submitter);
+    event CovenantRegistered(uint256 indexed facilityId, uint256 indexed covenantId, address indexed covenant);
 
     INativeQueryVerifier public immutable verifier;
     IRecourseFacility public immutable facility;
 
     mapping(uint256 facilityId => mapping(uint256 covenantId => ICovenant covenant)) private covenants;
+    mapping(uint256 facilityId => bytes32 commitment) public covenantSetCommitment;
     mapping(uint256 facilityId => mapping(uint256 covenantId => mapping(bytes32 queryId => bool processed))) private
         processedQueries;
 
@@ -48,6 +50,9 @@ contract AttestcoinAdjudicator is ReentrancyGuard {
         if (address(covenants[facilityId][covenantId]) != address(0)) revert CovenantAlreadyRegistered();
 
         covenants[facilityId][covenantId] = covenant;
+        covenantSetCommitment[facilityId] =
+            keccak256(abi.encode(covenantSetCommitment[facilityId], covenantId, address(covenant)));
+        emit CovenantRegistered(facilityId, covenantId, address(covenant));
     }
 
     function covenantOf(uint256 facilityId, uint256 covenantId) external view returns (ICovenant) {

@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { Contract, Wallet, formatEther, getAddress, parseEther } from 'ethers';
+import { AbiCoder, Contract, Wallet, ZeroHash, formatEther, getAddress, keccak256, parseEther } from 'ethers';
 import { readFileSync } from 'node:fs';
 import { getProvider } from './lib/proofs.mjs';
 
@@ -128,6 +128,14 @@ await send(
   'registerCovenant',
   adjudicator.connect(lender).registerCovenant(deployments.facilityId, COVENANT_ID, deployments.outflowCovenant),
 );
+const expectedCovenantSet = keccak256(
+  AbiCoder.defaultAbiCoder().encode(
+    ['bytes32', 'uint256', 'address'],
+    [ZeroHash, COVENANT_ID, deployments.outflowCovenant],
+  ),
+);
+const actualCovenantSet = await adjudicator.covenantSetCommitment(deployments.facilityId);
+if (actualCovenantSet !== expectedCovenantSet) throw new Error('Covenant set commitment mismatch');
 await send(
   'configure outflow covenant',
   covenant
@@ -150,7 +158,7 @@ await send(
   'postBond',
   facility.connect(borrower).postBond(deployments.facilityId, { value: BOND_REQUIRED }),
 );
-await send('activate', facility.connect(borrower).activate(deployments.facilityId));
+await send('activate', facility.connect(borrower).activate(deployments.facilityId, expectedCovenantSet));
 await send('requestDraw', facility.connect(borrower).requestDraw(deployments.facilityId, DRAW_AMOUNT));
 
 const requested = await facility.facilityOf(deployments.facilityId);

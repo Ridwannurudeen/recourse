@@ -10,6 +10,7 @@ import {RecourseFacility} from "../contracts/RecourseFacility.sol";
 import {OutflowCapCovenant} from "../contracts/covenants/OutflowCapCovenant.sol";
 import {ICovenant} from "../contracts/interfaces/ICovenant.sol";
 import {
+    CovenantSetMismatch,
     FacilityState,
     IrrelevantEvidence,
     NotLender,
@@ -21,6 +22,16 @@ import {
     ZeroAmount
 } from "../contracts/types/RecourseTypes.sol";
 import {MockVerifier} from "./mocks/MockVerifier.sol";
+
+interface ICommittedActivation {
+    function activate(uint256 facilityId, bytes32 expectedCovenantSet) external;
+}
+
+interface ICovenantCommitmentView {
+    event CovenantRegistered(uint256 indexed facilityId, uint256 indexed covenantId, address indexed covenant);
+
+    function covenantSetCommitment(uint256 facilityId) external view returns (bytes32);
+}
 
 contract StubCovenant is ICovenant {
     enum Result {
@@ -345,6 +356,45 @@ contract AttestcoinAdjudicatorTest is Test {
         vm.stopPrank();
     }
 
+    function test_registrationUpdatesCommitmentAndEmitsEvent() public {
+        uint256 otherFacilityId = _openFacility();
+
+        vm.expectEmit(true, true, true, true, address(adjudicator));
+        emit ICovenantCommitmentView.CovenantRegistered(otherFacilityId, 10, address(covenant));
+        vm.prank(lender);
+        adjudicator.registerCovenant(otherFacilityId, 10, covenant);
+
+        bytes32 firstCommitment = keccak256(abi.encode(bytes32(0), uint256(10), address(covenant)));
+        assertEq(ICovenantCommitmentView(address(adjudicator)).covenantSetCommitment(otherFacilityId), firstCommitment);
+
+        vm.prank(lender);
+        adjudicator.registerCovenant(otherFacilityId, 11, secondCovenant);
+        assertEq(
+            ICovenantCommitmentView(address(adjudicator)).covenantSetCommitment(otherFacilityId),
+            keccak256(abi.encode(firstCommitment, uint256(11), address(secondCovenant)))
+        );
+    }
+
+    function test_activationRejectsCovenantRegisteredAfterBorrowerCommits() public {
+        uint256 otherFacilityId = _openFacility();
+        vm.prank(lender);
+        adjudicator.registerCovenant(otherFacilityId, 10, covenant);
+        bytes32 expected = keccak256(abi.encode(bytes32(0), uint256(10), address(covenant)));
+        vm.prank(lender);
+        adjudicator.registerCovenant(otherFacilityId, 11, secondCovenant);
+        bytes32 actual = keccak256(abi.encode(expected, uint256(11), address(secondCovenant)));
+
+        vm.prank(lender);
+        facility.fundAsLender{value: 1000 ether}(otherFacilityId);
+        vm.prank(borrower);
+        facility.postBond{value: 200 ether}(otherFacilityId);
+
+        vm.expectRevert(abi.encodeWithSelector(CovenantSetMismatch.selector, expected, actual));
+        vm.prank(borrower);
+        ICommittedActivation(address(facility)).activate(otherFacilityId, expected);
+        assertEq(uint256(facility.state(otherFacilityId)), uint256(FacilityState.Created));
+    }
+
     function test_zeroAddressCovenantReverts() public {
         uint256 otherFacilityId = _openFacility();
         vm.expectRevert(ZeroAmount.selector);
@@ -398,8 +448,9 @@ contract AttestcoinAdjudicatorTest is Test {
         facility.fundAsLender{value: 1000 ether}(id);
         vm.prank(borrower);
         facility.postBond{value: 200 ether}(id);
+        bytes32 expectedCovenantSet = adjudicator.covenantSetCommitment(id);
         vm.prank(borrower);
-        facility.activate(id);
+        facility.activate(id, expectedCovenantSet);
     }
 
     function _submitSingle(uint256 covenantId, uint64 height, bytes memory encodedTransaction) internal {

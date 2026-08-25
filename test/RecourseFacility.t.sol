@@ -4,11 +4,23 @@ pragma solidity ^0.8.30;
 import {Test} from "forge-std/Test.sol";
 import {Vm} from "forge-std/Vm.sol";
 import {RecourseFacility} from "../contracts/RecourseFacility.sol";
-import {FacilityState, TransferFailed, ZeroAmount} from "../contracts/types/RecourseTypes.sol";
+import {
+    DrawNotReady,
+    FacilityState,
+    MaturityPassed,
+    TransferFailed,
+    ZeroAmount
+} from "../contracts/types/RecourseTypes.sol";
 
 contract RevertingReceiver {
     receive() external payable {
         revert();
+    }
+}
+
+contract EmptyCommitmentRegistry {
+    function covenantSetCommitment(uint256) external pure returns (bytes32) {
+        return bytes32(0);
     }
 }
 
@@ -22,6 +34,7 @@ contract RecourseFacilityTest is Test {
 
     function setUp() public {
         facility = new RecourseFacility();
+        adjudicator = address(new EmptyCommitmentRegistry());
         facility.setAdjudicator(adjudicator);
         vm.deal(lender, 2000 ether);
         vm.deal(borrower, 2000 ether);
@@ -34,7 +47,7 @@ contract RecourseFacilityTest is Test {
         vm.prank(borrower);
         facility.postBond{value: 200 ether}(id);
         vm.prank(borrower);
-        facility.activate(id);
+        facility.activate(id, bytes32(0));
     }
 
     function _draw(uint256 amount) internal {
@@ -50,7 +63,7 @@ contract RecourseFacilityTest is Test {
         facility.fundAsLender{value: 1000 ether}(id);
         vm.prank(borrower);
         vm.expectRevert();
-        facility.activate(id);
+        facility.activate(id, bytes32(0));
     }
 
     function test_drawRequiresDelayToElapse() public {
@@ -157,6 +170,70 @@ contract RecourseFacilityTest is Test {
         assertEq(uint256(facility.state(id)), uint256(FacilityState.Defaulted));
     }
 
+    function test_maturityWithZeroDebtClosesAsRepaid() public {
+        _activate();
+        vm.roll(uint256(facility.facilityOf(id).maturityBlock) + 1);
+
+        facility.markDefaulted(id);
+
+        assertEq(uint256(facility.state(id)), uint256(FacilityState.Repaid));
+        assertEq(facility.lenderClaimable(id), 1000 ether);
+        assertEq(facility.borrowerClaimable(id), 200 ether);
+    }
+
+    function test_openFacilityRejectsExpiredMaturity() public {
+        vm.roll(10);
+        vm.expectRevert(abi.encodeWithSelector(MaturityPassed.selector, uint256(9)));
+        facility.openFacility(lender, borrower, 1000 ether, 200 ether, 200, 9, 10);
+    }
+
+    function test_requestDrawAfterMaturityReverts() public {
+        _activate();
+        uint256 maturityBlock = facility.facilityOf(id).maturityBlock;
+        vm.roll(maturityBlock + 1);
+
+        vm.expectRevert(abi.encodeWithSelector(MaturityPassed.selector, maturityBlock));
+        vm.prank(borrower);
+        facility.requestDraw(id, 400 ether);
+    }
+
+    function test_executeDrawAfterMaturityReverts() public {
+        _activate();
+        vm.prank(borrower);
+        facility.requestDraw(id, 400 ether);
+        uint256 maturityBlock = facility.facilityOf(id).maturityBlock;
+        vm.roll(maturityBlock + 1);
+
+        vm.expectRevert(abi.encodeWithSelector(MaturityPassed.selector, maturityBlock));
+        vm.prank(borrower);
+        facility.executeDraw(id);
+    }
+
+    function test_requestDrawAtMaturitySucceeds() public {
+        _activate();
+        uint256 maturityBlock = facility.facilityOf(id).maturityBlock;
+        vm.roll(maturityBlock);
+
+        vm.prank(borrower);
+        facility.requestDraw(id, 400 ether);
+
+        assertEq(facility.facilityOf(id).pendingDrawAmount, 400 ether);
+    }
+
+    function test_executeDrawAtMaturitySucceeds() public {
+        _activate();
+        uint256 maturityBlock = facility.facilityOf(id).maturityBlock;
+        vm.roll(maturityBlock - 10);
+        vm.prank(borrower);
+        facility.requestDraw(id, 400 ether);
+        vm.roll(maturityBlock);
+
+        vm.prank(borrower);
+        facility.executeDraw(id);
+
+        assertEq(facility.outstandingDebt(id), 408 ether);
+    }
+
     function test_drawFeeIsAddedToDebtAtDrawTime() public {
         _activate();
         _draw(400 ether);
@@ -205,7 +282,19 @@ contract RecourseFacilityTest is Test {
         facility.cancel(id);
 
         assertEq(uint256(facility.state(id)), uint256(FacilityState.Cancelled));
+        assertEq(lender.balance, lenderBefore);
+        assertEq(borrower.balance, borrowerBefore);
+        assertEq(facility.lenderClaimable(id), 1000 ether);
+        assertEq(facility.borrowerClaimable(id), 200 ether);
+        assertEq(address(facility).balance, 1200 ether);
+
+        vm.prank(lender);
+        facility.lenderWithdraw(id);
         assertEq(lender.balance - lenderBefore, 1000 ether);
+        assertEq(address(facility).balance, 200 ether);
+
+        vm.prank(borrower);
+        facility.claimBorrowerRefund(id);
         assertEq(borrower.balance - borrowerBefore, 200 ether);
         assertEq(address(facility).balance, 0);
     }
@@ -220,7 +309,34 @@ contract RecourseFacilityTest is Test {
         facility.cancel(id);
 
         assertEq(uint256(facility.state(id)), uint256(FacilityState.Cancelled));
-        assertEq(address(facility).balance, 0);
+        assertEq(facility.lenderClaimable(id), 1000 ether);
+        assertEq(facility.borrowerClaimable(id), 200 ether);
+        assertEq(address(facility).balance, 1200 ether);
+    }
+
+    function test_rejectingLenderCannotBlockBorrowerCancellationRecovery() public {
+        RevertingReceiver receiver = new RevertingReceiver();
+        uint256 otherId = facility.openFacility(
+            address(receiver), borrower, 1000 ether, 200 ether, 200, uint64(block.number + 100_000), 10
+        );
+        vm.deal(address(receiver), 1000 ether);
+        vm.prank(address(receiver));
+        facility.fundAsLender{value: 1000 ether}(otherId);
+        vm.prank(borrower);
+        facility.postBond{value: 200 ether}(otherId);
+
+        vm.prank(borrower);
+        facility.cancel(otherId);
+
+        uint256 borrowerBefore = borrower.balance;
+        vm.prank(borrower);
+        facility.claimBorrowerRefund(otherId);
+        assertEq(borrower.balance - borrowerBefore, 200 ether);
+
+        vm.expectRevert(TransferFailed.selector);
+        vm.prank(address(receiver));
+        facility.lenderWithdraw(otherId);
+        assertEq(facility.lenderClaimable(otherId), 1000 ether);
     }
 
     function test_workedExampleEndToEnd() public {
@@ -329,6 +445,63 @@ contract RecourseFacilityTest is Test {
         assertEq(facility.outstandingDebt(id), debtBefore);
         assertEq(facility.lenderClaimable(id), 0);
     }
+
+    function test_largeDrawFeeUsesFullPrecision() public {
+        uint256 amount = type(uint256).max / 200 + 1;
+        uint256 otherId = facility.openFacility(lender, borrower, amount, 1, 200, uint64(block.number + 100_000), 0);
+        vm.deal(lender, amount);
+        vm.deal(borrower, 1);
+        vm.prank(lender);
+        facility.fundAsLender{value: amount}(otherId);
+        vm.prank(borrower);
+        facility.postBond{value: 1}(otherId);
+        vm.prank(borrower);
+        facility.activate(otherId, bytes32(0));
+        vm.prank(borrower);
+        facility.requestDraw(otherId, amount);
+
+        vm.prank(borrower);
+        facility.executeDraw(otherId);
+
+        assertEq(facility.outstandingDebt(otherId), amount + amount / 50);
+        assertEq(borrower.balance, amount);
+    }
+
+    function test_largeBondSlashUsesFullPrecision() public {
+        uint256 bond = type(uint256).max / 8_000 + 1;
+        uint256 otherId = facility.openFacility(lender, borrower, 1, bond, 0, uint64(block.number + 100_000), 0);
+        vm.deal(lender, 1);
+        vm.deal(borrower, bond);
+        vm.prank(lender);
+        facility.fundAsLender{value: 1}(otherId);
+        vm.prank(borrower);
+        facility.postBond{value: bond}(otherId);
+        vm.prank(borrower);
+        facility.activate(otherId, bytes32(0));
+
+        uint256 lenderShare = (bond / 5) * 4 + ((bond % 5) * 4) / 5;
+        uint256 hunterBefore = hunter.balance;
+        vm.prank(adjudicator);
+        facility.reportBreach(otherId, hunter);
+
+        assertEq(hunter.balance - hunterBefore, bond - lenderShare);
+        assertEq(facility.borrowerClaimable(otherId), lenderShare);
+        assertEq(facility.lenderClaimable(otherId), 1);
+        assertEq(uint256(facility.state(otherId)), uint256(FacilityState.Breached));
+    }
+
+    function test_maxMaturityReportsUint256ReadyBlockWithoutOverflow() public {
+        uint256 otherId = facility.openFacility(lender, borrower, 1, 1, 0, type(uint64).max, 0);
+        vm.prank(lender);
+        facility.fundAsLender{value: 1}(otherId);
+        vm.prank(borrower);
+        facility.postBond{value: 1}(otherId);
+        vm.prank(borrower);
+        facility.activate(otherId, bytes32(0));
+
+        vm.expectRevert(abi.encodeWithSelector(DrawNotReady.selector, uint256(type(uint64).max) + 1));
+        facility.markDefaulted(otherId);
+    }
 }
 
 contract RecourseFacilityHandler {
@@ -356,7 +529,7 @@ contract RecourseFacilityHandler {
         vm.prank(BORROWER);
         facility.postBond{value: 200 ether}(facilityId);
         vm.prank(BORROWER);
-        facility.activate(facilityId);
+        facility.activate(facilityId, bytes32(0));
     }
 
     function draw(uint256 seed) external {
@@ -392,6 +565,10 @@ contract RecourseFacilityHandler {
         if (facility.state(facilityId) != FacilityState.Active || facility.outstandingDebt(facilityId) == 0) return;
         vm.roll(MATURITY_BLOCK + 1);
         facility.markDefaulted(facilityId);
+    }
+
+    function covenantSetCommitment(uint256) external pure returns (bytes32) {
+        return bytes32(0);
     }
 
     function lenderWithdraw() external {

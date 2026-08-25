@@ -108,7 +108,9 @@ contract OutflowCapCovenant is ICovenant {
 
                 transactionRelevant = true;
                 relevant = true;
-                batchOutflow += abi.decode(logEntry.data, (uint256));
+                uint256 value = abi.decode(logEntry.data, (uint256));
+                if (value > type(uint256).max - batchOutflow) return true;
+                batchOutflow += value;
             }
 
             if (transactionRelevant) processedQueries[facilityId][queryId] = true;
@@ -116,7 +118,9 @@ contract OutflowCapCovenant is ICovenant {
 
         if (!relevant) revert IrrelevantEvidence();
 
-        uint256 total = accumulated[facilityId] + batchOutflow;
+        uint256 previous = accumulated[facilityId];
+        if (batchOutflow > type(uint256).max - previous) return true;
+        uint256 total = previous + batchOutflow;
         accumulated[facilityId] = total;
         return total > configuration.capBaseUnits;
     }

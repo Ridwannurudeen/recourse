@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.30;
 
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IRecourseFacility} from "./interfaces/IRecourseFacility.sol";
 import {
+    CovenantSetMismatch,
     DrawNotReady,
     ExceedsFacility,
     FacilityState,
+    MaturityPassed,
     NotAdjudicator,
     NotBorrower,
     NotLender,
@@ -13,6 +16,10 @@ import {
     WrongState,
     ZeroAmount
 } from "./types/RecourseTypes.sol";
+
+interface ICovenantSetRegistry {
+    function covenantSetCommitment(uint256 facilityId) external view returns (bytes32);
+}
 
 contract RecourseFacility is IRecourseFacility {
     uint256 private constant BPS_DENOMINATOR = 10_000;
@@ -49,6 +56,7 @@ contract RecourseFacility is IRecourseFacility {
             revert ZeroAmount();
         }
         if (drawFeeBps > BPS_DENOMINATOR) revert ExceedsFacility(drawFeeBps, BPS_DENOMINATOR);
+        if (uint256(maturityBlock) < block.number) revert MaturityPassed(maturityBlock);
 
         facilityId = nextFacilityId++;
         facilities[facilityId] = Facility({
@@ -93,7 +101,7 @@ contract RecourseFacility is IRecourseFacility {
         facility.bondPosted += msg.value;
     }
 
-    function activate(uint256 facilityId) external override {
+    function activate(uint256 facilityId, bytes32 expectedCovenantSet) external override {
         Facility storage facility = facilities[facilityId];
         _requireState(facility, FacilityState.Created);
         if (msg.sender != facility.borrower) revert NotBorrower();
@@ -102,6 +110,10 @@ contract RecourseFacility is IRecourseFacility {
         }
         if (facility.bondPosted != facility.bondRequired) {
             revert ExceedsFacility(facility.bondRequired, facility.bondPosted);
+        }
+        bytes32 actualCovenantSet = ICovenantSetRegistry(adjudicator).covenantSetCommitment(facilityId);
+        if (expectedCovenantSet != actualCovenantSet) {
+            revert CovenantSetMismatch(expectedCovenantSet, actualCovenantSet);
         }
 
         facility.state = FacilityState.Active;
@@ -112,6 +124,7 @@ contract RecourseFacility is IRecourseFacility {
         Facility storage facility = facilities[facilityId];
         _requireState(facility, FacilityState.Active);
         if (msg.sender != facility.borrower) revert NotBorrower();
+        if (block.number > facility.maturityBlock) revert MaturityPassed(facility.maturityBlock);
         if (amount == 0) revert ZeroAmount();
 
         uint256 available = facility.facilityLimit - facility.drawnPrincipal;
@@ -126,6 +139,7 @@ contract RecourseFacility is IRecourseFacility {
         Facility storage facility = facilities[facilityId];
         _requireState(facility, FacilityState.Active);
         if (msg.sender != facility.borrower) revert NotBorrower();
+        if (block.number > facility.maturityBlock) revert MaturityPassed(facility.maturityBlock);
 
         uint256 amount = facility.pendingDrawAmount;
         if (amount == 0) revert ZeroAmount();
@@ -133,7 +147,7 @@ contract RecourseFacility is IRecourseFacility {
 
         uint256 available = facility.facilityLimit - facility.drawnPrincipal;
         if (amount > available) revert ExceedsFacility(amount, available);
-        uint256 fee = amount * facility.drawFeeBps / BPS_DENOMINATOR;
+        uint256 fee = Math.mulDiv(amount, facility.drawFeeBps, BPS_DENOMINATOR);
 
         facility.pendingDrawAmount = 0;
         facility.drawReadyAtBlock = 0;
@@ -178,7 +192,7 @@ contract RecourseFacility is IRecourseFacility {
         Facility storage facility = facilities[facilityId];
         _requireState(facility, FacilityState.Active);
 
-        uint256 lenderShare = facility.bondPosted * LENDER_SLASH_BPS / BPS_DENOMINATOR;
+        uint256 lenderShare = Math.mulDiv(facility.bondPosted, LENDER_SLASH_BPS, BPS_DENOMINATOR);
         uint256 hunterReward = facility.bondPosted - lenderShare;
         uint256 debtReduction = lenderShare > facility.outstandingDebt ? facility.outstandingDebt : lenderShare;
         uint256 borrowerRemainder = lenderShare - debtReduction;
@@ -198,9 +212,14 @@ contract RecourseFacility is IRecourseFacility {
     function markDefaulted(uint256 facilityId) external override {
         Facility storage facility = facilities[facilityId];
         _requireState(facility, FacilityState.Active);
-        if (block.number <= facility.maturityBlock) revert DrawNotReady(facility.maturityBlock + 1);
-        if (facility.outstandingDebt == 0) revert ZeroAmount();
-        _enterDefaulted(facilityId, facility);
+        if (block.number <= facility.maturityBlock) {
+            revert DrawNotReady(uint256(facility.maturityBlock) + 1);
+        }
+        if (facility.outstandingDebt == 0) {
+            _enterRepaid(facilityId, facility);
+        } else {
+            _enterDefaulted(facilityId, facility);
+        }
     }
 
     function cancel(uint256 facilityId) external override {
@@ -213,9 +232,8 @@ contract RecourseFacility is IRecourseFacility {
         facility.state = FacilityState.Cancelled;
         facility.lenderFunded = 0;
         facility.bondPosted = 0;
-
-        if (lenderRefund != 0) _transfer(facility.lender, lenderRefund);
-        if (borrowerRefund != 0) _transfer(facility.borrower, borrowerRefund);
+        lenderClaimable[facilityId] += lenderRefund;
+        borrowerClaimable[facilityId] += borrowerRefund;
     }
 
     function lenderWithdraw(uint256 facilityId) external override {
