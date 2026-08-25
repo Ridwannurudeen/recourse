@@ -1,106 +1,139 @@
 # Recourse
 
-**Credit with consequences.**
-
-An undercollateralized, covenant-enforced credit facility on Creditcoin. Covenants
-over the borrower's Ethereum conduct are enforced by anyone, trustlessly, using the
-Attestcoin Protocol — and the consequences execute on-chain.
-
-Built for [BUIDL CTC 2026 Fall](https://dorahacks.io/hackathon/buidl-ctc-2026-fall/detail)
-(DeFi track).
-
-## The idea
-
-Traditional credit is governed by *covenants* — enforceable promises about borrower
-conduct ("no new debt", "don't strip the treasury", "keep the position intact").
-DeFi threw all of that away and replaced it with overcollateralization, because a
-blockchain cannot see what a borrower does somewhere else.
-
-Attestcoin makes Ethereum conduct provable on Creditcoin. So covenants stop being
-legal text and become executable code:
-
-- A **lender** funds a facility; a **borrower** posts a penalty bond, commits named
-  Ethereum positions to covenants, and draws credit against them.
-- Any **hunter** can prove a covenant violation by submitting an Attestcoin proof of
-  the offending Ethereum transaction.
-- The contract verifies the proof against the BlockProver precompile, decodes the
-  receipt, and executes the consequences: undrawn capacity freezes, the bond is
-  slashed against outstanding debt, and the hunter is paid.
+Recourse is an undercollateralized credit facility on Creditcoin where cryptographic proofs enforce covenants over a borrower's Ethereum conduct. A proven violation freezes undrawn credit, applies the borrower's penalty bond against debt, and pays the permissionless hunter who submitted the evidence.
 
 The proof does not release an escrow. It changes credit risk.
 
-## Status
+## The problem
 
-Design complete and audited. Implementation in progress.
-See [the design spec](docs/superpowers/specs/2026-08-24-recourse-design.md).
+Traditional credit is governed by covenants: enforceable promises not to strip a treasury, take on new debt, or unwind a pledged position. DeFi replaced those controls with overcollateralization because one chain cannot see what a borrower does on another.
 
-## Setup
+Attestcoin makes Ethereum conduct provable on Creditcoin. Recourse turns those proven facts into consequences held and executed by the credit facility itself.
+
+## How it works
+
+1. A lender funds a facility. The borrower posts a penalty bond, accepts named covenants, and draws credit.
+2. Any hunter submits one or more Attestcoin proofs of relevant Ethereum transactions.
+3. `AttestcoinAdjudicator` verifies inclusion and continuity through the BlockProver precompile, decodes the proven receipts on-chain, requires successful transaction status, and derives replay keys from transaction indices.
+4. A covenant evaluates the proven logs. The hero `OutflowCapCovenant` aggregates qualifying USDC transfers; no single transfer crosses the cap, but their verified sum does.
+5. On breach, the facility freezes undrawn capacity, applies 80% of the bond against outstanding debt, and pays the remaining 20% to the hunter.
+
+The live hero adjudication used five real Ethereum mainnet transfers in five distinct blocks across a 35-block span. The largest was 190.30 USDC, below the 232.545 USDC cap; together they totalled 274.79 USDC. See [the Attestcoin integration note](docs/attestcoin-integration.md) for the proof mechanics and evidence.
+
+## Live deployment
+
+CC3 Testnet, chain ID `102031`:
+
+| Component | Address |
+| --- | --- |
+| Facility | [`0x7b0a56Ea5cd466B87676eaE57765AEB182D8302f`](https://creditcoin-testnet.blockscout.com/address/0x7b0a56Ea5cd466B87676eaE57765AEB182D8302f) |
+| Attestcoin adjudicator | [`0xB672992Ce9b5C0924CA94F309b8747Ba0d90bbdc`](https://creditcoin-testnet.blockscout.com/address/0xB672992Ce9b5C0924CA94F309b8747Ba0d90bbdc) |
+| Outflow-cap covenant | [`0x6C1F4e5926206df4e472e1319b7a72be13048eA1`](https://creditcoin-testnet.blockscout.com/address/0x6C1F4e5926206df4e472e1319b7a72be13048eA1) |
+| Facility ID | `1` |
+| Breach adjudication | [`0x632087ba…c513da`](https://creditcoin-testnet.blockscout.com/tx/0x632087ba44e64e89657f34394871b6115eb4cddc7836f7f5b1380546a8c513da) |
+
+The breach transaction succeeded, emitted seven events, and used 698,898 gas.
+
+## Quickstart
+
+The checked-in `deployments.json` points to the already-breached live facility. To reproduce the full demo with a fresh facility, use fresh development wallets and CC3 testnet funds.
 
 ```bash
 npm install
-```
-
-Copy the environment template into `.env` (gitignored) and fill it in. Required keys:
-
-| Variable | Purpose |
-| --- | --- |
-| `MNEMONIC` | HD seed for the four dev roles |
-| `DEPLOYER_ADDRESS` / `DEPLOYER_PRIVATE_KEY` | Deploys contracts, holds faucet funds |
-| `LENDER_ADDRESS` / `LENDER_PRIVATE_KEY` | Funds the facility vault |
-| `BORROWER_ADDRESS` / `BORROWER_PRIVATE_KEY` | Posts bond, draws, repays |
-| `HUNTER_ADDRESS` / `HUNTER_PRIVATE_KEY` | Submits violation proofs |
-| `CREDITCOIN_RPC_URL` | `https://rpc.cc3-testnet.creditcoin.network` |
-| `CREDITCOIN_CHAIN_ID` | `102031` |
-| `PROOF_BUILDER_URL` | `https://prover.cc3-testnet.creditcoin.network` |
-| `BLOCK_PROVER_PRECOMPILE` | `0x0000000000000000000000000000000000000FD2` |
-| `CHAIN_INFO_PRECOMPILE` | `0x0000000000000000000000000000000000000fd3` |
-| `SOURCE_CHAIN_KEY_SEPOLIA` / `SOURCE_CHAIN_KEY_MAINNET` | `1` / `3` |
-| `ETH_MAINNET_RPC_URL` / `SEPOLIA_RPC_URL` | Source-chain reads |
-| `RECOURSE_DOH_FALLBACK` | `1` only if local DNS cannot resolve creditcoin hosts |
-
-Generate fresh dev wallets at any time:
-
-```bash
+forge build
+forge test
 npm run wallets:new
 ```
 
-Check balances on CC3 Testnet:
+Create a local `.env` file, which is gitignored, with the generated role addresses and private keys plus:
+
+```dotenv
+CREDITCOIN_RPC_URL=https://rpc.cc3-testnet.creditcoin.network
+PROOF_BUILDER_URL=https://prover.cc3-testnet.creditcoin.network
+BLOCK_PROVER_PRECOMPILE=0x0000000000000000000000000000000000000FD2
+ETH_MAINNET_RPC_URL=<ethereum-mainnet-rpc>
+DEPLOYER_ADDRESS=<address>
+DEPLOYER_PRIVATE_KEY=<private-key>
+LENDER_ADDRESS=<address>
+LENDER_PRIVATE_KEY=<private-key>
+BORROWER_ADDRESS=<address>
+BORROWER_PRIVATE_KEY=<private-key>
+HUNTER_ADDRESS=<address>
+HUNTER_PRIVATE_KEY=<private-key>
+```
+
+Fund only the deployer with CC3 testnet tCTC through the `token-faucet` channel in the [Creditcoin Discord](https://discord.gg/creditcoin). The setup script funds the other roles. Then run:
 
 ```bash
-npm run balances
+node scripts/deploy.mjs
+node scripts/demo-setup.mjs
+node scripts/submit.mjs
 ```
 
-## Funding (testnet)
+The final command pre-warms and fetches the five locked proofs, submits one batch, and checks the resulting `Breached` state, 274.79 USDC accumulation, debt reduction, zero available credit, and 40 tCTC hunter payout. Deployment rewrites `deployments.json`, so preserve the checked-in live record before running a fresh deployment.
 
-CC3 Testnet tCTC comes from a Discord bot — there is no web faucet. Join the
-[Creditcoin Discord](https://discord.gg/creditcoin), open the `token-faucet`
-channel, and run:
+To inspect the static dashboard locally without sending transactions:
 
-```
-/faucet address:<DEPLOYER_ADDRESS>
+```bash
+python -m http.server 8000
 ```
 
-Only the deployer needs funding; the other roles are funded from it by the setup
-script.
+Open `http://localhost:8000/web/`. It reads the checked-in deployment directly from the CC3 RPC and requires no wallet connection.
 
-## Network reference (verified live 2026-08-24)
+## Architecture
 
-| | |
-| --- | --- |
-| EVM chain ID | 102031 |
-| RPC | https://rpc.cc3-testnet.creditcoin.network |
-| EVM explorer | https://creditcoin-testnet.blockscout.com/ |
-| Prover API | https://prover.cc3-testnet.creditcoin.network |
-| Attestcoin dashboard | https://dashboard.cc3-testnet.creditcoin.network/ |
-| Source chains | Ethereum Sepolia (chainKey 1), Ethereum mainnet (chainKey 3) |
+```text
+Ethereum mainnet receipts
+        │
+        │ Proof Builder: Merkle proofs + shared continuity proof
+        ▼
+AttestcoinAdjudicator on Creditcoin
+        ├── BlockProver.verify(...) proves inclusion and continuity
+        ├── EvmV1Decoder reads status and receipt logs
+        └── replay keys bind chain + block + transaction index
+                       │
+                       ▼
+              Covenant evaluators
+        ├── cumulative treasury outflow cap
+        ├── new Aave borrow
+        └── Uniswap V3 liquidity decrease
+                       │ breach
+                       ▼
+              RecourseFacility
+        freeze capacity │ slash bond │ record debt │ pay hunter
+```
+
+- `RecourseFacility.sol` owns the credit state machine, lender vault, borrower bond, draws, repayment, and breach accounting.
+- `AttestcoinAdjudicator.sol` is the only contract that calls the BlockProver precompile. It verifies first, decodes receipts, rejects reverted transactions, enforces facility-and-covenant-scoped replay protection, and dispatches proven transactions.
+- Each contract in `contracts/covenants/` is a small, separately configured predicate. It validates the source chain, window, emitting contract, indexed subjects, and event data relevant to that covenant.
+- `scripts/` handles deployment, facility setup, proof retrieval, and submission. `web/` is a read-only static monitor.
+
+## Testing
+
+`forge test` passes 108 tests across seven suites. The suite covers every facility transition, proof verification ordering, reverted receipts, replay and duplicate-query handling, forged or irrelevant logs, exact cap boundaries, native-transfer failures, reentrancy, and real encoded mainnet receipt fixtures.
+
+The stateful invariant suite completed 256 runs and 128,000 calls with zero reverts. It asserts asset conservation and claim solvency. A separate regression test asserts that the bond can be claimed at most once.
+
+## Honest limitations
+
+- **Read-only season.** Attestcoin writability is not live on testnet, so Recourse cannot reach back to Ethereum. The bond, draw freeze, permanent default state, and on-Creditcoin repayment obligation are the recourse. This project does not claim legal or cross-chain recovery.
+- **Hunter MEV.** Proofs are public. A pending hunter submission can be copied and outbid. This is disclosed and unsolved in this version; commit/reveal is on the roadmap.
+- **Historical simulation.** The hero demo uses real historical Ethereum mainnet evidence that necessarily predates the facility. It is a historical simulation over real data, and the demo must be described that way; it is not evidence of post-funding borrower conduct.
+- **Fixed predicates.** The implementation contains three hardcoded covenant predicates, not a general covenant DSL.
+- **Testnet and unaudited.** Recourse is deployed only on CC3 Testnet and has not received an independent security audit beyond the project's own adversarial review and test suite.
+
+## Roadmap
+
+- [ ] Use Attestcoin writability for repayment sweeps when testnet support is live.
+- [ ] Add commit/reveal submissions to reduce proof-copying MEV.
+- [ ] Add proof-of-compliance deadlines, where failure to prove continued compliance triggers a facility consequence.
+- [ ] Add audited covenant templates for each integrated protocol.
+- [ ] Support additional Attestcoin source chains.
 
 ## Attribution
 
-Contract patterns follow the official Attestcoin examples in
-[gluwa/usc-testnet-bridge-examples](https://github.com/gluwa/usc-testnet-bridge-examples)
-(MIT), reimplemented for this project's state machine. Receipt decoding uses
-[`@gluwa/usc-contracts`](https://www.npmjs.com/package/@gluwa/usc-contracts).
+The Attestcoin integration follows the patterns in Creditcoin's [Attestcoin smart-contract documentation](https://docs.creditcoin.org/attestcoin-protocol/dapp-builder-infrastructure/attestcoin-smart-contracts) and the MIT-licensed [`gluwa/usc-testnet-bridge-examples`](https://github.com/gluwa/usc-testnet-bridge-examples). Receipt decoding and verifier interfaces come from [`@gluwa/usc-contracts`](https://www.npmjs.com/package/@gluwa/usc-contracts); proof construction uses [`@gluwa/usc-sdk`](https://www.npmjs.com/package/@gluwa/usc-sdk). Facility safeguards use OpenZeppelin Contracts.
 
-## License
+## Licence
 
-MIT
+MIT, as declared in `package.json` and the Solidity source headers.
