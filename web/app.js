@@ -87,12 +87,32 @@ const CC3_NETWORK = Object.freeze({
 });
 
 const FACILITY_ABI = [
+  "function openFacility(address lender,address borrower,uint256 facilityLimit,uint256 bondRequired,uint16 drawFeeBps,uint64 maturityBlock,uint32 drawDelayBlocks) returns (uint256)",
+  "function fundAsLender(uint256) payable",
+  "function postBond(uint256) payable",
+  "function activate(uint256,bytes32)",
+  "function requestDraw(uint256,uint256)",
+  "function executeDraw(uint256)",
+  "function repay(uint256) payable",
+  "function markDefaulted(uint256)",
+  "function cancel(uint256)",
+  "function lenderWithdraw(uint256)",
+  "function claimBorrowerRefund(uint256)",
   "function lenderClaimable(uint256) view returns (uint256)",
   "function borrowerClaimable(uint256) view returns (uint256)",
   "function facilityOf(uint256) view returns (tuple(address lender,address borrower,uint256 facilityLimit,uint256 bondRequired,uint16 drawFeeBps,uint64 maturityBlock,uint32 drawDelayBlocks,uint8 state,uint256 lenderFunded,uint256 bondPosted,uint256 drawnPrincipal,uint256 outstandingDebt,uint256 pendingDrawAmount,uint256 drawReadyAtBlock))",
   "function availableCredit(uint256) view returns (uint256)",
   "event FacilityOpened(uint256 indexed facilityId,address indexed lender,address indexed borrower)",
   "event Breached(uint256 indexed facilityId,address indexed hunter,uint256 debtReduction,uint256 hunterReward)",
+  "error NotBorrower()",
+  "error NotLender()",
+  "error WrongState(uint8 expected,uint8 actual)",
+  "error DrawNotReady(uint256 readyAtBlock)",
+  "error MaturityPassed(uint256 maturityBlock)",
+  "error CovenantSetMismatch(bytes32 expected,bytes32 actual)",
+  "error ExceedsFacility(uint256 requested,uint256 available)",
+  "error ZeroAmount()",
+  "error TransferFailed()",
 ];
 const COVENANT_ABI = [
   "function accumulated(uint256) view returns (uint256)",
@@ -123,6 +143,11 @@ const STATE_SUMMARIES = Object.freeze({
   Defaulted: "The facility matured with outstanding debt and entered default.",
   Cancelled: "The facility was cancelled before activation.",
 });
+
+let walletState = { account: null, chainId: null };
+let currentSnapshot = null;
+let pendingTransaction = null;
+let transactionBusy = false;
 
 const byId = (id) => document.getElementById(id);
 const formatInteger = (value) => new Intl.NumberFormat("en-US").format(value);
@@ -240,14 +265,18 @@ async function connectWallet() {
       await switchToCc3();
       chainId = await window.ethereum.request({ method: "eth_chainId" });
     }
+    walletState = { account, chainId };
     setWalletButton(account, chainId);
+    renderActions();
   } catch (error) {
     console.error(error);
     const state = await currentWalletState().catch(() => ({
       account: null,
       chainId: null,
     }));
+    walletState = state;
     setWalletButton(state.account, state.chainId);
+    renderActions();
     if (error.code === 4001) {
       button.title = "Wallet request rejected. No transaction was sent.";
     }
@@ -255,8 +284,21 @@ async function connectWallet() {
 }
 
 async function refreshWalletButton() {
-  const { account, chainId } = await currentWalletState();
-  setWalletButton(account, chainId);
+  walletState = await currentWalletState();
+  setWalletButton(walletState.account, walletState.chainId);
+  renderActions();
+}
+
+async function handleWalletChange() {
+  await refreshWalletButton();
+  if (!pendingTransaction || transactionBusy) return;
+  pendingTransaction = null;
+  const status = byId("transaction-dialog-status");
+  status.hidden = false;
+  status.className = "dialog-status error";
+  status.textContent =
+    "The connected account or network changed. Close this dialog and review the action again.";
+  byId("transaction-confirm").disabled = true;
 }
 
 function setExplorerLink(element, value, href, label) {
@@ -390,6 +432,17 @@ async function readSnapshot() {
     adjudicator.filters.CovenantRegistered(facilityId),
     CONFIG.deployments.deploymentBlock,
     blockNumber,
+  );
+  const registrationDetails = await Promise.all(
+    registrations.map(async (event) => ({
+      covenantId: Number(event.args.covenantId),
+      address: event.args.covenant,
+      configHash: await new ethers.Contract(
+        event.args.covenant,
+        COVENANT_ABI,
+        provider,
+      ).configHash(facilityId, readOverrides),
+    })),
   );
   let registration =
     registrations.find(
@@ -575,6 +628,7 @@ async function readSnapshot() {
     covenantId,
     covenantAddress,
     registrations,
+    registrationDetails,
     isOutflow,
     metadata,
     metadataVerified,
@@ -1014,6 +1068,809 @@ function renderFacilityBrowser(snapshot) {
   }
 }
 
+function actionField(field) {
+  const wrapper = document.createElement("label");
+  wrapper.className = "action-field";
+  wrapper.htmlFor = field.id;
+  const label = document.createElement("span");
+  label.textContent = field.label;
+  const input = document.createElement("input");
+  input.id = field.id;
+  input.name = field.name;
+  input.type = field.type ?? "text";
+  input.required = true;
+  if (field.value !== undefined) input.value = field.value;
+  if (field.placeholder) input.placeholder = field.placeholder;
+  if (field.min !== undefined) input.min = field.min;
+  if (field.max !== undefined) input.max = field.max;
+  if (field.step !== undefined) input.step = field.step;
+  wrapper.append(label, input);
+  return wrapper;
+}
+
+function actionCard({ title, role, copy, fields = [], submitLabel, build }) {
+  const form = document.createElement("form");
+  form.className = "action-card";
+  const heading = document.createElement("div");
+  heading.className = "action-card-heading";
+  const titleElement = document.createElement("h3");
+  titleElement.textContent = title;
+  const roleElement = document.createElement("span");
+  roleElement.textContent = role;
+  heading.append(titleElement, roleElement);
+  const description = document.createElement("p");
+  description.textContent = copy;
+  const fieldGrid = document.createElement("div");
+  fieldGrid.className = "action-fields";
+  fieldGrid.append(...fields.map(actionField));
+  fieldGrid.hidden = fields.length === 0;
+  const error = document.createElement("p");
+  error.className = "action-form-error";
+  error.setAttribute("role", "alert");
+  error.hidden = true;
+  const submit = document.createElement("button");
+  submit.className = "primary-button";
+  submit.type = "submit";
+  submit.textContent = submitLabel;
+  form.append(heading, description, fieldGrid, error, submit);
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    error.hidden = true;
+    try {
+      reviewTransaction(build(new FormData(form)));
+    } catch (caught) {
+      error.textContent = caught.message;
+      error.hidden = false;
+    }
+  });
+  return form;
+}
+
+function parseTctc(value, label) {
+  if (!/^\d+(\.\d{1,18})?$/.test(value)) {
+    throw new Error(`${label} must be a positive tCTC amount.`);
+  }
+  const parsed = ethers.parseEther(value);
+  if (parsed === 0n) throw new Error(`${label} must be greater than zero.`);
+  return parsed;
+}
+
+function parseUnsigned(value, label, maximum) {
+  if (!/^\d+$/.test(value)) {
+    throw new Error(`${label} must be a whole number.`);
+  }
+  const parsed = BigInt(value);
+  if (parsed > maximum)
+    throw new Error(`${label} is above the contract limit.`);
+  return parsed;
+}
+
+function transactionDescriptor({
+  label,
+  summary,
+  method,
+  args,
+  details,
+  value,
+  maturityBlock,
+}) {
+  return {
+    label,
+    summary,
+    method,
+    args,
+    details,
+    value,
+    maturityBlock,
+    reviewedAccount: walletState.account,
+    reviewedChainId: walletState.chainId,
+    address: CONFIG.deployments.facility,
+    abi: FACILITY_ABI,
+  };
+}
+
+function openFacilityAction(snapshot) {
+  return actionCard({
+    title: "Open a facility",
+    role: "Lender",
+    copy: "Create terms with this connected account as lender. Opening does not transfer principal or configure a covenant.",
+    fields: [
+      {
+        id: "open-borrower",
+        name: "borrower",
+        label: "Borrower address",
+        placeholder: "0x…",
+      },
+      {
+        id: "open-limit",
+        name: "limit",
+        label: "Facility limit · tCTC",
+        type: "number",
+        min: "0",
+        step: "any",
+        value: "1000",
+      },
+      {
+        id: "open-bond",
+        name: "bond",
+        label: "Required bond · tCTC",
+        type: "number",
+        min: "0",
+        step: "any",
+        value: "200",
+      },
+      {
+        id: "open-fee",
+        name: "fee",
+        label: "Draw fee · basis points",
+        type: "number",
+        min: "0",
+        max: "10000",
+        step: "1",
+        value: "200",
+      },
+      {
+        id: "open-maturity",
+        name: "maturity",
+        label: "Maturity · CC3 block",
+        type: "number",
+        min: String(snapshot.blockNumber),
+        step: "1",
+        value: String(snapshot.blockNumber + 7200),
+      },
+      {
+        id: "open-delay",
+        name: "delay",
+        label: "Draw delay · blocks",
+        type: "number",
+        min: "0",
+        step: "1",
+        value: "10",
+      },
+    ],
+    submitLabel: "Review facility",
+    build: (data) => {
+      let borrower;
+      try {
+        borrower = ethers.getAddress(data.get("borrower"));
+      } catch {
+        throw new Error("Borrower address must be a valid EVM address.");
+      }
+      const limit = parseTctc(data.get("limit"), "Facility limit");
+      const bond = parseTctc(data.get("bond"), "Required bond");
+      const fee = parseUnsigned(data.get("fee"), "Draw fee", 10000n);
+      const maturity = parseUnsigned(
+        data.get("maturity"),
+        "Maturity block",
+        (1n << 64n) - 1n,
+      );
+      const delay = parseUnsigned(
+        data.get("delay"),
+        "Draw delay",
+        (1n << 32n) - 1n,
+      );
+      if (maturity < BigInt(snapshot.blockNumber)) {
+        throw new Error(
+          "Maturity cannot be earlier than the current CC3 block.",
+        );
+      }
+      if (maturity <= BigInt(snapshot.blockNumber + 1)) {
+        throw new Error(
+          "Maturity must leave at least two CC3 blocks for review and confirmation.",
+        );
+      }
+      return transactionDescriptor({
+        label: "Open facility",
+        summary: `Create a ${formatUnits(limit, 18, 0, 4)} tCTC facility for ${truncateHex(borrower)}. No tCTC is transferred by this transaction.`,
+        method: "openFacility",
+        args: [
+          walletState.account,
+          borrower,
+          limit,
+          bond,
+          fee,
+          maturity,
+          delay,
+        ],
+        details: [
+          ["Lender", walletState.account],
+          ["Borrower", borrower],
+          ["Limit", `${formatUnits(limit, 18, 0, 4)} tCTC`],
+          ["Bond", `${formatUnits(bond, 18, 0, 4)} tCTC`],
+          ["Draw fee", `${fee} bps`],
+          ["Maturity", `CC3 block ${formatInteger(maturity)}`],
+          ["Draw delay", `${formatInteger(delay)} blocks`],
+        ],
+        maturityBlock: maturity,
+      });
+    },
+  });
+}
+
+function valueAction({ title, role, copy, amount, label, method, snapshot }) {
+  return actionCard({
+    title,
+    role,
+    copy,
+    fields: [
+      {
+        id: `${method}-amount`,
+        name: "amount",
+        label: `${label} · tCTC`,
+        type: "number",
+        min: "0",
+        step: "any",
+        value: ethers.formatEther(amount),
+      },
+    ],
+    submitLabel: `Review ${title.toLowerCase()}`,
+    build: (data) => {
+      const value = parseTctc(data.get("amount"), label);
+      return transactionDescriptor({
+        label: title,
+        summary: `${title} with ${formatUnits(value, 18, 0, 6)} tCTC for facility #${snapshot.facilityId}.`,
+        method,
+        args: [snapshot.facilityId],
+        value,
+        details: [
+          ["Facility", `#${snapshot.facilityId}`],
+          [label, `${formatUnits(value, 18, 0, 6)} tCTC`],
+        ],
+      });
+    },
+  });
+}
+
+function requestDrawAction(snapshot) {
+  return actionCard({
+    title: "Request draw",
+    role: "Borrower",
+    copy: `Schedule principal for execution after ${formatInteger(snapshot.facility.drawDelayBlocks)} CC3 blocks. A new request replaces any pending request.`,
+    fields: [
+      {
+        id: "request-draw-amount",
+        name: "amount",
+        label: "Draw principal · tCTC",
+        type: "number",
+        min: "0",
+        step: "any",
+        value: ethers.formatEther(snapshot.availableCredit),
+      },
+    ],
+    submitLabel: "Review draw request",
+    build: (data) => {
+      const amount = parseTctc(data.get("amount"), "Draw principal");
+      return transactionDescriptor({
+        label: "Request draw",
+        summary: `Request ${formatUnits(amount, 18, 0, 6)} tCTC. It cannot execute until the contract-set delay has elapsed.`,
+        method: "requestDraw",
+        args: [snapshot.facilityId, amount],
+        details: [
+          ["Facility", `#${snapshot.facilityId}`],
+          ["Principal", `${formatUnits(amount, 18, 0, 6)} tCTC`],
+          [
+            "Delay",
+            `${formatInteger(snapshot.facility.drawDelayBlocks)} blocks`,
+          ],
+        ],
+      });
+    },
+  });
+}
+
+function simpleAction({ title, role, copy, method, snapshot, details = [] }) {
+  return actionCard({
+    title,
+    role,
+    copy,
+    submitLabel: `Review ${title.toLowerCase()}`,
+    build: () =>
+      transactionDescriptor({
+        label: title,
+        summary: `${copy} This transaction targets facility #${snapshot.facilityId}.`,
+        method,
+        args: [snapshot.facilityId],
+        details: [["Facility", `#${snapshot.facilityId}`], ...details],
+      }),
+  });
+}
+
+function activationAction(snapshot) {
+  return actionCard({
+    title: "Activate facility",
+    role: "Borrower",
+    copy: "Accept the exact live covenant-set commitment. Activation permanently closes covenant configuration and registration.",
+    submitLabel: "Review activation",
+    build: () =>
+      transactionDescriptor({
+        label: "Activate facility",
+        summary: `Activate facility #${snapshot.facilityId} with the exact covenant-set commitment shown below.`,
+        method: "activate",
+        args: [snapshot.facilityId, snapshot.commitment],
+        details: [
+          ["Facility", `#${snapshot.facilityId}`],
+          ["Covenant commitment", snapshot.commitment],
+          ["Registered covenants", String(snapshot.registrations.length)],
+        ],
+      }),
+  });
+}
+
+function connectedRole(snapshot, role) {
+  return (
+    walletState.account?.toLowerCase() === snapshot.facility[role].toLowerCase()
+  );
+}
+
+function renderActions() {
+  if (!byId("action-list") || !currentSnapshot) return;
+  const snapshot = currentSnapshot;
+  const list = byId("action-list");
+  const notice = byId("action-notice");
+  const account = byId("action-account");
+  list.replaceChildren();
+  notice.className = "action-notice";
+
+  if (!window.ethereum) {
+    account.textContent = "Read-only · no injected wallet detected";
+    notice.textContent =
+      "Facility state remains available. Install an injected EVM wallet to prepare signed actions.";
+    return;
+  }
+  if (!walletState.account) {
+    account.textContent = "Wallet not connected";
+    notice.textContent =
+      "Connect a wallet to see actions permitted for its lender or borrower role.";
+    return;
+  }
+  if (walletState.chainId?.toLowerCase() !== CC3_NETWORK.chainId) {
+    account.textContent = walletLabel(walletState.account);
+    notice.classList.add("warning");
+    notice.textContent = "Switch the connected wallet to CC3 before signing.";
+    return;
+  }
+  account.textContent = `Connected · ${walletLabel(walletState.account)}`;
+  if (snapshot.historical) {
+    notice.classList.add("warning");
+    notice.textContent =
+      "This is a historical snapshot. Return to the latest block before preparing a transaction.";
+    return;
+  }
+
+  const actions = [openFacilityAction(snapshot)];
+  const isLender = connectedRole(snapshot, "lender");
+  const isBorrower = connectedRole(snapshot, "borrower");
+  const facility = snapshot.facility;
+
+  if (snapshot.stateName === "Created") {
+    if (isLender && facility.lenderFunded < facility.facilityLimit) {
+      actions.push(
+        valueAction({
+          title: "Fund facility",
+          role: "Lender",
+          copy: "Deposit lender principal into the facility. Funding can be completed in multiple transactions.",
+          amount: facility.facilityLimit - facility.lenderFunded,
+          label: "Funding",
+          method: "fundAsLender",
+          snapshot,
+        }),
+      );
+    }
+    if (isBorrower && facility.bondPosted < facility.bondRequired) {
+      actions.push(
+        valueAction({
+          title: "Post bond",
+          role: "Borrower",
+          copy: "Post the borrower bond. The contract caps deposits at the required bond.",
+          amount: facility.bondRequired - facility.bondPosted,
+          label: "Bond",
+          method: "postBond",
+          snapshot,
+        }),
+      );
+    }
+    if (
+      isBorrower &&
+      facility.lenderFunded === facility.facilityLimit &&
+      facility.bondPosted === facility.bondRequired &&
+      snapshot.registrationDetails.length > 0 &&
+      snapshot.registrationDetails.every(
+        (registered) => registered.configHash !== ethers.ZeroHash,
+      )
+    ) {
+      actions.push(activationAction(snapshot));
+    }
+    if (isLender || isBorrower) {
+      actions.push(
+        simpleAction({
+          title: "Cancel facility",
+          role: isLender ? "Lender" : "Borrower",
+          copy: "Cancel before activation and move posted funding and bond into pull-payment refunds.",
+          method: "cancel",
+          snapshot,
+        }),
+      );
+    }
+  }
+
+  if (snapshot.stateName === "Active") {
+    const beforeOrAtMaturity =
+      BigInt(snapshot.blockNumber) <= facility.maturityBlock;
+    if (isBorrower && snapshot.availableCredit > 0n && beforeOrAtMaturity) {
+      actions.push(requestDrawAction(snapshot));
+    }
+    if (
+      isBorrower &&
+      facility.pendingDrawAmount > 0n &&
+      beforeOrAtMaturity &&
+      BigInt(snapshot.blockNumber) >= facility.drawReadyAtBlock
+    ) {
+      actions.push(
+        simpleAction({
+          title: "Execute draw",
+          role: "Borrower",
+          copy: `Transfer the pending ${formatUnits(facility.pendingDrawAmount, 18, 0, 6)} tCTC principal after CC3 block ${formatInteger(facility.drawReadyAtBlock)} and add the draw fee to debt.`,
+          method: "executeDraw",
+          snapshot,
+          details: [
+            [
+              "Pending principal",
+              `${formatUnits(facility.pendingDrawAmount, 18, 0, 6)} tCTC`,
+            ],
+            [
+              "Ready at",
+              `CC3 block ${formatInteger(facility.drawReadyAtBlock)}`,
+            ],
+          ],
+        }),
+      );
+    }
+    if (BigInt(snapshot.blockNumber) > facility.maturityBlock) {
+      actions.push(
+        simpleAction({
+          title: "Finalize maturity",
+          role: "Permissionless",
+          copy: "Move this matured facility to Repaid when debt is zero, or Defaulted while debt remains.",
+          method: "markDefaulted",
+          snapshot,
+        }),
+      );
+    }
+  }
+
+  if (
+    isBorrower &&
+    facility.outstandingDebt > 0n &&
+    ["Active", "Breached", "Defaulted"].includes(snapshot.stateName)
+  ) {
+    actions.push(
+      valueAction({
+        title: "Repay debt",
+        role: "Borrower",
+        copy: "Pay down outstanding debt. Any amount above the live debt is returned by the contract.",
+        amount: facility.outstandingDebt,
+        label: "Repayment",
+        method: "repay",
+        snapshot,
+      }),
+    );
+  }
+
+  const terminal = ["Repaid", "Breached", "Defaulted", "Cancelled"].includes(
+    snapshot.stateName,
+  );
+  if (isLender && terminal && snapshot.lenderClaimable > 0n) {
+    actions.push(
+      simpleAction({
+        title: "Withdraw lender claim",
+        role: "Lender",
+        copy: `Withdraw ${formatUnits(snapshot.lenderClaimable, 18, 0, 6)} tCTC currently claimable by the lender.`,
+        method: "lenderWithdraw",
+        snapshot,
+        details: [
+          [
+            "Claimable",
+            `${formatUnits(snapshot.lenderClaimable, 18, 0, 6)} tCTC`,
+          ],
+        ],
+      }),
+    );
+  }
+  if (isBorrower && snapshot.borrowerClaimable > 0n) {
+    actions.push(
+      simpleAction({
+        title: "Claim borrower refund",
+        role: "Borrower",
+        copy: `Withdraw ${formatUnits(snapshot.borrowerClaimable, 18, 0, 6)} tCTC currently refundable to the borrower.`,
+        method: "claimBorrowerRefund",
+        snapshot,
+        details: [
+          [
+            "Refund",
+            `${formatUnits(snapshot.borrowerClaimable, 18, 0, 6)} tCTC`,
+          ],
+        ],
+      }),
+    );
+  }
+
+  list.replaceChildren(...actions);
+  const actionSummary =
+    actions.length === 1
+      ? "This account has no role-specific action on the selected facility. It can still open a new one."
+      : `${actions.length - 1} role or state-specific actions available, plus opening a new facility.`;
+  const pendingDrawSummary =
+    isBorrower &&
+    snapshot.stateName === "Active" &&
+    facility.pendingDrawAmount > 0n &&
+    BigInt(snapshot.blockNumber) <= facility.maturityBlock &&
+    BigInt(snapshot.blockNumber) < facility.drawReadyAtBlock
+      ? ` Pending draw: ${formatUnits(facility.pendingDrawAmount, 18, 0, 6)} tCTC unlocks at CC3 block ${formatInteger(facility.drawReadyAtBlock)}.`
+      : "";
+  notice.textContent = `${actionSummary}${pendingDrawSummary}`;
+}
+
+function reviewTransaction(descriptor) {
+  if (transactionBusy) return;
+  pendingTransaction = descriptor;
+  byId("transaction-title").textContent = descriptor.label;
+  byId("transaction-summary").textContent = descriptor.summary;
+  const details = descriptor.details.flatMap(([label, value]) => {
+    const wrapper = document.createElement("div");
+    const term = document.createElement("dt");
+    term.textContent = label;
+    const description = document.createElement("dd");
+    description.textContent = value;
+    wrapper.append(term, description);
+    return wrapper;
+  });
+  const contract = document.createElement("div");
+  const contractLabel = document.createElement("dt");
+  contractLabel.textContent = "Contract";
+  const contractAddress = document.createElement("dd");
+  contractAddress.textContent = truncateHex(descriptor.address, 12, 10);
+  contractAddress.title = descriptor.address;
+  contract.append(contractLabel, contractAddress);
+  byId("transaction-details").replaceChildren(...details, contract);
+  byId("transaction-dialog-status").hidden = true;
+  byId("transaction-dialog-status").className = "dialog-status";
+  byId("transaction-confirm").disabled = false;
+  byId("transaction-confirm").textContent = "Confirm in wallet";
+  byId("transaction-cancel").hidden = false;
+  byId("transaction-cancel").textContent = "Cancel";
+  byId("transaction-close").disabled = false;
+  byId("transaction-dialog").showModal();
+}
+
+async function assertReviewedWallet(descriptor) {
+  const state = await currentWalletState();
+  if (
+    !state.account ||
+    state.account.toLowerCase() !== descriptor.reviewedAccount?.toLowerCase() ||
+    state.chainId?.toLowerCase() !==
+      descriptor.reviewedChainId?.toLowerCase() ||
+    state.chainId?.toLowerCase() !== CC3_NETWORK.chainId
+  ) {
+    const error = new Error("Wallet changed after transaction review.");
+    error.code = "REVIEW_INVALIDATED";
+    throw error;
+  }
+  return state;
+}
+
+function nestedErrorCode(error) {
+  return error?.code ?? error?.info?.error?.code ?? error?.error?.code;
+}
+
+function nestedErrorData(error) {
+  const candidates = [
+    error?.data,
+    error?.info?.error?.data,
+    error?.error?.data,
+    error?.revert?.data,
+  ];
+  return candidates.find(
+    (candidate) => typeof candidate === "string" && candidate.startsWith("0x"),
+  );
+}
+
+function plainTransactionError(error, descriptor) {
+  const code = nestedErrorCode(error);
+  if (code === 4001 || code === "ACTION_REJECTED") {
+    return "You rejected the wallet request. No transaction was sent.";
+  }
+  if (code === "REVIEW_INVALIDATED") {
+    return "The connected account or network changed after review. Close this dialog and review the action again.";
+  }
+  if (code === "MATURITY_TOO_CLOSE") {
+    return "The proposed maturity is now too close to the current CC3 block. Close this dialog and choose a later block.";
+  }
+  const data = nestedErrorData(error);
+  let parsed = null;
+  if (data) {
+    try {
+      parsed = new ethers.Interface(descriptor.abi).parseError(data);
+    } catch {
+      parsed = null;
+    }
+  }
+  if (!parsed) {
+    return "The contract rejected this action. Its state may have changed; refresh the facility and review the action again.";
+  }
+  const messages = {
+    NotBorrower: "Only this facility's borrower can perform that action.",
+    NotLender: "Only this facility's lender can perform that action.",
+    ZeroAmount: "The amount must be greater than zero.",
+    TransferFailed:
+      "The contract could not transfer tCTC to the receiving account.",
+    CovenantSetMismatch:
+      "The covenant set changed after this review. Refresh and verify the new commitment before activating.",
+  };
+  if (messages[parsed.name]) return messages[parsed.name];
+  if (parsed.name === "WrongState") {
+    const expected =
+      STATE_NAMES[Number(parsed.args.expected)] ?? "another state";
+    const actual =
+      STATE_NAMES[Number(parsed.args.actual)] ?? "an unknown state";
+    return `This action requires ${expected}, but the facility is ${actual}.`;
+  }
+  if (parsed.name === "DrawNotReady") {
+    return `The draw is not ready. Try again at or after CC3 block ${formatInteger(parsed.args.readyAtBlock)}.`;
+  }
+  if (parsed.name === "MaturityPassed") {
+    return `The facility maturity boundary is CC3 block ${formatInteger(parsed.args.maturityBlock)}.`;
+  }
+  if (parsed.name === "ExceedsFacility") {
+    return `The requested amount exceeds the contract's current allowance of ${formatUnits(parsed.args.available, 18, 0, 6)} tCTC.`;
+  }
+  return "The contract rejected this action. Refresh the facility and review its current state.";
+}
+
+function openedFacilityId(receipt) {
+  const facilityInterface = new ethers.Interface(FACILITY_ABI);
+  for (const log of receipt.logs) {
+    if (
+      log.address.toLowerCase() !== CONFIG.deployments.facility.toLowerCase()
+    ) {
+      continue;
+    }
+    const parsed = facilityInterface.parseLog(log);
+    if (parsed?.name === "FacilityOpened") {
+      return Number(parsed.args.facilityId);
+    }
+  }
+  return null;
+}
+
+async function confirmTransaction() {
+  if (!pendingTransaction || !window.ethereum || transactionBusy) return;
+  const descriptor = pendingTransaction;
+  const confirm = byId("transaction-confirm");
+  const cancel = byId("transaction-cancel");
+  const close = byId("transaction-close");
+  const status = byId("transaction-dialog-status");
+  let transaction = null;
+  transactionBusy = true;
+  confirm.disabled = true;
+  cancel.disabled = true;
+  close.disabled = true;
+  confirm.textContent = "Checking contract";
+  status.hidden = false;
+  status.className = "dialog-status pending";
+  status.textContent =
+    "Running a read-only contract preflight before requesting a signature.";
+
+  try {
+    await assertReviewedWallet(descriptor);
+    if (descriptor.maturityBlock !== undefined) {
+      const latestBlock = await readProvider().getBlockNumber();
+      if (descriptor.maturityBlock <= BigInt(latestBlock + 1)) {
+        const error = new Error("Maturity is too close to the current block.");
+        error.code = "MATURITY_TOO_CLOSE";
+        throw error;
+      }
+    }
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const signer = await provider.getSigner(descriptor.reviewedAccount);
+    const [signerAddress, network] = await Promise.all([
+      signer.getAddress(),
+      provider.getNetwork(),
+    ]);
+    if (
+      signerAddress.toLowerCase() !==
+        descriptor.reviewedAccount.toLowerCase() ||
+      network.chainId !== BigInt(CONFIG.chainId)
+    ) {
+      const error = new Error("Signer changed after transaction review.");
+      error.code = "REVIEW_INVALIDATED";
+      throw error;
+    }
+    const contract = new ethers.Contract(
+      descriptor.address,
+      descriptor.abi,
+      signer,
+    );
+    const invocation = [...descriptor.args];
+    if (descriptor.value !== undefined) {
+      invocation.push({ value: descriptor.value });
+    }
+    await contract[descriptor.method].staticCall(...invocation);
+    await assertReviewedWallet(descriptor);
+    confirm.textContent = "Check wallet";
+    status.textContent =
+      "Preflight passed. Confirm or reject the transaction in your wallet.";
+    transaction = await contract[descriptor.method](...invocation);
+    confirm.textContent = "Waiting for CC3";
+    status.replaceChildren(
+      document.createTextNode("Submitted "),
+      Object.assign(document.createElement("a"), {
+        href: `${CONFIG.deployments.explorer}/tx/${transaction.hash}`,
+        target: "_blank",
+        rel: "noopener noreferrer",
+        textContent: truncateHex(transaction.hash, 14, 10),
+      }),
+      document.createTextNode(". Waiting for confirmation."),
+    );
+    const receipt = await transaction.wait();
+    if (!receipt || receipt.status !== 1) {
+      throw new Error("Transaction did not confirm successfully.");
+    }
+    status.className = "dialog-status success";
+    status.replaceChildren(
+      document.createTextNode("Confirmed on CC3. "),
+      Object.assign(document.createElement("a"), {
+        href: `${CONFIG.deployments.explorer}/tx/${transaction.hash}`,
+        target: "_blank",
+        rel: "noopener noreferrer",
+        textContent: "View transaction ↗",
+      }),
+    );
+    confirm.textContent = "Confirmed";
+    transactionBusy = false;
+    close.disabled = false;
+    cancel.disabled = false;
+    cancel.textContent = "Close";
+    const newFacilityId =
+      descriptor.method === "openFacility" ? openedFacilityId(receipt) : null;
+    if (newFacilityId !== null) {
+      const url = new URL(window.location.href);
+      url.searchParams.set("facility", String(newFacilityId));
+      url.searchParams.delete("block");
+      window.history.replaceState({}, "", url);
+    }
+    await loadDashboard();
+  } catch (error) {
+    transactionBusy = false;
+    status.className = "dialog-status error";
+    if (transaction) {
+      status.replaceChildren(
+        document.createTextNode(
+          "The transaction was submitted, but confirmation could not be verified here. Do not retry it from this dialog. ",
+        ),
+        Object.assign(document.createElement("a"), {
+          href: `${CONFIG.deployments.explorer}/tx/${transaction.hash}`,
+          target: "_blank",
+          rel: "noopener noreferrer",
+          textContent: "Check transaction status ↗",
+        }),
+      );
+      pendingTransaction = null;
+      confirm.disabled = true;
+      confirm.textContent = "Fresh review required";
+      cancel.disabled = false;
+      cancel.textContent = "Close";
+      close.disabled = false;
+      await loadDashboard();
+      return;
+    }
+    status.textContent = plainTransactionError(error, descriptor);
+    confirm.disabled = false;
+    confirm.textContent = "Try again";
+    cancel.disabled = false;
+    close.disabled = false;
+  }
+}
+
 function renderSnapshot(snapshot) {
   const stateClass = `state-${snapshot.stateName.toLowerCase()}`;
   byId("dashboard").dataset.facilityState = snapshot.stateName;
@@ -1055,6 +1912,7 @@ function renderSnapshot(snapshot) {
   renderCredit(snapshot);
   renderCovenant(snapshot);
   renderEvidence(snapshot);
+  renderActions();
 }
 
 function showFailure(error) {
@@ -1091,6 +1949,7 @@ async function loadDashboard() {
   try {
     const snapshot = await readSnapshot();
     if (requestVersion !== dashboardRequestVersion) return;
+    currentSnapshot = snapshot;
     renderSnapshot(snapshot);
     byId("load-panel").hidden = true;
     byId("dashboard").hidden = false;
@@ -1122,10 +1981,23 @@ byId("theme-toggle").addEventListener("click", () => {
 });
 byId("retry-button").addEventListener("click", loadDashboard);
 byId("wallet-button").addEventListener("click", connectWallet);
+byId("transaction-confirm").addEventListener("click", confirmTransaction);
+byId("transaction-dialog").addEventListener("close", () => {
+  pendingTransaction = null;
+  byId("transaction-cancel").disabled = false;
+  byId("transaction-close").disabled = false;
+});
+byId("transaction-dialog").addEventListener("cancel", (event) => {
+  if (transactionBusy) event.preventDefault();
+});
 
 if (window.ethereum?.on) {
-  window.ethereum.on("accountsChanged", refreshWalletButton);
-  window.ethereum.on("chainChanged", refreshWalletButton);
+  window.ethereum.on("accountsChanged", () =>
+    handleWalletChange().catch(console.error),
+  );
+  window.ethereum.on("chainChanged", () =>
+    handleWalletChange().catch(console.error),
+  );
 }
 
 refreshWalletButton().catch(console.error);

@@ -621,6 +621,261 @@ h3 {
   font-weight: 650;
 }
 
+.action-section {
+  padding: clamp(28px, 5vw, 52px);
+  border: 1px solid var(--line-strong);
+  border-top: 3px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+}
+
+.action-notice {
+  margin-top: 24px;
+  padding: 14px 16px;
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  font-size: 13px;
+}
+
+.action-notice.warning {
+  border-left-color: var(--alert);
+  background: var(--alert-soft);
+  color: var(--alert);
+}
+
+.action-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.action-card {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 18px;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.action-card-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.action-card-heading h3 {
+  font-size: 19px;
+}
+
+.action-card-heading span {
+  color: var(--accent-ink);
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.action-card > p {
+  margin: 0;
+  color: var(--ink-soft);
+}
+
+.action-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.action-field {
+  min-width: 0;
+  display: block;
+}
+
+.action-field > span {
+  display: block;
+  margin-bottom: 7px;
+  color: var(--ink-faint);
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.action-field input {
+  width: 100%;
+  height: 42px;
+  padding: 0 11px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--page);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.action-field input:focus {
+  border-color: var(--accent);
+}
+
+.action-form-error {
+  color: var(--alert) !important;
+  font-size: 11px;
+}
+
+.primary-button,
+.secondary-button,
+.dialog-close {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.primary-button {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--surface-raised);
+  transition:
+    transform 120ms ease-out,
+    box-shadow 120ms ease-out;
+}
+
+.primary-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.primary-button:disabled,
+.secondary-button:disabled,
+.dialog-close:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.secondary-button,
+.dialog-close {
+  background: transparent;
+  color: var(--ink-soft);
+}
+
+.transaction-dialog {
+  width: min(620px, calc(100% - 32px));
+  max-height: min(820px, calc(100vh - 32px));
+  padding: 0;
+  overflow: auto;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--surface-raised);
+  color: var(--ink);
+  box-shadow: 0 24px 80px rgba(10, 20, 18, 0.3);
+}
+
+.transaction-dialog::backdrop {
+  background: rgba(8, 14, 13, 0.72);
+}
+
+.dialog-frame {
+  padding: clamp(24px, 5vw, 40px);
+}
+
+.dialog-heading,
+.dialog-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.dialog-heading h2 {
+  margin-top: 8px;
+  font-size: 30px;
+}
+
+.dialog-summary,
+.dialog-warning {
+  margin: 24px 0 0;
+  color: var(--ink-soft);
+  font-size: 15px;
+}
+
+.review-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  margin: 28px 0 0;
+  border: 1px solid var(--line);
+  background: var(--line);
+}
+
+.review-list > div {
+  min-width: 0;
+  padding: 15px;
+  background: var(--surface);
+}
+
+.review-list dd {
+  margin: 7px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.dialog-warning {
+  font-size: 11px;
+}
+
+.dialog-status {
+  margin-top: 20px;
+  padding: 13px 14px;
+  border-left: 3px solid var(--line-strong);
+  background: var(--page);
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+.dialog-status.pending {
+  border-left-color: var(--accent);
+}
+
+.dialog-status.success {
+  border-left-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+
+.dialog-status.error {
+  border-left-color: var(--alert);
+  background: var(--alert-soft);
+  color: var(--alert);
+}
+
+.dialog-status a {
+  font-family: var(--mono);
+}
+
+.dialog-actions {
+  justify-content: flex-end;
+  margin-top: 28px;
+}
+
 .credit-section,
 .covenant-section,
 .evidence-section {
@@ -1188,6 +1443,30 @@ h3 {
 
   .facility-card {
     min-height: 164px;
+  }
+
+  .action-section {
+    padding: 28px 18px;
+  }
+
+  .action-list,
+  .action-fields,
+  .review-list {
+    grid-template-columns: 1fr;
+  }
+
+  .primary-button,
+  .secondary-button,
+  .dialog-close {
+    min-height: 44px;
+  }
+
+  .dialog-heading {
+    align-items: flex-start;
+  }
+
+  .dialog-frame {
+    padding: 24px 18px;
   }
 
   .facility-heading,

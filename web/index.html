@@ -135,6 +135,18 @@
           </div>
         </section>
 
+        <section class="action-section" aria-labelledby="action-title">
+          <div class="section-heading action-heading">
+            <div>
+              <p class="eyebrow">Wallet operations</p>
+              <h2 id="action-title">Operate Recourse</h2>
+            </div>
+            <p class="section-note" id="action-account"></p>
+          </div>
+          <div class="action-notice" id="action-notice" role="status"></div>
+          <div class="action-list" id="action-list"></div>
+        </section>
+
         <section class="credit-section" aria-labelledby="credit-title">
           <div class="section-heading">
             <div>
@@ -356,6 +368,52 @@
         </section>
       </div>
     </main>
+
+    <dialog class="transaction-dialog" id="transaction-dialog">
+      <form method="dialog" class="dialog-frame" id="transaction-review">
+        <div class="dialog-heading">
+          <div>
+            <p class="eyebrow">Transaction review</p>
+            <h2 id="transaction-title">Review action</h2>
+          </div>
+          <button
+            class="dialog-close"
+            id="transaction-close"
+            type="submit"
+            value="cancel"
+            aria-label="Close transaction review"
+          >
+            Close
+          </button>
+        </div>
+        <p class="dialog-summary" id="transaction-summary"></p>
+        <dl class="review-list" id="transaction-details"></dl>
+        <p class="dialog-warning">
+          Your wallet will show the final gas estimate. Recourse never receives
+          or stores a signing key.
+        </p>
+        <div
+          class="dialog-status"
+          id="transaction-dialog-status"
+          role="status"
+          aria-live="polite"
+          hidden
+        ></div>
+        <div class="dialog-actions">
+          <button
+            class="secondary-button"
+            type="submit"
+            value="cancel"
+            id="transaction-cancel"
+          >
+            Cancel
+          </button>
+          <button class="primary-button" type="button" id="transaction-confirm">
+            Confirm in wallet
+          </button>
+        </div>
+      </form>
+    </dialog>
 
     <footer class="site-footer">
       <div class="shell footer-inner">
