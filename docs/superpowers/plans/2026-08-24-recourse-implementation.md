@@ -41,14 +41,14 @@ Every task inherits these. All values were verified live on 2026-08-24 — do no
   - For **historical** evidence well below the checkpoint, every proof reaches it, all ranges overlap, and merging succeeds even across wide gaps. Verified 2026-08-25: the five evidence blocks (25,826,525 / 526 / 544 / 548 / 559) carried 76 / 75 / 57 / 53 / 42 roots, all covering up to 25,826,600, and merged cleanly to 76 roots.
   - For blocks **at or near the attested head**, coverage is short (as little as one root), so any gap throws. That is the failure I first hit and it is real — it just is not "must be adjacent".
   - Prefer `getBatchProof` regardless: it is one call and the server builds the shared proof.
-- Verified batch spans: 5, 20, 30, 40 and 55 blocks all returned `verifyBatch = true`; a 60-block span failed. The binding limit appears to be total calldata, not span alone. **Keep total calldata under ~20 KB** (18.8 KB verified working; 73.8 KB fails). Calldata is dominated by receipt size, not block span, so prefer transactions with few logs (a plain treasury emits 1-2; a router emits 15-35).
+- Verified batch spans: 5, 20, 30, 40 and 55 blocks all returned `verifyBatch = true`; a 60-block span failed. The binding limit appears to be total submission size, not span alone. **Keep the `roots * 32 + txBytes` approximation under ~20 KB** (18.8 KB verified working; 73.8 KB fails). This approximate proof size is dominated by receipt size, not block span, so prefer transactions with few logs (a plain treasury emits 1-2; a router emits 15-35).
 - Attestation lag is ~8 minutes. Only blocks at or below the current attested height are provable. All demo evidence must be pre-attested and pre-warmed.
-- Gas estimation against the precompile fails spuriously (a pallet-evm quirk). On estimation failure fall back to `21000 + 5000 * continuityRoots + 20000`, and apply a 35% buffer when estimation succeeds. That formula covers *verification only*. **MEASURED on live CC3 (Task 5): the 5-transaction `submitBatch` that decodes receipts, writes replay keys, accumulates and performs breach accounting used `698,898` gas.** The breach transaction hash is in `deployments.json` under `breachTx`.
+- Gas estimation against the precompile fails spuriously (a pallet-evm quirk). On estimation failure fall back to `21000 + 5000 * continuityRoots + 20000`, and apply a 35% buffer when estimation succeeds. That formula covers *verification only*. **MEASURED on live CC3 (Task 5): the 5-transaction `submitBatch` that decodes receipts, writes replay keys, accumulates and performs breach accounting used `699,409` gas.** The breach transaction hash is in `deployments.json` under `breachTx`.
 
-- **CONTINUITY PROOFS GROW OVER TIME — verified, and it has real consequences.** The continuity chain runs from a moving lower endpoint up to the evidence height, so the root count for a *fixed* set of historical transactions increases as the attested chain advances past them. The locked evidence set measured **36 roots when it was created**; re-fetching the exact same five transactions ~2,000 source blocks later returned **76 roots** (8,320 bytes of txBytes, 10,752 bytes by the `roots*32 + txBytes` approximation, 15,044 bytes of full ABI calldata). Same transactions, same proof service, larger proof.
+- **CONTINUITY PROOFS GROW OVER TIME — verified, and it has real consequences.** The continuity chain runs from a moving lower endpoint up to the evidence height, so the root count for a *fixed* set of historical transactions increases as the attested chain advances past them. When observed on 2026-08-25, the fixed five-transaction evidence set had **76 roots** (8,320 bytes of txBytes, 10,752 bytes by the `roots*32 + txBytes` approximation, 15,044 bytes of full ABI calldata).
 
   Consequences to respect:
-  - **Gas for the same evidence rises over time.** Against 76 roots the verification-only formula predicts 421,000 and the measured 698,898 is a 1.66× gap — not the 3.2× a 36-root baseline would suggest. Any ratio quoted must name the root count it was measured against.
+  - **Gas for the same evidence rises over time.** Against the 76 roots observed on 2026-08-25, the verification-only formula predicts 421,000 and the measured 699,409 is a 1.66× gap. Any ratio quoted must name the root count and observation date.
   - **Re-measure gas shortly before recording the demo**, and set the ceiling from that measurement plus headroom (1,500,000 is safe for a batch of this shape today).
   - If the proof ever grows past a comfortable calldata/gas budget, **re-lock a fresher evidence set** rather than raising limits indefinitely.
   - Never quote a root count without the date it was observed.
@@ -144,9 +144,9 @@ Note the field name is `address_` (trailing underscore) and `MerkleProofEntry.ha
 
 Nothing downstream is real until this exists. The hero demo needs one mainnet address with several outbound USDC transfers where no single transfer exceeds the cap but the cumulative total does.
 
-**The selection criterion that matters is receipt SIZE, not transaction count.** A busy router or aggregator emits 15–35 logs per transaction and its encoded receipts blow the calldata budget immediately. A plain treasury emits 1–2 logs. Rank candidates by *average log count ascending* and reject any transaction with more than 3 logs.
+**The selection criterion that matters is receipt SIZE, not transaction count.** A busy router or aggregator emits 15–35 logs per transaction and its encoded receipts blow the approximate proof-size budget immediately. A plain treasury emits 1–2 logs. Rank candidates by *average log count ascending* and reject any transaction with more than 3 logs.
 
-Verified live on 2026-08-24: address `0x8f0d024e780b7e2fd633a4d6d43631a96e8cb059` averages 1.0 logs and yields 7.3 KB for 4 transactions, 9.3 KB for 5, and 11.2 KB for 6 — all returning `verifyBatch = true`. Ranking by transaction count instead selects a 12.5-logs-per-transaction router and produces 73.8 KB, which fails.
+Verified live on 2026-08-24: address `0x8f0d024e780b7e2fd633a4d6d43631a96e8cb059` averages 1.0 logs and yields approximate proof sizes of 7.3 KB for 4 transactions, 9.3 KB for 5, and 11.2 KB for 6 — all returning `verifyBatch = true`. Ranking by transaction count instead selects a 12.5-logs-per-transaction router and produces an approximate proof size of 73.8 KB, which fails.
 
 **Files:**
 - Create: `scripts/lib/proofs.mjs`
@@ -237,7 +237,7 @@ const USDC = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48';
 const TRANSFER = id('Transfer(address,address,uint256)');
 const WINDOW = 40;          // blocks scanned; simple receipts tolerate this span
 const MAX_LOGS = 3;         // reject router-style transactions
-const MAX_CALLDATA = 20480; // 20KB; 18.8KB verified working, 73.8KB fails
+const MAX_APPROXIMATE_PROOF_BYTES = 20480; // 20KB; 18.8KB verified working, 73.8KB fails
 const iface = new Interface(['event Transfer(address indexed from, address indexed to, uint256 value)']);
 
 const eth = getSourceProvider(CHAIN_KEY);
@@ -296,9 +296,9 @@ for (const candidate of candidates.slice(0, 5)) {
     if (!(largest < cap && cap < total)) continue;
 
     const proof = await fetchBatchProof(CHAIN_KEY, txs.map((t) => t.hash));
-    const calldata = proof.continuityProof.roots.length * 32
+    const approximateProofBytes = proof.continuityProof.roots.length * 32
       + proof.txBytes.reduce((s, b) => s + (b.length - 2) / 2, 0);
-    if (calldata > MAX_CALLDATA) continue;
+    if (approximateProofBytes > MAX_APPROXIMATE_PROOF_BYTES) continue;
 
     const ok = await verifier.verifyBatch(CHAIN_KEY, proof.heights, proof.txBytes,
       proof.merkleProofs, proof.continuityProof);
@@ -313,19 +313,19 @@ for (const candidate of candidates.slice(0, 5)) {
     console.log(`treasury ${candidate.treasury} (avgLogs=${candidate.avgLogs.toFixed(1)})`);
     console.log(`  txs=${n} blocks ${evidence.startSourceBlock}..${evidence.endSourceBlock}`);
     console.log(`  largest=${formatUnits(largest, 6)} cap=${formatUnits(cap, 6)} total=${formatUnits(total, 6)} USDC`);
-    console.log(`  roots=${proof.continuityProof.roots.length} calldata=${(calldata / 1024).toFixed(1)}KB verifyBatch=true`);
+    console.log(`  roots=${proof.continuityProof.roots.length} approximateProofBytes=${(approximateProofBytes / 1024).toFixed(1)}KB verifyBatch=true`);
     console.log('Wrote docs/demo-evidence.json');
     process.exit(0);
   }
 }
-throw new Error('No candidate satisfied cap + calldata + verifyBatch. Raise WINDOW and retry.');
+throw new Error('No candidate satisfied cap + approximate proof size + verifyBatch. Raise WINDOW and retry.');
 ```
 
 - [ ] **Step 3: Run it**
 
 Run: `node scripts/evidence.mjs`
-Expected: prints a treasury with a low average log count, `largest < cap < total`, calldata under 20 KB, `verifyBatch=true`, and writes `docs/demo-evidence.json`.
-If it throws, raise `WINDOW` to 80 and rerun. Do not relax `MAX_LOGS` — that is the constraint keeping calldata in budget.
+Expected: prints a treasury with a low average log count, `largest < cap < total`, approximate proof size under 20 KB, `verifyBatch=true`, and writes `docs/demo-evidence.json`.
+If it throws, raise `WINDOW` to 80 and rerun. Do not relax `MAX_LOGS` — that is the constraint keeping the approximate proof size in budget.
 
 - [ ] **Step 4: Commit**
 

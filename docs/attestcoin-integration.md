@@ -92,14 +92,17 @@ A centralized oracle could report the same facts. It could also collude with the
 
 | Item | Live CC3 value |
 | --- | --- |
-| Facility | [`0x7b0a56Ea5cd466B87676eaE57765AEB182D8302f`](https://creditcoin-testnet.blockscout.com/address/0x7b0a56Ea5cd466B87676eaE57765AEB182D8302f) |
-| Adjudicator | [`0xB672992Ce9b5C0924CA94F309b8747Ba0d90bbdc`](https://creditcoin-testnet.blockscout.com/address/0xB672992Ce9b5C0924CA94F309b8747Ba0d90bbdc) |
-| Outflow covenant | [`0x6C1F4e5926206df4e472e1319b7a72be13048eA1`](https://creditcoin-testnet.blockscout.com/address/0x6C1F4e5926206df4e472e1319b7a72be13048eA1) |
-| Breach transaction | [`0x632087ba…c513da`](https://creditcoin-testnet.blockscout.com/tx/0x632087ba44e64e89657f34394871b6115eb4cddc7836f7f5b1380546a8c513da) |
+| Facility | [`0x144048E22e822269814D592aeaC34734c603dCA7`](https://creditcoin-testnet.blockscout.com/address/0x144048E22e822269814D592aeaC34734c603dCA7) |
+| Adjudicator | [`0x6abB74F57c99986Ff205d4EF396Dd6d61d2659eB`](https://creditcoin-testnet.blockscout.com/address/0x6abB74F57c99986Ff205d4EF396Dd6d61d2659eB) |
+| Outflow covenant | [`0x873C1344B850bB80c758E191D1DCA31CE86030Ef`](https://creditcoin-testnet.blockscout.com/address/0x873C1344B850bB80c758E191D1DCA31CE86030Ef) |
+| New-borrow covenant | [`0x5f1DCF18622663a046a55Ad86c61dd339E1e5dE4`](https://creditcoin-testnet.blockscout.com/address/0x5f1DCF18622663a046a55Ad86c61dd339E1e5dE4) |
+| LP-lock covenant | [`0x2826913E2917d905F7658AAa81288f3C4b98A53d`](https://creditcoin-testnet.blockscout.com/address/0x2826913E2917d905F7658AAa81288f3C4b98A53d) |
+| Breach transaction | [`0x7c180209…7e5d5b6`](https://creditcoin-testnet.blockscout.com/tx/0x7c180209bedaa64b4e1acff02d2822e8c76b0db98f105b7b75e3b95ac7e5d5b6) |
+| Breach block | **5,371,462** |
 | Result | Success, seven events |
-| Measured gas | **698,898** |
+| Measured gas | **699,409** |
 
-The proof size is time-dependent. The same fixed evidence set had 36 continuity roots when it was locked and 76 roots when observed on 2026-08-25, after the common checkpoint advanced. At 76 roots the batch contained 8,320 bytes of encoded receipt data, measured 10,752 bytes by the repository's `roots × 32 + txBytes` proof-plus-receipt approximation, and produced 15,044 bytes of full ABI calldata.
+The proof size is time-dependent. The fixed evidence set had 76 continuity roots when observed on 2026-08-25. At 76 roots the batch contained 8,320 bytes of encoded receipt data, measured 10,752 bytes by the repository's `roots × 32 + txBytes` proof-plus-receipt approximation, and produced 15,044 bytes of full ABI calldata.
 
 The repository's verification-only fallback formula is:
 
@@ -107,7 +110,7 @@ The repository's verification-only fallback formula is:
 21,000 + 5,000 × continuity roots + 20,000
 ```
 
-At 76 roots it predicts 421,000 gas. The complete adjudication used 698,898 gas, a 1.66× ratio: verification is not the whole transaction. Receipt decoding, replay writes, cumulative accounting, facility breach accounting, and seven emitted events account for work outside the formula.
+At 76 roots it predicts 421,000 gas. The complete adjudication used 699,409 gas, a 1.66× ratio: verification is not the whole transaction. Receipt decoding, replay writes, cumulative accounting, facility breach accounting, and seven emitted events account for work outside the formula.
 
 The operational consequence is specific:
 

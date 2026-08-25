@@ -33,6 +33,9 @@ transaction. The contract verifies it against the BlockProver precompile, decode
 and executes the consequences on-chain: undrawn capacity freezes, the bond is slashed against
 outstanding debt, and the hunter who caught it is paid.
 
+Up to 80% of the bond reduces outstanding debt, capped by that debt; the unused share returns
+to the borrower, and 20% rewards the hunter.
+
 The hero covenant is a cumulative one. No single proven transfer breaches the cap — only
 their verified sum does. Catching that requires transaction status, event logs, transaction
 indices and batch continuity to all be verified on-chain inside a single adjudication.
@@ -61,16 +64,16 @@ are load-bearing:
 4. **Batch continuity.** Five transactions in five distinct blocks across a 35-block span
    verify under one shared continuity proof in a single call. Proof size is not static:
    every proof runs up to a common moving checkpoint, so roots grow as the chain advances
-   past fixed historical evidence — the same five transactions needed 36 roots when the
-   evidence was locked and 76 roots when re-measured on 2026-08-25 (10,752 bytes of
-   proof-plus-receipt data; 15,044 bytes of full ABI calldata).
+   past fixed historical evidence. When observed on 2026-08-25, the five transactions had
+   76 roots, measured 10,752 bytes by the repository's proof-plus-receipt approximation,
+   and produced 15,044 bytes of full ABI calldata.
 
 The cumulative predicate is what makes this depth necessary rather than decorative. A
 centralized oracle could report the same facts, but a bonded credit consequence backed by an
 oracle that can collude with the borrower is worth nothing. The trustlessness is the product.
 
-Live on CC3 Testnet, adjudicated against real Ethereum mainnet transactions. Measured cost of
-the full breach adjudication: 698,898 gas.
+Live on CC3 Testnet, adjudicated against real Ethereum mainnet transactions. The breach
+succeeded at CC3 block 5,371,462 and used 699,409 gas.
 
 Full technical detail: `docs/attestcoin-integration.md` in the repository.
 
@@ -110,7 +113,7 @@ Owner confirms these personally.
 - [x] Original work created during the hackathon
 - [x] Deployed on a testnet (CC3 Testnet, chainId 102031)
 - [x] Integrates the Attestcoin Protocol as a core feature
-- [x] Does not infringe third-party IP (MIT-licensed dependencies, attribution in README)
+- [x] Does not infringe third-party IP (permissively licensed dependencies, required notices retained)
 - [ ] Public GitHub repository with README — owner action
 - [ ] Demo video — owner action
 - [ ] Deck / whitepaper PDF — owner action

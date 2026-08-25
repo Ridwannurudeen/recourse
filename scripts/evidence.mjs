@@ -1,8 +1,9 @@
 import 'dotenv/config';
-import { Interface, formatUnits, id } from 'ethers';
+import { Interface, dataLength, formatUnits, id } from 'ethers';
 import { writeFileSync } from 'node:fs';
 import pkg from '@gluwa/usc-sdk';
-import { getSourceProvider, getProvider, getAttestedHeight, fetchBatchProof } from './lib/proofs.mjs';
+import { summarizeQualifyingTransfers } from './lib/evidence.mjs';
+import { assertExactHashMultiset, getSourceProvider, getProvider, getAttestedHeight, fetchBatchProof } from './lib/proofs.mjs';
 
 const { blockProver } = pkg;
 const CHAIN_KEY = 3;
@@ -10,7 +11,8 @@ const USDC = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48';
 const TRANSFER = id('Transfer(address,address,uint256)');
 const WINDOW = 40;          // blocks scanned; simple receipts tolerate this span
 const MAX_LOGS = 3;         // reject router-style transactions
-const MAX_CALLDATA = 20480; // 20KB; 18.8KB verified working, 73.8KB fails
+// Roots plus encoded transactions only; this excludes Merkle proofs and ABI overhead.
+const MAX_APPROXIMATE_PROOF_BYTES = 20480;
 const iface = new Interface(['event Transfer(address indexed from, address indexed to, uint256 value)']);
 
 const eth = getSourceProvider(CHAIN_KEY);
@@ -22,6 +24,7 @@ const bySender = new Map();
 for (let b = lo; b <= hi; b++) {
   const logs = await eth.getLogs({ fromBlock: b, toBlock: b, address: USDC, topics: [TRANSFER] });
   for (const log of logs) {
+    if (log.topics.length !== 3 || dataLength(log.data) !== 32) continue;
     const parsed = iface.parseLog({ topics: log.topics, data: log.data });
     const sender = parsed.args.from.toLowerCase();
     if (parsed.args.to.toLowerCase() === sender) continue;
@@ -30,7 +33,6 @@ for (let b = lo; b <= hi; b++) {
     if (!seen.has(log.transactionHash)) {
       seen.set(log.transactionHash, {
         hash: log.transactionHash, block: log.blockNumber,
-        valueBaseUnits: parsed.args.value.toString(), to: parsed.args.to,
       });
     }
   }
@@ -44,7 +46,8 @@ for (const [treasury, seen] of bySender) {
   const sampled = [];
   for (const tx of txs.slice(0, 8)) {
     const receipt = await eth.getTransactionReceipt(tx.hash);
-    sampled.push({ ...tx, logCount: receipt.logs.length });
+    const summary = summarizeQualifyingTransfers(receipt.logs, USDC, treasury);
+    if (summary) sampled.push({ ...tx, ...summary, logCount: receipt.logs.length });
   }
   const simple = sampled.filter((t) => t.logCount <= MAX_LOGS);
   if (simple.length < 4) continue;
@@ -69,9 +72,10 @@ for (const candidate of candidates.slice(0, 5)) {
     if (!(largest < cap && cap < total)) continue;
 
     const proof = await fetchBatchProof(CHAIN_KEY, txs.map((t) => t.hash));
-    const calldata = proof.continuityProof.roots.length * 32
+    assertExactHashMultiset(txs.map((t) => t.hash), proof.txHashes);
+    const approximateProofBytes = proof.continuityProof.roots.length * 32
       + proof.txBytes.reduce((s, b) => s + (b.length - 2) / 2, 0);
-    if (calldata > MAX_CALLDATA) continue;
+    if (approximateProofBytes > MAX_APPROXIMATE_PROOF_BYTES) continue;
 
     const ok = await verifier.verifyBatch(CHAIN_KEY, proof.heights, proof.txBytes,
       proof.merkleProofs, proof.continuityProof);
@@ -86,9 +90,9 @@ for (const candidate of candidates.slice(0, 5)) {
     console.log(`treasury ${candidate.treasury} (avgLogs=${candidate.avgLogs.toFixed(1)})`);
     console.log(`  txs=${n} blocks ${evidence.startSourceBlock}..${evidence.endSourceBlock}`);
     console.log(`  largest=${formatUnits(largest, 6)} cap=${formatUnits(cap, 6)} total=${formatUnits(total, 6)} USDC`);
-    console.log(`  roots=${proof.continuityProof.roots.length} calldata=${(calldata / 1024).toFixed(1)}KB verifyBatch=true`);
+    console.log(`  roots=${proof.continuityProof.roots.length} approximateProofSize=${(approximateProofBytes / 1024).toFixed(1)}KB verifyBatch=true`);
     console.log('Wrote docs/demo-evidence.json');
     process.exit(0);
   }
 }
-throw new Error('No candidate satisfied cap + calldata + verifyBatch. Raise WINDOW and retry.');
+throw new Error('No candidate satisfied cap + approximate proof-size + verifyBatch. Raise WINDOW and retry.');

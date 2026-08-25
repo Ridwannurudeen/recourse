@@ -26,23 +26,39 @@ function builder(chainKey) {
 }
 
 // getBatchProof returns merkleProofs as a nested map: blockHeight -> txIndex -> entry.
-// It supports non-contiguous blocks. Do NOT use mergeProofs, which requires contiguity.
+// mergeProofs also spans gaps when each proof's covered range reaches the next proof's
+// start block; the batch endpoint handles that shared-checkpoint merge for us.
 export async function fetchBatchProof(chainKey, hashes) {
   const result = await builder(chainKey).getBatchProof(hashes);
   if (!result.success) throw new Error(`getBatchProof failed: ${result.error}`);
   const data = result.data;
-  const heights = [], txBytes = [], merkleProofs = [];
+  const heights = [], txHashes = [], txBytes = [], merkleProofs = [];
   const outer = data.merkleProofs instanceof Map
     ? data.merkleProofs.entries() : Object.entries(data.merkleProofs);
   for (const [height, inner] of outer) {
     const entries = inner instanceof Map ? inner.entries() : Object.entries(inner);
     for (const [, entry] of entries) {
       heights.push(Number(height));
+      txHashes.push(entry.txHash);
       txBytes.push(entry.txBytes);
       merkleProofs.push(entry.merkleProof);
     }
   }
-  return { heights, txBytes, merkleProofs, continuityProof: data.continuityProof };
+  return {
+    heights,
+    txHashes,
+    txBytes,
+    merkleProofs,
+    continuityProof: data.continuityProof,
+  };
+}
+
+export function assertExactHashMultiset(requested, returned) {
+  const expected = requested.map((hash) => hash.toLowerCase()).sort();
+  const actual = returned.map((hash) => hash.toLowerCase()).sort();
+  if (expected.length !== actual.length || actual.some((hash, index) => hash !== expected[index])) {
+    throw new Error(`Batch proof transaction hashes do not match the requested set: requested=${JSON.stringify(expected)} returned=${JSON.stringify(actual)}`);
+  }
 }
 
 export async function prewarm(chainKey, hashes) {

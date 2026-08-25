@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { Contract, Wallet, formatEther, getAddress, parseEther } from 'ethers';
 import { readFileSync } from 'node:fs';
-import { fetchBatchProof, getProvider, prewarm } from './lib/proofs.mjs';
+import { assertExactHashMultiset, fetchBatchProof, getProvider, prewarm } from './lib/proofs.mjs';
 
 const EXPECTED_CHAIN_ID = 102031n;
 const COVENANT_ID = 1n;
@@ -52,8 +52,10 @@ console.log(`prewarming ${hashes.length} proofs`);
 await prewarm(evidence.chainKey, hashes);
 console.log('fetching batch proof');
 const proof = await fetchBatchProof(evidence.chainKey, hashes);
+assertExactHashMultiset(hashes, proof.txHashes);
 if (
   proof.heights.length !== hashes.length ||
+  proof.txHashes.length !== hashes.length ||
   proof.txBytes.length !== hashes.length ||
   proof.merkleProofs.length !== hashes.length
 ) {

@@ -3,13 +3,14 @@ const CONFIG = Object.freeze({
   chainId: 102031,
   ethereumExplorer: "https://etherscan.io",
   deployments: Object.freeze({
-    facility: "0x7b0a56Ea5cd466B87676eaE57765AEB182D8302f",
-    adjudicator: "0xB672992Ce9b5C0924CA94F309b8747Ba0d90bbdc",
-    outflowCovenant: "0x6C1F4e5926206df4e472e1319b7a72be13048eA1",
+    facility: "0x144048E22e822269814D592aeaC34734c603dCA7",
+    adjudicator: "0x6abB74F57c99986Ff205d4EF396Dd6d61d2659eB",
+    outflowCovenant: "0x873C1344B850bB80c758E191D1DCA31CE86030Ef",
     facilityId: 1,
     covenantId: 1,
+    breachBlock: 5371462,
     breachTx:
-      "0x632087ba44e64e89657f34394871b6115eb4cddc7836f7f5b1380546a8c513da",
+      "0x7c180209bedaa64b4e1acff02d2822e8c76b0db98f105b7b75e3b95ac7e5d5b6",
     explorer: "https://creditcoin-testnet.blockscout.com",
   }),
   evidence: Object.freeze({
@@ -209,10 +210,21 @@ async function readSnapshot() {
 
   let breach = null;
   if (stateName === "Breached") {
-    const receipt = await provider.getTransactionReceipt(
-      CONFIG.deployments.breachTx,
-    );
-    if (!receipt || receipt.status !== 1 || receipt.blockNumber > blockNumber) {
+    const [receipt, facilityBeforeBreach, facilityAtBreach] = await Promise.all([
+      provider.getTransactionReceipt(CONFIG.deployments.breachTx),
+      facility.facilityOf(CONFIG.deployments.facilityId, {
+        blockTag: CONFIG.deployments.breachBlock - 1,
+      }),
+      facility.facilityOf(CONFIG.deployments.facilityId, {
+        blockTag: CONFIG.deployments.breachBlock,
+      }),
+    ]);
+    if (
+      !receipt ||
+      receipt.status !== 1 ||
+      receipt.blockNumber !== CONFIG.deployments.breachBlock ||
+      receipt.blockNumber > blockNumber
+    ) {
       throw new Error(
         "The recorded breach receipt is not valid at the selected block.",
       );
@@ -238,6 +250,11 @@ async function readSnapshot() {
           event.args.submitter.toLowerCase() !==
             parsed.breached.args.hunter.toLowerCase(),
       ) ||
+      STATE_NAMES[Number(facilityBeforeBreach.state)] !== "Active" ||
+      STATE_NAMES[Number(facilityAtBreach.state)] !== "Breached" ||
+      facilityBeforeBreach.outstandingDebt -
+        parsed.breached.args.debtReduction !==
+        facilityAtBreach.outstandingDebt ||
       accumulated !== evidenceTotal
     ) {
       throw new Error(
@@ -248,6 +265,8 @@ async function readSnapshot() {
       hunter: parsed.breached.args.hunter,
       debtReduction: parsed.breached.args.debtReduction,
       hunterReward: parsed.breached.args.hunterReward,
+      debtBefore: facilityBeforeBreach.outstandingDebt,
+      debtAfter: facilityAtBreach.outstandingDebt,
       gasUsed: receipt.gasUsed,
       acceptedCount: parsed.accepted.length,
     };
@@ -352,19 +371,19 @@ function renderCredit(snapshot) {
       "Capacity stays open until repayment, maturity, or a proven covenant breach.";
     byId("debt-context").textContent = "principal + draw fee";
     byId("bond-context").textContent =
-      `${formatUnits(facility.bondPosted, 18, 0, 2)} tCTC posted`;
+      `Current bond posted: ${formatUnits(facility.bondPosted, 18, 0, 2)} tCTC`;
     return;
   }
 
   if (snapshot.breach) {
-    const debtBefore = facility.outstandingDebt + snapshot.breach.debtReduction;
     byId("available-context").textContent =
       `${formatUnits(undrawn, 18, 0, 2)} tCTC undrawn capacity frozen on breach.`;
     byId("credit-note").textContent =
       "The breach zeroed available credit immediately; drawn principal remains visible.";
     byId("debt-context").textContent =
-      `${formatUnits(debtBefore, 18, 0, 2)} → ${formatUnits(facility.outstandingDebt, 18, 0, 2)} tCTC`;
-    byId("bond-context").textContent = "fully applied at breach";
+      `${formatUnits(snapshot.breach.debtBefore, 18, 0, 2)} → ${formatUnits(snapshot.breach.debtAfter, 18, 0, 2)} tCTC at breach`;
+    byId("bond-context").textContent =
+      `Current bond posted: ${formatUnits(facility.bondPosted, 18, 0, 2)} tCTC`;
     return;
   }
 
@@ -374,7 +393,7 @@ function renderCredit(snapshot) {
     "Available credit is read directly from the facility state machine.";
   byId("debt-context").textContent = "current balance";
   byId("bond-context").textContent =
-    `${formatUnits(facility.bondPosted, 18, 0, 2)} tCTC currently posted`;
+    `Current bond posted: ${formatUnits(facility.bondPosted, 18, 0, 2)} tCTC`;
 }
 
 function renderCovenant(snapshot) {
@@ -545,7 +564,7 @@ function renderEvidence(snapshot) {
   );
   setAmount(
     byId("debt-after"),
-    snapshot.facility.outstandingDebt,
+    snapshot.breach.debtAfter,
     18,
     "tCTC",
     0,
