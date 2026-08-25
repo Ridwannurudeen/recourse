@@ -1,5 +1,6 @@
 const CONFIG = Object.freeze({
   rpcUrl: "https://rpc.cc3-testnet.creditcoin.network",
+  ethereumRpcUrl: "https://ethereum-rpc.publicnode.com",
   proofBuilderUrl: "https://prover.cc3-testnet.creditcoin.network",
   chainId: 102031,
   ethereumExplorer: "https://etherscan.io",
@@ -9,6 +10,7 @@ const CONFIG = Object.freeze({
     outflowCovenant: "0x873C1344B850bB80c758E191D1DCA31CE86030Ef",
     newBorrowCovenant: "0x5f1DCF18622663a046a55Ad86c61dd339E1e5dE4",
     lpLockCovenant: "0x2826913E2917d905F7658AAa81288f3C4b98A53d",
+    verifier: "0x0000000000000000000000000000000000000FD2",
     deploymentBlock: 5371433,
     explorer: "https://creditcoin-testnet.blockscout.com",
   }),
@@ -162,6 +164,9 @@ const ADJUDICATOR_ABI = [
   "error TransactionReverted()",
   "error IrrelevantEvidence()",
   "error ReentrancyGuardReentrantCall()",
+];
+const VERIFIER_ABI = [
+  "function calculateTxIndex(tuple(bytes32 root,tuple(bytes32 hash,bool isLeft)[] siblings)) view returns (uint64)",
 ];
 const COVENANT_DEFINITIONS = Object.freeze([
   Object.freeze({
@@ -1888,6 +1893,38 @@ function assertBytes32(value, label) {
   }
 }
 
+async function limitedJson(response, maximumBytes) {
+  if (!response.body) {
+    throw new Error("The Proof Builder returned an empty response.");
+  }
+  const reader = response.body.getReader();
+  const chunks = [];
+  let total = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maximumBytes) {
+      await reader.cancel();
+      throw new Error(
+        "The Proof Builder response exceeds the 2 MB safety limit.",
+      );
+    }
+    chunks.push(value);
+  }
+  const body = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  try {
+    return JSON.parse(new TextDecoder().decode(body));
+  } catch {
+    throw new Error("The Proof Builder returned an unreadable response.");
+  }
+}
+
 async function fetchProofBatch(chainKey, requestedHashes) {
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), 60000);
@@ -1912,12 +1949,7 @@ async function fetchProofBatch(chainKey, requestedHashes) {
     window.clearTimeout(timeout);
   }
 
-  let data;
-  try {
-    data = await response.json();
-  } catch {
-    throw new Error("The Proof Builder returned an unreadable response.");
-  }
+  const data = await limitedJson(response, 2_000_000);
   if (!response.ok) {
     throw new Error(
       typeof data?.message === "string"
@@ -1948,6 +1980,9 @@ async function fetchProofBatch(chainKey, requestedHashes) {
   if (data.continuityProof.roots.length === 0) {
     throw new Error("The Proof Builder returned an empty continuity proof.");
   }
+  if (data.continuityProof.roots.length > 512) {
+    throw new Error("The continuity proof exceeds the 512-root safety limit.");
+  }
   data.continuityProof.roots.forEach((root) =>
     assertBytes32(root, "continuity root"),
   );
@@ -1961,6 +1996,11 @@ async function fetchProofBatch(chainKey, requestedHashes) {
     .sort((left, right) =>
       left.height < right.height ? -1 : left.height > right.height ? 1 : 0,
     );
+  if (blocks.length > requestedHashes.length) {
+    throw new Error(
+      "The Proof Builder returned more proof blocks than requested.",
+    );
+  }
   for (const { height, proofs } of blocks) {
     if (!proofs || typeof proofs !== "object") {
       throw new Error("The Proof Builder returned an invalid proof map.");
@@ -1977,7 +2017,7 @@ async function fetchProofBatch(chainKey, requestedHashes) {
       .sort((left, right) =>
         left.index < right.index ? -1 : left.index > right.index ? 1 : 0,
       );
-    for (const { entry } of indexedProofs) {
+    for (const { index, entry } of indexedProofs) {
       if (
         !ethers.isHexString(entry?.txHash, 32) ||
         !ethers.isHexString(entry?.txBytes) ||
@@ -1989,6 +2029,19 @@ async function fetchProofBatch(chainKey, requestedHashes) {
           "The Proof Builder returned malformed transaction proof data.",
         );
       }
+      if (entries.length >= requestedHashes.length) {
+        throw new Error(
+          "The Proof Builder returned more proofs than requested.",
+        );
+      }
+      if (entry.txBytes.length > 524290) {
+        throw new Error(
+          "A proven transaction exceeds the 256 KB safety limit.",
+        );
+      }
+      if (entry.merkleProof.siblings.length > 64) {
+        throw new Error("A Merkle proof exceeds the 64-sibling safety limit.");
+      }
       assertBytes32(entry.merkleProof.root, "Merkle root");
       for (const sibling of entry.merkleProof.siblings) {
         assertBytes32(sibling?.hash, "Merkle sibling");
@@ -1998,7 +2051,7 @@ async function fetchProofBatch(chainKey, requestedHashes) {
           );
         }
       }
-      entries.push({ height, ...entry });
+      entries.push({ height, index, ...entry });
     }
   }
 
@@ -2012,19 +2065,105 @@ async function fetchProofBatch(chainKey, requestedHashes) {
       "The Proof Builder response does not contain exactly the requested transactions.",
     );
   }
+  await bindProofEntries(chainKey, entries);
   return {
     heights: entries.map((entry) => entry.height),
     txHashes: entries.map((entry) => entry.txHash),
     txBytes: entries.map((entry) => entry.txBytes),
     merkleProofs: entries.map((entry) => entry.merkleProof),
     continuityProof: data.continuityProof,
-    approximateBytes:
-      data.continuityProof.roots.length * 32 +
-      entries.reduce(
-        (total, entry) => total + (entry.txBytes.length - 2) / 2,
-        0,
-      ),
   };
+}
+
+async function bindProofEntries(chainKey, entries) {
+  if (chainKey !== 3n) {
+    throw new Error(
+      "Browser proof submission currently supports Ethereum mainnet chain key 3 only.",
+    );
+  }
+  const verifier = new ethers.Contract(
+    CONFIG.deployments.verifier,
+    VERIFIER_ABI,
+    readProvider(),
+  );
+  const sourceProvider = new ethers.JsonRpcProvider(CONFIG.ethereumRpcUrl, 1);
+  const [sourceNetwork, derivedIndices] = await Promise.all([
+    sourceProvider.getNetwork(),
+    Promise.all(
+      entries.map((entry) => verifier.calculateTxIndex(entry.merkleProof)),
+    ),
+  ]);
+  if (sourceNetwork.chainId !== 1n) {
+    throw new Error("The independent source RPC is not Ethereum mainnet.");
+  }
+  derivedIndices.forEach((index, position) => {
+    if (index !== entries[position].index) {
+      throw new Error(
+        "A Proof Builder transaction index does not match the CC3 verifier-derived index.",
+      );
+    }
+  });
+
+  const blockHeights = [
+    ...new Set(entries.map((entry) => String(entry.height))),
+  ];
+  const blocks = await Promise.all(
+    blockHeights.map(async (height) => [
+      height,
+      await sourceProvider.send("eth_getBlockByNumber", [
+        ethers.toQuantity(height),
+        false,
+      ]),
+    ]),
+  );
+  const blockByHeight = new Map(blocks);
+  for (const entry of entries) {
+    if (entry.index > BigInt(Number.MAX_SAFE_INTEGER)) {
+      throw new Error(
+        "A source transaction index is too large for the browser.",
+      );
+    }
+    const block = blockByHeight.get(String(entry.height));
+    const canonicalHash = block?.transactions?.[Number(entry.index)];
+    if (
+      !ethers.isHexString(block?.hash, 32) ||
+      BigInt(block.number) !== entry.height ||
+      !ethers.isHexString(canonicalHash, 32) ||
+      canonicalHash.toLowerCase() !== entry.txHash.toLowerCase()
+    ) {
+      throw new Error(
+        `Proof evidence at Ethereum block ${entry.height}, index ${entry.index} does not match the canonical source transaction.`,
+      );
+    }
+  }
+}
+
+async function proofGasReview(args) {
+  const contract = new ethers.Contract(
+    CONFIG.deployments.adjudicator,
+    ADJUDICATOR_ABI,
+    readProvider(),
+  );
+  try {
+    const estimate = await contract.submitBatch.estimateGas(...args, {
+      from: walletState.account,
+    });
+    const gasLimit = estimate + (estimate * 35n) / 100n;
+    if (gasLimit > 5_000_000n) {
+      throw new Error(
+        "This proof exceeds the 5,000,000 gas browser safety limit. Split the evidence into a smaller batch.",
+      );
+    }
+    return { gasLimit, label: `${formatInteger(gasLimit)} Â· estimate + 35%` };
+  } catch (error) {
+    if (error.message.includes("5,000,000 gas browser safety limit")) {
+      throw error;
+    }
+    return {
+      gasLimit: 3_000_000n,
+      label: "3,000,000 Â· bounded fallback; CC3 estimation unavailable",
+    };
+  }
 }
 
 function proofBatchAction(snapshot) {
@@ -2087,19 +2226,25 @@ function proofBatchAction(snapshot) {
       );
       const hashes = transactionHashes(formData.get("hashes"));
       const proof = await fetchProofBatch(chainKey, hashes);
+      const args = [
+        snapshot.facilityId,
+        covenantId,
+        chainKey,
+        proof.heights,
+        proof.txBytes,
+        proof.merkleProofs,
+        proof.continuityProof,
+      ];
+      const calldata = new ethers.Interface(ADJUDICATOR_ABI).encodeFunctionData(
+        "submitBatch",
+        args,
+      );
+      const gas = await proofGasReview(args);
       return transactionDescriptor({
         label: "Submit evidence batch",
         summary: `Submit ${proof.txHashes.length} proven source-chain transaction${proof.txHashes.length === 1 ? "" : "s"} against covenant ${covenantId}. Relevant evidence can immediately breach facility #${snapshot.facilityId}.`,
         method: "submitBatch",
-        args: [
-          snapshot.facilityId,
-          covenantId,
-          chainKey,
-          proof.heights,
-          proof.txBytes,
-          proof.merkleProofs,
-          proof.continuityProof,
-        ],
+        args,
         details: [
           ["Facility", `#${snapshot.facilityId}`],
           ["Covenant ID", String(covenantId)],
@@ -2107,16 +2252,16 @@ function proofBatchAction(snapshot) {
           ["Receipts", String(proof.txHashes.length)],
           ["Continuity roots", String(proof.continuityProof.roots.length)],
           [
-            "Approximate proof data",
-            `${(proof.approximateBytes / 1024).toFixed(1)} KB`,
+            "Exact calldata",
+            `${((calldata.length - 2) / 2 / 1024).toFixed(1)} KB`,
           ],
           ...proof.txHashes.map((hash, index) => [
             `Evidence ${index + 1}`,
             `${hash} Â· block ${proof.heights[index]}`,
           ]),
-          ["Gas limit", "1,500,000"],
+          ["Gas limit", gas.label],
         ],
-        gasLimit: 1500000n,
+        gasLimit: gas.gasLimit,
         address: CONFIG.deployments.adjudicator,
         abi: ADJUDICATOR_ABI,
       });
