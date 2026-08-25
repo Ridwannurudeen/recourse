@@ -1,5 +1,6 @@
 const CONFIG = Object.freeze({
   rpcUrl: "https://rpc.cc3-testnet.creditcoin.network",
+  proofBuilderUrl: "https://prover.cc3-testnet.creditcoin.network",
   chainId: 102031,
   ethereumExplorer: "https://etherscan.io",
   deployments: Object.freeze({
@@ -148,12 +149,19 @@ const LP_LOCK_COVENANT_ABI = [
 const ADJUDICATOR_ABI = [
   "function covenantSetCommitment(uint256) view returns (bytes32)",
   "function registerCovenant(uint256,uint256,address)",
+  "function submitBatch(uint256,uint256,uint64,uint64[],bytes[],tuple(bytes32 root,tuple(bytes32 hash,bool isLeft)[] siblings)[],tuple(bytes32 lowerEndpointDigest,bytes32[] roots))",
   "event CovenantRegistered(uint256 indexed facilityId,uint256 indexed covenantId,address indexed covenant)",
   "event EvidenceAccepted(uint256 indexed facilityId,uint256 indexed covenantId,bytes32 indexed queryId,address submitter)",
   "event BreachReported(uint256 indexed facilityId,uint256 indexed covenantId,address indexed submitter)",
   "error CovenantAlreadyRegistered()",
   "error NotLender()",
   "error WrongState(uint8 expected,uint8 actual)",
+  "error CovenantNotRegistered()",
+  "error ProofAlreadyUsed(bytes32 queryId)",
+  "error VerificationFailed()",
+  "error TransactionReverted()",
+  "error IrrelevantEvidence()",
+  "error ReentrancyGuardReentrantCall()",
 ];
 const COVENANT_DEFINITIONS = Object.freeze([
   Object.freeze({
@@ -1182,11 +1190,12 @@ function actionField(field) {
   wrapper.htmlFor = field.id;
   const label = document.createElement("span");
   label.textContent = field.label;
-  const input = document.createElement("input");
+  const input = document.createElement(field.multiline ? "textarea" : "input");
   input.id = field.id;
   input.name = field.name;
-  input.type = field.type ?? "text";
+  if (!field.multiline) input.type = field.type ?? "text";
   input.required = true;
+  if (field.multiline) wrapper.classList.add("wide");
   if (field.value !== undefined) input.value = field.value;
   if (field.placeholder) input.placeholder = field.placeholder;
   if (field.min !== undefined) input.min = field.min;
@@ -1196,7 +1205,15 @@ function actionField(field) {
   return wrapper;
 }
 
-function actionCard({ title, role, copy, fields = [], submitLabel, build }) {
+function actionCard({
+  title,
+  role,
+  copy,
+  fields = [],
+  submitLabel,
+  loadingLabel = "Preparing review",
+  build,
+}) {
   const form = document.createElement("form");
   form.className = "action-card";
   const heading = document.createElement("div");
@@ -1221,14 +1238,19 @@ function actionCard({ title, role, copy, fields = [], submitLabel, build }) {
   submit.type = "submit";
   submit.textContent = submitLabel;
   form.append(heading, description, fieldGrid, error, submit);
-  form.addEventListener("submit", (event) => {
+  form.addEventListener("submit", async (event) => {
     event.preventDefault();
     error.hidden = true;
+    submit.disabled = true;
+    submit.textContent = loadingLabel;
     try {
-      reviewTransaction(build(new FormData(form)));
+      reviewTransaction(await build(new FormData(form)));
     } catch (caught) {
       error.textContent = caught.message;
       error.hidden = false;
+    } finally {
+      submit.disabled = false;
+      submit.textContent = submitLabel;
     }
   });
   return form;
@@ -1330,6 +1352,7 @@ function transactionDescriptor({
   args,
   details,
   value,
+  gasLimit,
   maturityBlock,
   address = CONFIG.deployments.facility,
   abi = FACILITY_ABI,
@@ -1342,6 +1365,7 @@ function transactionDescriptor({
     args,
     details,
     value,
+    gasLimit,
     maturityBlock,
     onConfirmed,
     reviewedAccount: walletState.account,
@@ -1838,6 +1862,268 @@ function registerCovenantAction(snapshot, definition) {
   });
 }
 
+function transactionHashes(value) {
+  const hashes = value
+    .split(/[\s,]+/)
+    .map((hash) => hash.trim())
+    .filter(Boolean);
+  if (hashes.length === 0 || hashes.length > 10) {
+    throw new Error(
+      "Provide between 1 and 10 source-chain transaction hashes.",
+    );
+  }
+  if (hashes.some((hash) => !ethers.isHexString(hash, 32))) {
+    throw new Error("Every transaction hash must be exactly 32 bytes of hex.");
+  }
+  const normalized = hashes.map((hash) => hash.toLowerCase());
+  if (new Set(normalized).size !== normalized.length) {
+    throw new Error("Each transaction hash may appear only once in a batch.");
+  }
+  return hashes;
+}
+
+function assertBytes32(value, label) {
+  if (!ethers.isHexString(value, 32)) {
+    throw new Error(`The Proof Builder returned an invalid ${label}.`);
+  }
+}
+
+async function fetchProofBatch(chainKey, requestedHashes) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 60000);
+  let response;
+  try {
+    response = await fetch(
+      `${CONFIG.proofBuilderUrl}/api/v1/proof-batch-by-tx/${chainKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestedHashes),
+        signal: controller.signal,
+      },
+    );
+  } catch (error) {
+    throw new Error(
+      error.name === "AbortError"
+        ? "Proof construction timed out after 60 seconds. The evidence may not be attested yet."
+        : "The Proof Builder could not be reached from this browser.",
+    );
+  } finally {
+    window.clearTimeout(timeout);
+  }
+
+  let data;
+  try {
+    data = await response.json();
+  } catch {
+    throw new Error("The Proof Builder returned an unreadable response.");
+  }
+  if (!response.ok) {
+    throw new Error(
+      typeof data?.message === "string"
+        ? `Proof construction failed: ${data.message}`
+        : "Proof construction failed. Confirm the chain key, hashes, and attestation status.",
+    );
+  }
+  const returnedChainKey = parseUnsigned(
+    String(data.chainKey),
+    "Proof Builder chain key",
+    (1n << 64n) - 1n,
+  );
+  if (
+    returnedChainKey !== chainKey ||
+    !data.merkleProofs ||
+    typeof data.merkleProofs !== "object" ||
+    !data.continuityProof ||
+    !Array.isArray(data.continuityProof.roots)
+  ) {
+    throw new Error(
+      "The Proof Builder response does not match the expected batch format.",
+    );
+  }
+  assertBytes32(
+    data.continuityProof.lowerEndpointDigest,
+    "continuity lower endpoint",
+  );
+  if (data.continuityProof.roots.length === 0) {
+    throw new Error("The Proof Builder returned an empty continuity proof.");
+  }
+  data.continuityProof.roots.forEach((root) =>
+    assertBytes32(root, "continuity root"),
+  );
+
+  const entries = [];
+  const blocks = Object.entries(data.merkleProofs)
+    .map(([height, proofs]) => ({
+      height: parseUnsigned(height, "Proof block height", (1n << 64n) - 1n),
+      proofs,
+    }))
+    .sort((left, right) =>
+      left.height < right.height ? -1 : left.height > right.height ? 1 : 0,
+    );
+  for (const { height, proofs } of blocks) {
+    if (!proofs || typeof proofs !== "object") {
+      throw new Error("The Proof Builder returned an invalid proof map.");
+    }
+    const indexedProofs = Object.entries(proofs)
+      .map(([index, entry]) => ({
+        index: parseUnsigned(
+          index,
+          "Proof transaction index",
+          (1n << 64n) - 1n,
+        ),
+        entry,
+      }))
+      .sort((left, right) =>
+        left.index < right.index ? -1 : left.index > right.index ? 1 : 0,
+      );
+    for (const { entry } of indexedProofs) {
+      if (
+        !ethers.isHexString(entry?.txHash, 32) ||
+        !ethers.isHexString(entry?.txBytes) ||
+        entry.txBytes.length <= 2 ||
+        !entry.merkleProof ||
+        !Array.isArray(entry.merkleProof.siblings)
+      ) {
+        throw new Error(
+          "The Proof Builder returned malformed transaction proof data.",
+        );
+      }
+      assertBytes32(entry.merkleProof.root, "Merkle root");
+      for (const sibling of entry.merkleProof.siblings) {
+        assertBytes32(sibling?.hash, "Merkle sibling");
+        if (typeof sibling?.isLeft !== "boolean") {
+          throw new Error(
+            "The Proof Builder returned an invalid Merkle direction.",
+          );
+        }
+      }
+      entries.push({ height, ...entry });
+    }
+  }
+
+  const expected = requestedHashes.map((hash) => hash.toLowerCase()).sort();
+  const returned = entries.map((entry) => entry.txHash.toLowerCase()).sort();
+  if (
+    expected.length !== returned.length ||
+    returned.some((hash, index) => hash !== expected[index])
+  ) {
+    throw new Error(
+      "The Proof Builder response does not contain exactly the requested transactions.",
+    );
+  }
+  return {
+    heights: entries.map((entry) => entry.height),
+    txHashes: entries.map((entry) => entry.txHash),
+    txBytes: entries.map((entry) => entry.txBytes),
+    merkleProofs: entries.map((entry) => entry.merkleProof),
+    continuityProof: data.continuityProof,
+    approximateBytes:
+      data.continuityProof.roots.length * 32 +
+      entries.reduce(
+        (total, entry) => total + (entry.txBytes.length - 2) / 2,
+        0,
+      ),
+  };
+}
+
+function proofBatchAction(snapshot) {
+  const firstRegistration = snapshot.registrationDetails[0];
+  const firstDefinition = snapshot.covenantConfigs.find(
+    (definition) =>
+      definition.address.toLowerCase() ===
+      firstRegistration.address.toLowerCase(),
+  );
+  return actionCard({
+    title: "Submit evidence batch",
+    role: "Hunter Â· permissionless",
+    copy: "Build one shared Attestcoin continuity proof for up to 10 source-chain transactions, then review the exact on-chain batch before signing.",
+    fields: [
+      {
+        id: "proof-covenant-id",
+        name: "covenantId",
+        label: "Registered covenant ID",
+        type: "number",
+        min: "0",
+        step: "1",
+        value: String(firstRegistration.covenantId),
+      },
+      {
+        id: "proof-chain-key",
+        name: "chainKey",
+        label: "Source chain key",
+        type: "number",
+        min: "0",
+        step: "1",
+        value: String(firstDefinition?.metadata?.[0] ?? 3),
+      },
+      {
+        id: "proof-transaction-hashes",
+        name: "hashes",
+        label: "Transaction hashes Â· one per line",
+        multiline: true,
+        placeholder: "0xâ€¦",
+      },
+    ],
+    submitLabel: "Build proof & review",
+    loadingLabel: "Building Attestcoin proof",
+    build: async (formData) => {
+      const covenantId = parseUnsigned(
+        formData.get("covenantId"),
+        "Covenant ID",
+        (1n << 256n) - 1n,
+      );
+      if (
+        !snapshot.registrationDetails.some(
+          (registration) => registration.covenantId === covenantId,
+        )
+      ) {
+        throw new Error("Select a covenant ID registered on this facility.");
+      }
+      const chainKey = parseUnsigned(
+        formData.get("chainKey"),
+        "Source chain key",
+        (1n << 64n) - 1n,
+      );
+      const hashes = transactionHashes(formData.get("hashes"));
+      const proof = await fetchProofBatch(chainKey, hashes);
+      return transactionDescriptor({
+        label: "Submit evidence batch",
+        summary: `Submit ${proof.txHashes.length} proven source-chain transaction${proof.txHashes.length === 1 ? "" : "s"} against covenant ${covenantId}. Relevant evidence can immediately breach facility #${snapshot.facilityId}.`,
+        method: "submitBatch",
+        args: [
+          snapshot.facilityId,
+          covenantId,
+          chainKey,
+          proof.heights,
+          proof.txBytes,
+          proof.merkleProofs,
+          proof.continuityProof,
+        ],
+        details: [
+          ["Facility", `#${snapshot.facilityId}`],
+          ["Covenant ID", String(covenantId)],
+          ["Source chain key", String(chainKey)],
+          ["Receipts", String(proof.txHashes.length)],
+          ["Continuity roots", String(proof.continuityProof.roots.length)],
+          [
+            "Approximate proof data",
+            `${(proof.approximateBytes / 1024).toFixed(1)} KB`,
+          ],
+          ...proof.txHashes.map((hash, index) => [
+            `Evidence ${index + 1}`,
+            `${hash} Â· block ${proof.heights[index]}`,
+          ]),
+          ["Gas limit", "1,500,000"],
+        ],
+        gasLimit: 1500000n,
+        address: CONFIG.deployments.adjudicator,
+        abi: ADJUDICATOR_ABI,
+      });
+    },
+  });
+}
+
 function renderCovenantWorkflow(snapshot) {
   const workflow = byId("covenant-workflow");
   if (!workflow) return;
@@ -2043,6 +2329,9 @@ function renderActions() {
   if (snapshot.stateName === "Active") {
     const beforeOrAtMaturity =
       BigInt(snapshot.blockNumber) <= facility.maturityBlock;
+    if (snapshot.registrationDetails.length > 0) {
+      actions.push(proofBatchAction(snapshot));
+    }
     if (isBorrower && snapshot.availableCredit > 0n && beforeOrAtMaturity) {
       actions.push(requestDrawAction(snapshot));
     }
@@ -2258,6 +2547,16 @@ function plainTransactionError(error, descriptor) {
       "That covenant template or covenant ID is already registered for the facility.",
     CovenantNotConfigured:
       "Configure this covenant template before registering it.",
+    CovenantNotRegistered:
+      "The selected covenant ID is not registered on this facility.",
+    VerificationFailed:
+      "Attestcoin could not verify this batch against the source-chain attestation.",
+    TransactionReverted:
+      "At least one proven source-chain transaction reverted, so it cannot be used as evidence.",
+    IrrelevantEvidence:
+      "None of the proven transactions satisfies the selected covenant predicate.",
+    ReentrancyGuardReentrantCall:
+      "Another proof submission is already executing in this transaction.",
   };
   if (messages[parsed.name]) return messages[parsed.name];
   if (parsed.name === "WrongState") {
@@ -2275,6 +2574,9 @@ function plainTransactionError(error, descriptor) {
   }
   if (parsed.name === "ExceedsFacility") {
     return `The requested amount exceeds the contract's current allowance of ${formatUnits(parsed.args.available, 18, 0, 6)} tCTC.`;
+  }
+  if (parsed.name === "ProofAlreadyUsed") {
+    return `Evidence query ${truncateHex(parsed.args.queryId, 14, 10)} was already processed for this facility and covenant.`;
   }
   return "The contract rejected this action. Refresh the facility and review its current state.";
 }
@@ -2345,8 +2647,13 @@ async function confirmTransaction() {
       signer,
     );
     const invocation = [...descriptor.args];
-    if (descriptor.value !== undefined) {
-      invocation.push({ value: descriptor.value });
+    const overrides = {};
+    if (descriptor.value !== undefined) overrides.value = descriptor.value;
+    if (descriptor.gasLimit !== undefined) {
+      overrides.gasLimit = descriptor.gasLimit;
+    }
+    if (Object.keys(overrides).length > 0) {
+      invocation.push(overrides);
     }
     await contract[descriptor.method].staticCall(...invocation);
     await assertReviewedWallet(descriptor);
