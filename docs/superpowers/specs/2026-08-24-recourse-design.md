@@ -96,8 +96,11 @@ Created ──(either party exits before activation)─────────�
   borrower can always clear the debt, but the permanent performance record shows
   `Defaulted` — paying late is not the same as paying on time. Reaching zero
   debt from `Defaulted` does not promote the facility back to `Repaid`.
-- **Cancelled:** before activation either party may `cancel`, which refunds
-  whatever each has deposited. No fees, no penalties.
+- **Cancelled:** before activation either party may `cancel`. No fees, no
+  penalties. Cancellation **credits `lenderClaimable` and `borrowerClaimable`
+  rather than transferring**, under the same repeatable pull pattern as every
+  other exit. Pushing both refunds inside `cancel` would let one party's
+  rejecting receiver revert the whole call and strand the other party's deposit.
 - Authorization: only the configured borrower draws/repays; only the configured
   lender withdraws; only the adjudicator reports breaches; addresses fixed at
   activation. Checks-effects-interactions around all native-token transfers.
