@@ -508,7 +508,7 @@ async function readSnapshot() {
   );
   const registrationDetails = await Promise.all(
     registrations.map(async (event) => ({
-      covenantId: Number(event.args.covenantId),
+      covenantId: event.args.covenantId,
       address: event.args.covenant,
       configHash: await new ethers.Contract(
         event.args.covenant,
@@ -559,7 +559,7 @@ async function readSnapshot() {
     ) ??
     registrations[0] ??
     null;
-  let covenantId = registration ? Number(registration.args.covenantId) : null;
+  let covenantId = registration?.args.covenantId ?? null;
   let covenantAddress = registration?.args.covenant ?? null;
   let covenant = covenantAddress
     ? new ethers.Contract(covenantAddress, COVENANT_ABI, provider)
@@ -662,7 +662,7 @@ async function readSnapshot() {
     }
     if (triggerRegistration !== registration) {
       registration = triggerRegistration;
-      covenantId = Number(registration.args.covenantId);
+      covenantId = registration.args.covenantId;
       covenantAddress = registration.args.covenant;
       covenant = new ethers.Contract(covenantAddress, COVENANT_ABI, provider);
       isOutflow =
@@ -1844,18 +1844,24 @@ function renderCovenantWorkflow(snapshot) {
   const configured = snapshot.covenantConfigs.filter(
     (definition) => definition.configHash !== ethers.ZeroHash,
   ).length;
+  const configuredAwaitingRegistration = snapshot.covenantConfigs.filter(
+    (definition) =>
+      definition.configHash !== ethers.ZeroHash && !definition.registered,
+  ).length;
+  const configuredSetIsRegistered =
+    configured > 0 && configuredAwaitingRegistration === 0;
   const stages = [
     {
       number: "01",
       title: "Configure",
-      copy: `${configured} of ${snapshot.covenantConfigs.length} deployed templates configured for this facility. Parameters become immutable.`,
-      complete: configured > 0,
+      copy: `${configured} of ${snapshot.covenantConfigs.length} deployed templates configured; ${configuredAwaitingRegistration} still awaiting registration. Parameters become immutable.`,
+      complete: configuredSetIsRegistered,
     },
     {
       number: "02",
       title: "Register in order",
       copy: `${snapshot.registrations.length} covenant${snapshot.registrations.length === 1 ? "" : "s"} bound into the rolling commitment. Later registrations change it.`,
-      complete: snapshot.registrations.length > 0,
+      complete: snapshot.registrations.length > 0 && configuredSetIsRegistered,
     },
     {
       number: "03",
@@ -2013,6 +2019,10 @@ function renderActions() {
       snapshot.registrationDetails.length > 0 &&
       snapshot.registrationDetails.every(
         (registered) => registered.configHash !== ethers.ZeroHash,
+      ) &&
+      snapshot.covenantConfigs.every(
+        (definition) =>
+          definition.configHash === ethers.ZeroHash || definition.registered,
       )
     ) {
       actions.push(activationAction(snapshot));
