@@ -24,16 +24,16 @@ The live hero adjudication used five real Ethereum mainnet transfers in five dis
 
 CC3 Testnet, chain ID `102031`:
 
-| Component | Address |
-| --- | --- |
-| Facility | [`0x144048E22e822269814D592aeaC34734c603dCA7`](https://creditcoin-testnet.blockscout.com/address/0x144048E22e822269814D592aeaC34734c603dCA7) |
+| Component              | Address                                                                                                                                      |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Facility               | [`0x144048E22e822269814D592aeaC34734c603dCA7`](https://creditcoin-testnet.blockscout.com/address/0x144048E22e822269814D592aeaC34734c603dCA7) |
 | Attestcoin adjudicator | [`0x6abB74F57c99986Ff205d4EF396Dd6d61d2659eB`](https://creditcoin-testnet.blockscout.com/address/0x6abB74F57c99986Ff205d4EF396Dd6d61d2659eB) |
-| Outflow-cap covenant | [`0x873C1344B850bB80c758E191D1DCA31CE86030Ef`](https://creditcoin-testnet.blockscout.com/address/0x873C1344B850bB80c758E191D1DCA31CE86030Ef) |
-| New-borrow covenant | [`0x5f1DCF18622663a046a55Ad86c61dd339E1e5dE4`](https://creditcoin-testnet.blockscout.com/address/0x5f1DCF18622663a046a55Ad86c61dd339E1e5dE4) |
-| LP-lock covenant | [`0x2826913E2917d905F7658AAa81288f3C4b98A53d`](https://creditcoin-testnet.blockscout.com/address/0x2826913E2917d905F7658AAa81288f3C4b98A53d) |
-| Facility ID | `1` |
-| Breach adjudication | [`0x7c180209…7e5d5b6`](https://creditcoin-testnet.blockscout.com/tx/0x7c180209bedaa64b4e1acff02d2822e8c76b0db98f105b7b75e3b95ac7e5d5b6) |
-| Breach block | `5,371,462` |
+| Outflow-cap covenant   | [`0x873C1344B850bB80c758E191D1DCA31CE86030Ef`](https://creditcoin-testnet.blockscout.com/address/0x873C1344B850bB80c758E191D1DCA31CE86030Ef) |
+| New-borrow covenant    | [`0x5f1DCF18622663a046a55Ad86c61dd339E1e5dE4`](https://creditcoin-testnet.blockscout.com/address/0x5f1DCF18622663a046a55Ad86c61dd339E1e5dE4) |
+| LP-lock covenant       | [`0x2826913E2917d905F7658AAa81288f3C4b98A53d`](https://creditcoin-testnet.blockscout.com/address/0x2826913E2917d905F7658AAa81288f3C4b98A53d) |
+| Facility ID            | `1`                                                                                                                                          |
+| Breach adjudication    | [`0x7c180209…7e5d5b6`](https://creditcoin-testnet.blockscout.com/tx/0x7c180209bedaa64b4e1acff02d2822e8c76b0db98f105b7b75e3b95ac7e5d5b6)      |
+| Breach block           | `5,371,462`                                                                                                                                  |
 
 The breach transaction succeeded, emitted seven events, and used 699,409 gas.
 
@@ -76,13 +76,22 @@ node scripts/submit.mjs
 
 The final command pre-warms and fetches the five locked proofs, submits one batch, and checks the resulting `Breached` state, 274.79 USDC accumulation, debt reduction, zero available credit, and 40 tCTC hunter payout. Deployment rewrites `deployments.json`, so preserve the checked-in live record before running a fresh deployment.
 
-To inspect the static dashboard locally without sending transactions:
+To run the static application:
 
 ```bash
 python -m http.server 8000
 ```
 
-Open `http://localhost:8000/web/`. It reads the checked-in deployment directly from the CC3 RPC and requires no wallet connection.
+Open `http://localhost:8000/web/`. There is no build step. The application discovers facilities from live `FacilityOpened` events and remains fully readable without a wallet. Connect an injected EVM wallet such as MetaMask to add or switch to CC3 Testnet and operate facilities through wallet-owned signatures; browser code never reads a private key.
+
+The application exposes the complete deployed surface:
+
+- lenders can open, fund, configure and register ordered covenants, cancel before activation, and withdraw claims;
+- borrowers can post the bond, activate the exact live covenant-set commitment, request and execute delayed draws, repay, cancel before activation, and claim refunds;
+- permissionless hunters can build Attestcoin batches directly from Ethereum transaction hashes, inspect the exact calldata and gas policy, and submit through their wallet;
+- every write is shown in a transaction-review dialog and preflighted with a read-only contract call before the wallet is asked to sign.
+
+The configure â†’ register â†’ activate order is explicit in the interface because it is a contract-enforced security boundary. Configuration parameters are verified against the on-chain hash. Parameters created in this browser are retained locally after confirmation; because the deployed covenant contracts expose only their hashes and emit no parameter event, another browser can verify checked-in public metadata but cannot reconstruct arbitrary private configuration values.
 
 ## Architecture
 
@@ -110,7 +119,7 @@ AttestcoinAdjudicator on Creditcoin
 - `RecourseFacility.sol` owns the credit state machine, lender vault, borrower bond, draws, repayment, and breach accounting.
 - `AttestcoinAdjudicator.sol` is the only contract that calls the BlockProver precompile. It verifies first, decodes receipts, rejects reverted transactions, enforces facility-and-covenant-scoped replay protection, and dispatches proven transactions.
 - Each contract in `contracts/covenants/` is a small, separately configured predicate. It validates the source chain, window, emitting contract, indexed subjects, and event data relevant to that covenant.
-- `scripts/` handles deployment, facility setup, proof retrieval, and submission. `web/` is a read-only static monitor.
+- `scripts/` handles deployment, facility setup, proof retrieval, and unattended submission. `web/` is the zero-build wallet application and walletless facility monitor.
 
 The borrower's activation commits to an ordered hash covering both the identity and configuration of every registered covenant. Registration is limited to the pre-activation `Created` state, and each covenant rejects reconfiguration after registration, so neither the covenant set nor anything the borrower agreed to can change afterwards.
 
@@ -122,10 +131,12 @@ The stateful invariant suite completed 256 runs and 128,000 calls with zero reve
 
 ## Honest limitations
 
-- **Read-only season.** Attestcoin writability is not live on testnet, so Recourse cannot reach back to Ethereum. The bond, draw freeze, permanent default state, and on-Creditcoin repayment obligation are the recourse. This project does not claim legal or cross-chain recovery.
+- **No cross-chain write-back.** Attestcoin writability is not live on testnet, so Recourse cannot reach back to Ethereum. The bond, draw freeze, permanent default state, and on-Creditcoin repayment obligation are the recourse. This project does not claim legal or cross-chain recovery.
 - **Hunter MEV.** Proofs are public. A pending hunter submission can be copied and outbid. This is disclosed and unsolved in this version; commit/reveal is on the roadmap.
 - **Historical simulation.** The hero demo uses real historical Ethereum mainnet evidence that necessarily predates the facility. It is a historical simulation over real data, and the demo must be described that way; it is not evidence of post-funding borrower conduct.
 - **Fixed predicates.** The implementation contains three hardcoded covenant predicates, not a general covenant DSL.
+- **Hash-only configuration recovery.** The deployed covenants expose a configuration hash, not their original parameters, and emit no configuration event. The application verifies checked-in or browser-local metadata against that hash and labels parameters unavailable when it cannot do so.
+- **Browser proof source.** Browser-built hunter batches currently support Ethereum mainnet (`chainKey = 3`). The application cross-checks the Proof Builder response against an independent public Ethereum RPC and the CC3 verifier-derived transaction index before review.
 - **Plaintext development wallets.** `npm run wallets:new` writes throwaway testnet keys to a plaintext, gitignored file. The file is not encrypted, although none of these keys appear in git history.
 - **Native-transfer compatibility.** Each participant address must be able to receive native transfers. A contract address that rejects them can block its own withdrawal.
 - **Testnet and unaudited.** Recourse is deployed only on CC3 Testnet and has not received an independent security audit beyond the project's own adversarial review and test suite.
