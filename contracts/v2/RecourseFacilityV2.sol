@@ -279,7 +279,7 @@ contract RecourseFacilityV2 is IPolicyFacilityV1, ReentrancyGuard {
 
     function availableCredit() public view returns (uint256) {
         if (status != FacilityStatus.Active || incidentPaused() || freshEvidenceRequired) return 0;
-        if (evidenceValidUntil != 0 && block.timestamp > evidenceValidUntil) return 0;
+        if (evidenceValidUntil != 0 && block.timestamp >= evidenceValidUntil) return 0;
         uint256 effectiveLimit = Math.mulDiv(facilityLimit, creditLimitBps, BPS_DENOMINATOR);
         return drawnPrincipal >= effectiveLimit ? 0 : effectiveLimit - drawnPrincipal;
     }
@@ -288,7 +288,7 @@ contract RecourseFacilityV2 is IPolicyFacilityV1, ReentrancyGuard {
         if (block.number > maturityBlock) revert MaturityPassed(maturityBlock);
         if (incidentPaused()) revert DrawPaused();
         if (freshEvidenceRequired) revert EvidenceRequired();
-        if (evidenceValidUntil != 0 && block.timestamp > evidenceValidUntil) {
+        if (evidenceValidUntil != 0 && block.timestamp >= evidenceValidUntil) {
             revert EvidenceExpired(evidenceValidUntil);
         }
     }
