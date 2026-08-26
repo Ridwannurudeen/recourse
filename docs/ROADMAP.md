@@ -2,9 +2,11 @@
 
 ## Where the project is today
 
-Recourse has proved its first hard primitive: verified conduct on another chain can autonomously change financial rights on Creditcoin. Five protocol contracts are deployed on CC3 Testnet. The system has three fixed covenant predicates, an ordered covenant-set commitment, a permissionless adjudicator, a credit-facility state machine, an autonomous hunter daemon, and a zero-build wallet application covering the full lender, borrower, and hunter workflow.
+Recourse now has two live generations on CC3 Testnet, with 12 deployed contracts in total. The proven v1 generation remains live and untouched: its five contracts provide three fixed covenant predicates, an ordered covenant-set commitment, a permissionless adjudicator, a native-token credit-facility state machine, the original autonomous hunter daemon, and a zero-build wallet application covering the lender, borrower, and hunter workflow. Facilities 1 and 2 both remain `Breached`.
 
-The evidence is concrete. A live autonomous daemon run detected a qualifying Ethereum mainnet USDC outflow, built the Attestcoin proof, submitted it, and moved Facility 2 to `Breached` without manual intervention. The contract suite passes 134 Forge tests and the daemon passes four focused Node tests. This is still testnet software. It has received internal adversarial review only, not an independent security audit, and the demonstrated testnet history is not production credit performance.
+The v1 evidence stands as before. A live autonomous daemon run detected a qualifying Ethereum mainnet USDC outflow, built the Attestcoin proof, submitted it, and moved Facility 2 to `Breached` without manual intervention. Horizon 1 is an additive seven-contract generation: a Policy Kernel, Verified Credit State, Permissionless Proof Jobs, facility factory, event-history policy, demonstration facility, and fixed-supply demo asset. Its demonstration facility is ERC-20 denominated with six decimals, and its resumable proof operator runs alongside the original daemon.
+
+Across both generations, the suite passes 217 Forge tests and 11 Node tests. The stateful invariant suite completes 256 runs and 128,000 calls with zero reverts while checking asset conservation and claim solvency. This remains testnet software. It has received internal adversarial review only, not an independent security audit; the demo asset is not a production stablecoin; and the demonstrated testnet history is not production credit performance.
 
 The thesis is larger than an undercollateralized lending application:
 
@@ -29,53 +31,57 @@ No Recourse token is required. The roadmap is organized around the qualities [CE
 
 ## Horizon 1 — Turn the proof into a pilotable credit system
 
-### 1. Recourse Policy Kernel v1
+### 1. Recourse Policy Kernel v1 — delivered and deployed
 
-**What it is:** Replace the binary healthy-or-breached model with a committed policy state machine supporting graded outcomes: eligible, watch, restricted, margin-called, breached, and cured. Policies can freeze a pending draw, reduce locally available credit, require fresh evidence, step up terms for future draws, or terminate the facility.
+**What shipped:** A committed policy state machine with graded outcomes: eligible, watch, restricted, margin-called, breached, and cured. Deployed policies can freeze a pending draw, reduce locally available credit, require fresh evidence, step up terms for future draws, or terminate the facility. Policy registration builds an ordered commitment, full public manifests are recoverable, and multiple policy effects aggregate conservatively.
 
-**Why it is the natural next step for Recourse:** The three current covenants and ordered covenant-set commitment are already a narrow policy kernel. Generalizing the consequence model extends the part that works instead of widening the authorization surface with a premature universal covenant language.
+**Why it is the natural extension of Recourse:** The three original covenants and ordered covenant-set commitment were already a narrow policy kernel. Generalizing the consequence model extends the proven primitive without widening the authorization surface with a premature universal covenant language.
 
 **Sponsor alignment:** Verified collateral lending and settlement/RWA attestation.
 
 **What it unlocks:** Continuous servicing rather than one terminal enforcement event, with multiple lending products able to consume the same adjudicated risk state.
 
-**Honest dependencies:** No writability is required for local actions. The kernel requires new economic invariants, adversarial tests, and an independent audit before real value is entrusted to it.
+**Honest dependencies:** No writability is required for local actions. The economic invariants and adversarial tests are built; an independent audit of the exact deployed scope remains required before real value is entrusted to it.
 
-### 2. Verified Credit State
+### 2. Verified Credit State — delivered and deployed
 
-**What it is:** A per-borrower, per-facility state composed from ownership proofs, collateral or position evidence, proven liabilities, behavioural observations, and explicit freshness deadlines. Each observation records its source chain, subject, proof time, expiry, and policy effect.
+**What shipped:** A per-borrower, per-facility history of proven event observations, deltas, and transitions with explicit freshness deadlines. Each accepted observation records its source chain, source position, subject, canonical emitter, event-reported value, proof time, expiry, evidence digest, and policy effect.
 
-**Why it is the natural next step for Recourse:** The current product already turns behaviour into consequences. Adding eligibility and capacity evidence completes the credit lifecycle: qualify, monitor, restrict, and enforce.
+**Why it is the natural extension of Recourse:** The original product already turns proven behaviour into consequences. Horizon 1 makes those observations reusable as ordered, freshness-aware credit state while staying inside the evidence Attestcoin actually proves.
 
-**Sponsor alignment:** Lending against verified balances and derivatives backed by proven collateral.
+**Sponsor alignment:** Lending against verified balances and derivatives backed by proven collateral, subject to the confirmed limits below.
 
-**What it unlocks:** Risk-based facility limits, collateral-maintenance rules, proof-of-compliance challenges, and portfolio monitoring across chains.
+**What it unlocks:** Event-derived facility restrictions, proof-of-compliance challenges, and portfolio monitoring based on proven transitions. Current balances and asset values still require additional evidence sources.
 
-**Honest dependencies:** Direct balance or storage-state proof support must be verified before it is promised. The first version should use proven event histories and collateral contracts with reconstructable state. Asset valuation remains an external input; pricing, liquidity, ownership binding, rehypothecation, and hidden liabilities are not cryptographically solved by proving a quantity.
+**Confirmed Attestcoin boundary:** The installed surface proves transaction inclusion and the encoded transaction, receipt, and log data. It does not provide account, balance, storage, `eth_call`, or source-block-timestamp proofs. Verified Credit State therefore records proven event deltas and transitions, not cryptographically verified current balances. `proofTime` is CC3 acceptance time, not source-chain event time, and asset valuation remains an external input. Event-history policies reject favourable `Eligible` and `Cured` outcomes because a stale favourable event must not reopen credit.
 
-### 3. Permissionless Proof Jobs
+This qualifies Attestcoin's own “lending against verified on-chain balances” framing: directly proving a current on-chain balance is not possible with the installed surface today. Recourse works within that boundary by recording what the proof actually establishes. Reconstructing current state would require a protocol-specific adapter with a known baseline and complete coverage of every state-changing path; pricing, liquidity, ownership binding, rehypothecation, and hidden liabilities would still remain outside the proof.
 
-**What it is:** Facilities publish typed monitoring jobs with evidence requirements, expiry, maximum proof reimbursement, and outcome rewards. Hunters commit an evidence digest before revealing the proof, protecting their right to the application reward without hiding the eventual evidence. The existing daemon becomes the first reference operator.
+### 3. Permissionless Proof Jobs — delivered and deployed
 
-**Why it is the natural next step for Recourse:** Recourse already has a live autonomous hunter and an application-funded breach reward. This turns a working operator into repeatable infrastructure.
+**What shipped:** Facilities publish typed monitoring jobs with evidence requirements, expiry, maximum proof reimbursement, and outcome rewards. Hunters commit a hunter-bound evidence digest before revealing the proof, reserving their right to the application reward without hiding the eventual evidence. A resumable Horizon 1 reference operator persists and validates commit/reveal state alongside the unchanged original daemon.
+
+**Why it is the natural extension of Recourse:** Recourse already had a live autonomous hunter and an application-funded breach reward. Proof Jobs turns that working operator model into repeatable infrastructure.
 
 **Sponsor alignment:** Permissionless readability proof submission and the operator model surrounding Attestcoin.
 
 **What it unlocks:** Lenders no longer need to run their own watchers; multiple independent operators can cover facilities; monitoring becomes a measurable service with latency and uptime.
 
-**Honest dependencies:** Commit/reveal must be designed against griefing and non-reveal attacks. Rewards must cover expected proof and gas costs without incentivizing manufactured breaches. This should reuse Attestcoin proof infrastructure, not duplicate it.
+**Honest dependencies:** The deployed design reserves each evidence digest to its first committer, delays reveal, makes missed-reveal bonds slashable, and recovers invalid, irrelevant, or duplicate attempts conservatively. Production reward levels still need to cover expected proof and gas costs without incentivizing manufactured breaches. The implementation reuses Attestcoin proof infrastructure rather than duplicating it.
 
-### 4. A capped real-asset pilot
+### 4. A capped real-asset pilot — scaffolding delivered; pilot not run
 
-**What it is:** A stablecoin-denominated facility factory, public policy manifests, full configuration recoverability, a production watcher, incident controls, and one design-partner pilot with deliberately capped exposure.
+**What shipped:** The pilot scaffolding: a permissionless ERC-20 facility factory, an ERC-20-denominated demonstration facility, public policy manifests, full configuration recoverability, lender and borrower draw pauses, and a factory creation pause. The demonstration asset is a six-decimal, fixed-supply testnet token, not a stablecoin and not a production asset.
 
-**Why it is the natural next step for Recourse:** The current native-token testnet facilities prove mechanics, not product demand. A real lender-borrower workflow is the shortest path to learning whether counterparties will pay for continuously serviced, automatically enforced credit policy.
+**What did not ship:** No pilot has been run. Recourse still has no design partner, independent audit, legal review, production asset or custody decision, or production watcher. The scaffolding deployment must not be read as evidence of customer demand or production credit performance.
+
+**Why it is the natural next step for Recourse:** The deployed native-token and ERC-20 testnet facilities prove mechanics, not product demand. A real lender-borrower workflow remains the shortest path to learning whether counterparties will pay for continuously serviced, automatically enforced credit policy.
 
 **Sponsor alignment:** Collateralized lending, RWA financing, and real-world settlement.
 
 **What it unlocks:** Real servicing data: proof latency, monitoring cost, false-positive rate, operator economics, capital utilization, and whether counterparties accept automated covenant consequences.
 
-**Honest dependencies:** Recourse has no design partner today and no customer has requested this pilot. It requires an independent contract audit, legal review of facility terms, stablecoin support, production deployment readiness, and a counterparty willing to use programmable custody. Testnet history must never be presented as production performance.
+**Honest dependencies:** Recourse has no design partner today and no customer has requested this pilot. It requires an independent audit of the exact contract scope, legal review of facility terms, production asset and custody decisions, production deployment readiness, and a counterparty willing to use programmable custody. Testnet history must never be presented as production performance.
 
 **Investment milestone:** One signed design partner, one independently audited scope, a complete pilot budget, and a rehearsed testnet facility whose monitored conduct begins only after funding.
 
@@ -117,7 +123,7 @@ This horizon is directionally important but not scheduled work. [Attestcoin writ
 
 **What it unlocks:** Other teams can add verified credit controls to their vaults or markets without adopting the Recourse user application or rebuilding proof handling.
 
-**Honest dependencies:** At least two external integrations should shape the interfaces before they are frozen. Recourse has no external integration partner today. “Audited” must attach to an exact version and deployment, never to the registry as a whole.
+**Honest dependencies:** Unlike items 5 and 6, this item is not blocked on Attestcoin writability. The SDK, simulation tools, policy packages, and registry are buildable against the current read-only surface today. At least two external integrations should shape the interfaces before they are frozen. Recourse has no external integration partner today. “Audited” must attach to an exact version and deployment, never to the registry as a whole.
 
 **Business milestone:** First external protocol integration and first recurring monitoring customer.
 

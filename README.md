@@ -131,7 +131,7 @@ The borrower's activation commits to an ordered hash covering both the identity 
 
 ## Testing
 
-`forge test` passes 217 tests across the frozen and Horizon 1 generations. The original 134 tests remain green. New coverage adds graded multi-policy aggregation, exact-expiry behavior, ERC-20 accounting, public manifests, verified observations, source-position monotonicity, proof-job authorization, commit reservations, duplicate-proof recovery, conservative cures, the factory circuit breaker, and an end-to-end factory-to-proof-to-policy flow.
+`forge test` passes 217 tests across the frozen and Horizon 1 generations, and the Node suite passes 11 tests across both operators and their proof tooling. The original 134 Forge tests remain green. New coverage adds graded multi-policy aggregation, exact-expiry behavior, ERC-20 accounting, public manifests, verified observations, source-position monotonicity, proof-job authorization, commit reservations, duplicate-proof recovery, conservative cures, the factory circuit breaker, and an end-to-end factory-to-proof-to-policy flow.
 
 The stateful invariant suite completed 256 runs and 128,000 calls with zero reverts. It asserts asset conservation and claim solvency. A separate regression test asserts that the bond can be claimed at most once.
 
@@ -151,8 +151,8 @@ The stateful invariant suite completed 256 runs and 128,000 calls with zero reve
 
 Recourse's trajectory is not “more covenants.” It is a cross-chain credit policy layer that turns verified external reality into continuously serviced credit state and bounded consequences, then, when the underlying protocol support exists, closes that loop wherever the exposure lives.
 
-- **Horizon 1 — Technical foundation built.** The Policy Kernel, verified credit state, permissionless proof jobs, ERC-20 factory, public manifests, and incident controls are live on testnet. A design partner, independent audit, legal review, and real-asset pilot remain explicit gates and are not claimed.
-- **Horizon 2 — Closed-loop cross-chain servicing.** Add pre-authorized remedy adapters, acknowledgements and cure workflows, plus an SDK and policy registry. Cross-chain execution is blocked until Attestcoin writability is live in the target environment.
+- **Horizon 1 — Items 1–3 delivered; item 4 scaffolding delivered.** The Policy Kernel, event-derived Verified Credit State, permissionless Proof Jobs, resumable operator, ERC-20 facility factory, public manifests, and incident controls are live on testnet. The six-decimal demo asset is a fixed-supply testnet token, not a stablecoin. No pilot has been run: a design partner, independent audit, legal review, and production asset and custody decisions remain explicit gates.
+- **Horizon 2 — Closed-loop cross-chain servicing.** Items 5 and 6—pre-authorized remedy adapters plus acknowledgement and cure workflows—remain blocked until Attestcoin writability is live in the target environment. Item 7, the SDK and Policy Registry, does not depend on writability and is buildable today.
 - **Horizon 3 — Credit coordination network.** Extend proven policy across customer-required, actually provisioned chains, open monitoring to competing operators, and support programmable credit portfolios only after real servicing history exists.
 
 See the [full three-horizon roadmap](docs/ROADMAP.md) for the ten-item plan, investment milestones, dependencies, and deliberate cut list.
