@@ -66,6 +66,7 @@ contract ProofJobsV1 is ReentrancyGuard {
     error ActiveCommitment();
     error CommitmentNotFound();
     error CommitmentMismatch();
+    error EvidenceDigestMismatch();
     error RevealTooEarly();
     error RevealWindowElapsed();
     error ProofRejected();
@@ -173,6 +174,7 @@ contract ProofJobsV1 is ReentrancyGuard {
         if (commitment.digest != computeCommitment(jobId, msg.sender, evidenceDigest, salt)) {
             revert CommitmentMismatch();
         }
+        if (evidenceDigest != keccak256(proof)) revert EvidenceDigestMismatch();
 
         (bool accepted, uint8 outcomeLevel) =
             kernel.evaluateProofJob(job.facility, job.policyId, job.requirementsDigest, proof, msg.sender);

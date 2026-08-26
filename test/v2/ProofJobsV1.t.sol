@@ -122,7 +122,7 @@ contract MockProofJobsKernel is IProofJobsKernelV1 {
 
         function test_multipleHuntersCanCommitAndRevealNeedsOneLaterBlock() public {
             uint256 jobId = _createJob();
-            bytes32 digest = keccak256("evidence");
+            bytes32 digest = keccak256(hex"1234");
             bytes32 salt = keccak256("salt");
             bytes32 secondSalt = keccak256("second salt");
             _commit(jobId, HUNTER, digest, salt);
@@ -143,7 +143,7 @@ contract MockProofJobsKernel is IProofJobsKernelV1 {
 
         function test_revealBindsJobHunterDigestAndSaltBeforeCallingKernel() public {
             uint256 jobId = _createJob();
-            bytes32 digest = keccak256("evidence");
+            bytes32 digest = keccak256(hex"1234");
             bytes32 salt = keccak256("salt");
             _commit(jobId, HUNTER, digest, salt);
             vm.roll(block.number + 1);
@@ -156,9 +156,24 @@ contract MockProofJobsKernel is IProofJobsKernelV1 {
             assertEq(jobs.getCommitment(jobId, HUNTER).bond, COMMIT_BOND);
         }
 
+        function test_revealRejectsProofThatDoesNotMatchCommittedEvidenceDigest() public {
+            uint256 jobId = _createJob();
+            bytes32 digest = keccak256(hex"1234");
+            bytes32 salt = keccak256("salt");
+            _commit(jobId, HUNTER, digest, salt);
+            vm.roll(block.number + 1);
+
+            vm.prank(HUNTER);
+            vm.expectRevert(ProofJobsV1.EvidenceDigestMismatch.selector);
+            jobs.revealEvidence(jobId, digest, salt, hex"5678");
+
+            assertEq(kernel.calls(), 0);
+            assertEq(jobs.getCommitment(jobId, HUNTER).bond, COMMIT_BOND);
+        }
+
         function test_irrelevantProofDoesNotConsumeCommitOrAttempt() public {
             uint256 jobId = _createJob();
-            bytes32 digest = keccak256("evidence");
+            bytes32 digest = keccak256(hex"1234");
             bytes32 salt = keccak256("salt");
             _commit(jobId, HUNTER, digest, salt);
             vm.roll(block.number + 1);
@@ -174,7 +189,7 @@ contract MockProofJobsKernel is IProofJobsKernelV1 {
 
         function test_kernelFailureDoesNotConsumeCommitOrAttempt() public {
             uint256 jobId = _createJob();
-            bytes32 digest = keccak256("evidence");
+            bytes32 digest = keccak256(hex"1234");
             bytes32 salt = keccak256("salt");
             _commit(jobId, HUNTER, digest, salt);
             vm.roll(block.number + 1);
@@ -190,7 +205,7 @@ contract MockProofJobsKernel is IProofJobsKernelV1 {
 
         function test_successfulProofReturnsBondAndReimbursementThroughPullClaim() public {
             uint256 jobId = _createJob();
-            bytes32 digest = keccak256("evidence");
+            bytes32 digest = keccak256(hex"1234");
             bytes32 salt = keccak256("salt");
             _commit(jobId, HUNTER, digest, salt);
             vm.roll(block.number + 1);
@@ -216,7 +231,7 @@ contract MockProofJobsKernel is IProofJobsKernelV1 {
 
         function test_outcomeRewardOnlyPaidAtExplicitSeverityThreshold() public {
             uint256 jobId = _createJob();
-            bytes32 digest = keccak256("evidence");
+            bytes32 digest = keccak256(hex"1234");
             bytes32 salt = keccak256("salt");
             _commit(jobId, HUNTER, digest, salt);
             vm.roll(block.number + 1);
@@ -235,8 +250,8 @@ contract MockProofJobsKernel is IProofJobsKernelV1 {
             uint256 jobId = _createJob();
             kernel.setResult(true, REWARD_THRESHOLD - 1);
 
-            _successfulReveal(jobId, HUNTER, keccak256("one"), keccak256("salt one"));
-            _successfulReveal(jobId, HUNTER, keccak256("two"), keccak256("salt two"));
+            _successfulReveal(jobId, HUNTER, keccak256(hex"1234"), keccak256("salt one"));
+            _successfulReveal(jobId, HUNTER, keccak256(hex"1234"), keccak256("salt two"));
 
             ProofJobsV1.Job memory job = jobs.getJob(jobId);
             assertEq(uint256(job.state), uint256(ProofJobsV1.JobState.AttemptsExhausted));
@@ -246,7 +261,7 @@ contract MockProofJobsKernel is IProofJobsKernelV1 {
 
         function test_permissionlessSlashAfterNonRevealCreditsSponsor() public {
             uint256 jobId = _createJob();
-            bytes32 digest = keccak256("evidence");
+            bytes32 digest = keccak256(hex"1234");
             bytes32 salt = keccak256("salt");
             _commit(jobId, HUNTER, digest, salt);
 
@@ -260,7 +275,7 @@ contract MockProofJobsKernel is IProofJobsKernelV1 {
 
         function test_slashBeforeRevealDeadlineReverts() public {
             uint256 jobId = _createJob();
-            bytes32 digest = keccak256("evidence");
+            bytes32 digest = keccak256(hex"1234");
             bytes32 salt = keccak256("salt");
             _commit(jobId, HUNTER, digest, salt);
 
@@ -271,7 +286,7 @@ contract MockProofJobsKernel is IProofJobsKernelV1 {
 
         function test_expiryRefundsRemainingEscrowAndUnrevealedBondIsSlashable() public {
             uint256 jobId = _createJob();
-            bytes32 digest = keccak256("evidence");
+            bytes32 digest = keccak256(hex"1234");
             bytes32 salt = keccak256("salt");
             _commit(jobId, HUNTER, digest, salt);
             ProofJobsV1.Job memory beforeExpiry = jobs.getJob(jobId);
@@ -289,7 +304,7 @@ contract MockProofJobsKernel is IProofJobsKernelV1 {
 
         function test_otherHunterCanRecoverBondWhenOutcomeFinalizesJob() public {
             uint256 jobId = _createJob();
-            bytes32 digest = keccak256("evidence");
+            bytes32 digest = keccak256(hex"1234");
             bytes32 salt = keccak256("salt");
             bytes32 secondSalt = keccak256("second salt");
             _commit(jobId, HUNTER, digest, salt);
@@ -310,8 +325,8 @@ contract MockProofJobsKernel is IProofJobsKernelV1 {
             uint256 first = _createJob();
             uint256 second = _createJob();
             kernel.setResult(true, 0);
-            _successfulReveal(first, HUNTER, keccak256("one"), keccak256("salt one"));
-            _successfulReveal(second, HUNTER, keccak256("two"), keccak256("salt two"));
+            _successfulReveal(first, HUNTER, keccak256(hex"1234"), keccak256("salt one"));
+            _successfulReveal(second, HUNTER, keccak256(hex"1234"), keccak256("salt two"));
 
             uint256 beforeClaim = token.balanceOf(HUNTER);
             vm.prank(HUNTER);
