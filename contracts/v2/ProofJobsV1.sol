@@ -50,6 +50,7 @@ contract ProofJobsV1 is ReentrancyGuard {
 
     struct Commitment {
         bytes32 digest;
+        bytes32 evidenceDigest;
         uint64 committedBlock;
         uint64 revealDeadlineBlock;
         uint256 bond;
@@ -65,12 +66,12 @@ contract ProofJobsV1 is ReentrancyGuard {
     error JobExpired();
     error JobNotExpired();
     error ActiveCommitment();
+    error EvidenceAlreadyReserved();
     error CommitmentNotFound();
     error CommitmentMismatch();
     error EvidenceDigestMismatch();
     error RevealTooEarly();
     error RevealWindowElapsed();
-    error ProofRejected();
     error CommitStillRevealable();
     error CommitCannotBeReleased();
     error NothingToClaim();
@@ -84,9 +85,14 @@ contract ProofJobsV1 is ReentrancyGuard {
         uint256 escrow
     );
     event EvidenceCommitted(
-        uint256 indexed jobId, address indexed hunter, bytes32 indexed commitment, uint64 revealDeadlineBlock
+        uint256 indexed jobId,
+        address indexed hunter,
+        bytes32 indexed evidenceDigest,
+        bytes32 commitment,
+        uint64 revealDeadlineBlock
     );
     event ProofAccepted(uint256 indexed jobId, address indexed hunter, uint8 outcomeLevel, uint32 successfulProofs);
+    event ProcessedProofReleased(uint256 indexed jobId, address indexed hunter, bytes32 indexed evidenceDigest);
     event JobFinalized(uint256 indexed jobId, JobState state, uint256 sponsorRefund);
     event CommitmentSlashed(uint256 indexed jobId, address indexed hunter, uint256 bond);
     event CommitmentReleased(uint256 indexed jobId, address indexed hunter, uint256 bond);
@@ -97,6 +103,7 @@ contract ProofJobsV1 is ReentrancyGuard {
 
     mapping(uint256 jobId => Job job) private _jobs;
     mapping(uint256 jobId => mapping(address hunter => Commitment commitment)) private _commitments;
+    mapping(uint256 jobId => mapping(bytes32 evidenceDigest => address hunter)) public evidenceReservedBy;
     mapping(address token => mapping(address account => uint256 amount)) public claimable;
 
     constructor(IProofJobsKernelV1 kernel_) {
@@ -111,7 +118,9 @@ contract ProofJobsV1 is ReentrancyGuard {
                 || params.revealWindowBlocks == 0 || params.maxSuccessfulProofs == 0 || params.proofReimbursement == 0
                 || params.outcomeReward == 0 || params.commitBond == 0 || params.rewardOutcomeThreshold > 4
         ) revert InvalidJobConfiguration();
-        if (!kernel.canPublishJob(params.facility, msg.sender, address(params.token))) {
+        if (!kernel.canPublishJob(
+                params.facility, msg.sender, address(params.token), params.policyId, params.requirementsDigest
+            )) {
             revert UnauthorizedJobPublisher();
         }
         if (kernel.incidentPaused(params.facility)) revert FacilityIncidentPaused();
@@ -143,16 +152,19 @@ contract ProofJobsV1 is ReentrancyGuard {
         emit JobCreated(jobId, msg.sender, params.facility, params.policyId, params.requirementsDigest, escrow);
     }
 
-    function commitEvidence(uint256 jobId, bytes32 commitment) external nonReentrant {
+    function commitEvidence(uint256 jobId, bytes32 evidenceDigest, bytes32 commitment) external nonReentrant {
         Job storage job = _openJob(jobId);
         if (block.timestamp >= job.expiry) revert JobExpired();
-        if (commitment == bytes32(0)) revert InvalidJobConfiguration();
+        if (evidenceDigest == bytes32(0) || commitment == bytes32(0)) revert InvalidJobConfiguration();
         if (_commitments[jobId][msg.sender].bond != 0) revert ActiveCommitment();
+        if (evidenceReservedBy[jobId][evidenceDigest] != address(0)) revert EvidenceAlreadyReserved();
 
         uint64 committedBlock = uint64(block.number);
         uint64 revealDeadlineBlock = committedBlock + job.revealWindowBlocks;
+        evidenceReservedBy[jobId][evidenceDigest] = msg.sender;
         _commitments[jobId][msg.sender] = Commitment({
             digest: commitment,
+            evidenceDigest: evidenceDigest,
             committedBlock: committedBlock,
             revealDeadlineBlock: revealDeadlineBlock,
             bond: job.commitBond
@@ -162,7 +174,7 @@ contract ProofJobsV1 is ReentrancyGuard {
         job.token.safeTransferFrom(msg.sender, address(this), job.commitBond);
         if (job.token.balanceOf(address(this)) - balanceBefore != job.commitBond) revert UnsupportedTokenTransfer();
 
-        emit EvidenceCommitted(jobId, msg.sender, commitment, revealDeadlineBlock);
+        emit EvidenceCommitted(jobId, msg.sender, evidenceDigest, commitment, revealDeadlineBlock);
     }
 
     function revealEvidence(uint256 jobId, bytes32 evidenceDigest, bytes32 salt, bytes calldata proof)
@@ -175,6 +187,7 @@ contract ProofJobsV1 is ReentrancyGuard {
         if (commitment.bond == 0) revert CommitmentNotFound();
         if (block.number <= commitment.committedBlock) revert RevealTooEarly();
         if (block.number > commitment.revealDeadlineBlock) revert RevealWindowElapsed();
+        if (commitment.evidenceDigest != evidenceDigest) revert EvidenceDigestMismatch();
         if (commitment.digest != computeCommitment(jobId, msg.sender, evidenceDigest, salt)) {
             revert CommitmentMismatch();
         }
@@ -182,9 +195,14 @@ contract ProofJobsV1 is ReentrancyGuard {
 
         (bool accepted, uint8 outcomeLevel) =
             kernel.evaluateProofJob(job.facility, job.policyId, job.requirementsDigest, proof, msg.sender);
-        if (!accepted) revert ProofRejected();
+        if (!accepted) {
+            _clearCommitment(jobId, msg.sender, commitment.evidenceDigest);
+            claimable[address(job.token)][msg.sender] += commitment.bond;
+            emit ProcessedProofReleased(jobId, msg.sender, evidenceDigest);
+            return;
+        }
 
-        delete _commitments[jobId][msg.sender];
+        _clearCommitment(jobId, msg.sender, commitment.evidenceDigest);
         job.successfulProofs++;
         job.escrowRemaining -= job.proofReimbursement;
         claimable[address(job.token)][msg.sender] += commitment.bond + job.proofReimbursement;
@@ -212,7 +230,7 @@ contract ProofJobsV1 is ReentrancyGuard {
             revert CommitCannotBeReleased();
         }
 
-        delete _commitments[jobId][hunter];
+        _clearCommitment(jobId, hunter, commitment.evidenceDigest);
         claimable[address(job.token)][job.sponsor] += commitment.bond;
         emit CommitmentSlashed(jobId, hunter, commitment.bond);
     }
@@ -225,7 +243,7 @@ contract ProofJobsV1 is ReentrancyGuard {
         Commitment memory commitment = _commitments[jobId][msg.sender];
         if (commitment.bond == 0) revert CommitmentNotFound();
 
-        delete _commitments[jobId][msg.sender];
+        _clearCommitment(jobId, msg.sender, commitment.evidenceDigest);
         claimable[address(job.token)][msg.sender] += commitment.bond;
         emit CommitmentReleased(jobId, msg.sender, commitment.bond);
     }
@@ -276,5 +294,10 @@ contract ProofJobsV1 is ReentrancyGuard {
         job.escrowRemaining = 0;
         claimable[address(job.token)][job.sponsor] += sponsorRefund;
         emit JobFinalized(jobId, state, sponsorRefund);
+    }
+
+    function _clearCommitment(uint256 jobId, address hunter, bytes32 evidenceDigest) private {
+        delete _commitments[jobId][hunter];
+        delete evidenceReservedBy[jobId][evidenceDigest];
     }
 }

@@ -42,12 +42,25 @@ contract MockProofJobsKernel is IProofJobsKernelV1 {
         incidentPaused[facility] = value;
     }
 
-    function setPublishPermission(address facility, address sponsor, address token, bool allowed) external {
-        _publishPermission[keccak256(abi.encode(facility, sponsor, token))] = allowed;
+    function setPublishPermission(
+        address facility,
+        address sponsor,
+        address token,
+        uint256 policyId,
+        bytes32 requirementsDigest,
+        bool allowed
+    ) external {
+        _publishPermission[keccak256(abi.encode(facility, sponsor, token, policyId, requirementsDigest))] = allowed;
     }
 
-    function canPublishJob(address facility, address sponsor, address token) external view override returns (bool) {
-        return _publishPermission[keccak256(abi.encode(facility, sponsor, token))];
+    function canPublishJob(
+        address facility,
+        address sponsor,
+        address token,
+        uint256 policyId,
+        bytes32 requirementsDigest
+    ) external view override returns (bool) {
+        return _publishPermission[keccak256(abi.encode(facility, sponsor, token, policyId, requirementsDigest))];
     }
 
     function evaluateProofJob(
@@ -93,7 +106,7 @@ contract MockProofJobsKernel is IProofJobsKernelV1 {
             token.mint(SPONSOR, 1_000e6);
             token.mint(HUNTER, 100e6);
             token.mint(SECOND_HUNTER, 100e6);
-            kernel.setPublishPermission(FACILITY, SPONSOR, address(token), true);
+            kernel.setPublishPermission(FACILITY, SPONSOR, address(token), POLICY_ID, REQUIREMENTS, true);
 
             vm.prank(SPONSOR);
             token.approve(address(jobs), type(uint256).max);
@@ -149,13 +162,40 @@ contract MockProofJobsKernel is IProofJobsKernelV1 {
             jobs.createJob(params);
         }
 
+        function test_createJobRejectsUnregisteredPolicy() public {
+            ProofJobsV1.JobParams memory params = _params();
+            params.policyId = POLICY_ID + 1;
+
+            vm.prank(SPONSOR);
+            vm.expectRevert(ProofJobsV1.UnauthorizedJobPublisher.selector);
+            jobs.createJob(params);
+        }
+
+        function test_createJobRejectsMismatchedRequirementsDigest() public {
+            ProofJobsV1.JobParams memory params = _params();
+            params.requirementsDigest = keccak256("wrong requirements");
+
+            vm.prank(SPONSOR);
+            vm.expectRevert(ProofJobsV1.UnauthorizedJobPublisher.selector);
+            jobs.createJob(params);
+        }
+
+        function test_createJobRejectsInactiveFacility() public {
+            kernel.setPublishPermission(FACILITY, SPONSOR, address(token), POLICY_ID, REQUIREMENTS, false);
+
+            vm.prank(SPONSOR);
+            vm.expectRevert(ProofJobsV1.UnauthorizedJobPublisher.selector);
+            jobs.createJob(_params());
+        }
+
         function test_multipleHuntersCanCommitAndRevealNeedsOneLaterBlock() public {
             uint256 jobId = _createJob();
             bytes32 digest = keccak256(hex"1234");
             bytes32 salt = keccak256("salt");
+            bytes32 secondDigest = keccak256(hex"5678");
             bytes32 secondSalt = keccak256("second salt");
             _commit(jobId, HUNTER, digest, salt);
-            _commit(jobId, SECOND_HUNTER, digest, secondSalt);
+            _commit(jobId, SECOND_HUNTER, secondDigest, secondSalt);
 
             vm.prank(HUNTER);
             vm.expectRevert(ProofJobsV1.RevealTooEarly.selector);
@@ -170,6 +210,20 @@ contract MockProofJobsKernel is IProofJobsKernelV1 {
             assertEq(kernel.lastHunter(), HUNTER);
         }
 
+        function test_firstHunterReservesEvidenceDigestAgainstDuplicateCommit() public {
+            uint256 jobId = _createJob();
+            bytes32 digest = keccak256(hex"1234");
+            _commit(jobId, HUNTER, digest, keccak256("first salt"));
+            bytes32 secondCommitment = jobs.computeCommitment(jobId, SECOND_HUNTER, digest, keccak256("second salt"));
+
+            vm.prank(SECOND_HUNTER);
+            vm.expectRevert(ProofJobsV1.EvidenceAlreadyReserved.selector);
+            jobs.commitEvidence(jobId, digest, secondCommitment);
+
+            assertEq(token.balanceOf(SECOND_HUNTER), 100e6);
+            assertEq(jobs.evidenceReservedBy(jobId, digest), HUNTER);
+        }
+
         function test_revealBindsJobHunterDigestAndSaltBeforeCallingKernel() public {
             uint256 jobId = _createJob();
             bytes32 digest = keccak256(hex"1234");
@@ -179,7 +233,7 @@ contract MockProofJobsKernel is IProofJobsKernelV1 {
 
             vm.prank(HUNTER);
             vm.expectRevert(ProofJobsV1.CommitmentMismatch.selector);
-            jobs.revealEvidence(jobId, keccak256("other evidence"), salt, hex"1234");
+            jobs.revealEvidence(jobId, digest, keccak256("other salt"), hex"1234");
 
             assertEq(kernel.calls(), 0);
             assertEq(jobs.getCommitment(jobId, HUNTER).bond, COMMIT_BOND);
@@ -200,20 +254,39 @@ contract MockProofJobsKernel is IProofJobsKernelV1 {
             assertEq(jobs.getCommitment(jobId, HUNTER).bond, COMMIT_BOND);
         }
 
-        function test_irrelevantProofDoesNotConsumeCommitOrAttempt() public {
+        function test_irrelevantProofRevertDoesNotConsumeCommitOrAttempt() public {
             uint256 jobId = _createJob();
             bytes32 digest = keccak256(hex"1234");
             bytes32 salt = keccak256("salt");
             _commit(jobId, HUNTER, digest, salt);
             vm.roll(block.number + 1);
-            kernel.setResult(false, 4);
+            kernel.setShouldRevert(true);
 
             vm.prank(HUNTER);
-            vm.expectRevert(ProofJobsV1.ProofRejected.selector);
+            vm.expectRevert(bytes("kernel failure"));
             jobs.revealEvidence(jobId, digest, salt, hex"1234");
 
             assertEq(jobs.getCommitment(jobId, HUNTER).bond, COMMIT_BOND);
             assertEq(jobs.getJob(jobId).successfulProofs, 0);
+        }
+
+        function test_processedDuplicateReturnsBondWithoutReimbursementOrSponsorCapture() public {
+            uint256 jobId = _createJob();
+            bytes32 digest = keccak256(hex"1234");
+            kernel.setResult(true, 1);
+            _successfulReveal(jobId, HUNTER, digest, keccak256("first salt"));
+
+            _commit(jobId, SECOND_HUNTER, digest, keccak256("second salt"));
+            vm.roll(jobs.getCommitment(jobId, SECOND_HUNTER).committedBlock + 1);
+            kernel.setResult(false, 0);
+            vm.prank(SECOND_HUNTER);
+            jobs.revealEvidence(jobId, digest, keccak256("second salt"), hex"1234");
+
+            assertEq(jobs.getCommitment(jobId, SECOND_HUNTER).bond, 0);
+            assertEq(jobs.evidenceReservedBy(jobId, digest), address(0));
+            assertEq(jobs.claimable(address(token), SECOND_HUNTER), COMMIT_BOND);
+            assertEq(jobs.claimable(address(token), SPONSOR), 0);
+            assertEq(jobs.getJob(jobId).successfulProofs, 1);
         }
 
         function test_kernelFailureDoesNotConsumeCommitOrAttempt() public {
@@ -337,7 +410,7 @@ contract MockProofJobsKernel is IProofJobsKernelV1 {
             bytes32 salt = keccak256("salt");
             bytes32 secondSalt = keccak256("second salt");
             _commit(jobId, HUNTER, digest, salt);
-            _commit(jobId, SECOND_HUNTER, digest, secondSalt);
+            _commit(jobId, SECOND_HUNTER, keccak256(hex"5678"), secondSalt);
             vm.roll(block.number + 1);
             kernel.setResult(true, REWARD_THRESHOLD);
 
@@ -391,7 +464,7 @@ contract MockProofJobsKernel is IProofJobsKernelV1 {
         function _commit(uint256 jobId, address hunter, bytes32 digest, bytes32 salt) internal {
             bytes32 commitment = jobs.computeCommitment(jobId, hunter, digest, salt);
             vm.prank(hunter);
-            jobs.commitEvidence(jobId, commitment);
+            jobs.commitEvidence(jobId, digest, commitment);
         }
 
         function _successfulReveal(uint256 jobId, address hunter, bytes32 digest, bytes32 salt) internal {
