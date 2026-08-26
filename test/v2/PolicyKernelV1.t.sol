@@ -4,6 +4,7 @@ pragma solidity ^0.8.30;
 import {Test} from "forge-std/Test.sol";
 import {EvmV1Decoder} from "@gluwa/usc-contracts/contracts/write-ability/common/EvmV1Decoder.sol";
 import {INativeQueryVerifier} from "@gluwa/usc-contracts/contracts/write-ability/common/INativeQueryVerifier.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {PolicyKernelV1} from "../../contracts/v2/PolicyKernelV1.sol";
 import {VerifiedCreditStateV1} from "../../contracts/v2/VerifiedCreditStateV1.sol";
 import {IPolicyEvaluatorV1} from "../../contracts/v2/interfaces/IPolicyEvaluatorV1.sol";
@@ -23,6 +24,7 @@ import {MockVerifier} from "../mocks/MockVerifier.sol";
 contract MockPolicyFacility is IPolicyFacilityV1 {
     address public immutable lender;
     address public immutable borrower;
+    IERC20 public asset;
     FacilityStatus public status;
     bool public incidentPaused;
     PolicyEffect public lastEffect;
@@ -36,6 +38,10 @@ contract MockPolicyFacility is IPolicyFacilityV1 {
 
     function setStatus(FacilityStatus value) external {
         status = value;
+    }
+
+    function setAsset(IERC20 value) external {
+        asset = value;
     }
 
     function setIncidentPaused(bool value) external {
@@ -243,6 +249,14 @@ contract PolicyKernelV1Test is Test {
         kernel.setProofJobs(address(this));
         vm.expectRevert(PolicyKernelV1.ProofJobsAlreadySet.selector);
         kernel.setProofJobs(HUNTER);
+    }
+
+    function test_jobPublicationIsBoundToFacilityLenderAndDenomination() public {
+        address token = address(0x20);
+        facility.setAsset(IERC20(token));
+        assertTrue(kernel.canPublishJob(address(facility), LENDER, token));
+        assertFalse(kernel.canPublishJob(address(facility), HUNTER, token));
+        assertFalse(kernel.canPublishJob(address(facility), LENDER, address(0x21)));
     }
 
     function test_batchUsesEachProofIndexAndConsumesOnlyAfterSuccessfulEvaluation() public {

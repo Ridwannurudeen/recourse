@@ -204,6 +204,11 @@ contract PolicyKernelV1 is ReentrancyGuard, IPolicyConfigurationContextV1 {
         return IPolicyFacilityV1(facility).incidentPaused();
     }
 
+    function canPublishJob(address facility, address sponsor, address token) external view returns (bool) {
+        IPolicyFacilityV1 facilityContract = IPolicyFacilityV1(facility);
+        return sponsor == facilityContract.lender() && token == address(facilityContract.asset());
+    }
+
     function evaluateProofJob(
         address facility,
         uint256 policyId,
