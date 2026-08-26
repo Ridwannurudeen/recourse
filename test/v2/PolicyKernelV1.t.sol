@@ -211,6 +211,40 @@ contract PolicyKernelV1Test is Test {
         _submitFacility(address(secondFacility), POLICY_ID, HEIGHT, _encodedTransaction(1));
     }
 
+    function test_proofJobAdapterRequiresAuthorizedMarketAndMatchingRequirements() public {
+        _registerAndActivate();
+        bytes32 requirementsDigest = evaluator.configHash(address(facility), POLICY_ID);
+        bytes memory proof = _encodedProof(HEIGHT, _encodedTransaction(1));
+
+        vm.expectRevert(PolicyKernelV1.NotProofJobs.selector);
+        kernel.evaluateProofJob(address(facility), POLICY_ID, requirementsDigest, proof, HUNTER);
+
+        kernel.setProofJobs(address(this));
+        (bool accepted, uint8 outcomeLevel) =
+            kernel.evaluateProofJob(address(facility), POLICY_ID, requirementsDigest, proof, HUNTER);
+        assertTrue(accepted);
+        assertEq(outcomeLevel, 2);
+    }
+
+    function test_proofJobAdapterRejectsWrongRequirementsDigest() public {
+        _registerAndActivate();
+        kernel.setProofJobs(address(this));
+        vm.expectRevert(PolicyKernelV1.RequirementsMismatch.selector);
+        kernel.evaluateProofJob(
+            address(facility), POLICY_ID, keccak256("wrong"), _encodedProof(HEIGHT, _encodedTransaction(1)), HUNTER
+        );
+    }
+
+    function test_proofJobsCanOnlyBeConfiguredOnceByOwner() public {
+        vm.expectRevert(PolicyKernelV1.NotOwner.selector);
+        vm.prank(HUNTER);
+        kernel.setProofJobs(HUNTER);
+
+        kernel.setProofJobs(address(this));
+        vm.expectRevert(PolicyKernelV1.ProofJobsAlreadySet.selector);
+        kernel.setProofJobs(HUNTER);
+    }
+
     function _registerAndActivate() private {
         vm.prank(LENDER);
         kernel.registerPolicy(address(facility), POLICY_ID, evaluator);
@@ -268,5 +302,11 @@ contract PolicyKernelV1Test is Test {
         EvmV1Decoder.LogEntryTuple[] memory logs = new EvmV1Decoder.LogEntryTuple[](0);
         chunks[2] = abi.encode(receiptStatus, uint64(1), logs, bytes(""));
         return abi.encode(uint8(2), chunks);
+    }
+
+    function _encodedProof(uint64 height, bytes memory encodedTransaction) private pure returns (bytes memory) {
+        INativeQueryVerifier.MerkleProof memory merkleProof;
+        INativeQueryVerifier.ContinuityProof memory continuityProof;
+        return abi.encode(CHAIN_KEY, height, encodedTransaction, merkleProof, continuityProof);
     }
 }

@@ -24,10 +24,14 @@ contract PolicyKernelV1 is ReentrancyGuard, IPolicyConfigurationContextV1 {
     error InvalidPolicyEffect();
     error IrrelevantEvidence();
     error NotLender();
+    error NotOwner();
+    error NotProofJobs();
     error PolicyAlreadyRegistered();
     error PolicyNotRegistered();
+    error ProofJobsAlreadySet();
     error ProofAlreadyUsed(bytes32 queryId);
     error TransactionReverted();
+    error RequirementsMismatch();
     error VerificationFailed();
     error ZeroAddress();
 
@@ -54,6 +58,8 @@ contract PolicyKernelV1 is ReentrancyGuard, IPolicyConfigurationContextV1 {
 
     INativeQueryVerifier public immutable verifier;
     VerifiedCreditStateV1 public immutable creditState;
+    address public immutable owner;
+    address public proofJobs;
 
     mapping(address facility => mapping(uint256 policyId => PolicyRegistration registration)) private policies;
     mapping(address facility => bytes32 commitment) public policySetCommitment;
@@ -62,6 +68,7 @@ contract PolicyKernelV1 is ReentrancyGuard, IPolicyConfigurationContextV1 {
 
     constructor(INativeQueryVerifier verifier_) {
         if (address(verifier_) == address(0)) revert ZeroAddress();
+        owner = msg.sender;
         verifier = verifier_;
         creditState = new VerifiedCreditStateV1(address(this));
     }
@@ -96,6 +103,74 @@ contract PolicyKernelV1 is ReentrancyGuard, IPolicyConfigurationContextV1 {
         INativeQueryVerifier.MerkleProof calldata merkleProof,
         INativeQueryVerifier.ContinuityProof calldata continuityProof
     ) external nonReentrant returns (PolicyOutcome outcome) {
+        return _submitSingle(
+            facility,
+            policyId,
+            chainKey,
+            height,
+            encodedTransaction,
+            merkleProof,
+            continuityProof,
+            msg.sender
+        );
+    }
+
+    function setProofJobs(address proofJobs_) external {
+        if (msg.sender != owner) revert NotOwner();
+        if (proofJobs != address(0)) revert ProofJobsAlreadySet();
+        if (proofJobs_ == address(0)) revert ZeroAddress();
+        proofJobs = proofJobs_;
+    }
+
+    function incidentPaused(address facility) external view returns (bool) {
+        return IPolicyFacilityV1(facility).incidentPaused();
+    }
+
+    function evaluateProofJob(
+        address facility,
+        uint256 policyId,
+        bytes32 requirementsDigest,
+        bytes calldata proof,
+        address hunter
+    ) external nonReentrant returns (bool accepted, uint8 outcomeLevel) {
+        if (msg.sender != proofJobs) revert NotProofJobs();
+        PolicyRegistration storage registration = policies[facility][policyId];
+        if (address(registration.evaluator) == address(0)) revert PolicyNotRegistered();
+        if (requirementsDigest != registration.configHash) revert RequirementsMismatch();
+
+        (
+            uint64 chainKey,
+            uint64 height,
+            bytes memory encodedTransaction,
+            INativeQueryVerifier.MerkleProof memory merkleProof,
+            INativeQueryVerifier.ContinuityProof memory continuityProof
+        ) = abi.decode(
+            proof,
+            (uint64, uint64, bytes, INativeQueryVerifier.MerkleProof, INativeQueryVerifier.ContinuityProof)
+        );
+        PolicyOutcome outcome = _submitSingle(
+            facility,
+            policyId,
+            chainKey,
+            height,
+            encodedTransaction,
+            merkleProof,
+            continuityProof,
+            hunter
+        );
+        return (true, _severity(outcome));
+    }
+
+    function _submitSingle(
+        address facility,
+        uint256 policyId,
+        uint64 chainKey,
+        uint64 height,
+        bytes memory encodedTransaction,
+        INativeQueryVerifier.MerkleProof memory merkleProof,
+        INativeQueryVerifier.ContinuityProof memory continuityProof,
+        address submitter
+    ) private returns (PolicyOutcome outcome) {
         if (!verifier.verify(chainKey, height, encodedTransaction, merkleProof, continuityProof)) {
             revert VerificationFailed();
         }
@@ -139,7 +214,7 @@ contract PolicyKernelV1 is ReentrancyGuard, IPolicyConfigurationContextV1 {
         creditState.recordObservation(facility, policyId, observation);
         IPolicyFacilityV1(facility).applyPolicyEffect(result.effect, expiry);
 
-        emit EvidenceAccepted(facility, policyId, qid, msg.sender, result.effect.outcome);
+        emit EvidenceAccepted(facility, policyId, qid, submitter, result.effect.outcome);
         return result.effect.outcome;
     }
 
@@ -196,5 +271,13 @@ contract PolicyKernelV1 is ReentrancyGuard, IPolicyConfigurationContextV1 {
     function _expiry(uint64 proofTime, uint64 freshnessPeriod) private pure returns (uint64) {
         if (freshnessPeriod > type(uint64).max - proofTime) revert InvalidObservation();
         return proofTime + freshnessPeriod;
+    }
+
+    function _severity(PolicyOutcome outcome) private pure returns (uint8) {
+        if (outcome == PolicyOutcome.Watch) return 1;
+        if (outcome == PolicyOutcome.Restricted) return 2;
+        if (outcome == PolicyOutcome.MarginCalled) return 3;
+        if (outcome == PolicyOutcome.Breached) return 4;
+        return 0;
     }
 }
