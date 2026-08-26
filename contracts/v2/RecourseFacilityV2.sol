@@ -332,6 +332,7 @@ contract RecourseFacilityV2 is IPolicyFacilityV1, ReentrancyGuard {
         uint16 aggregateDrawFeeBps = initialDrawFeeBps;
         uint64 aggregateEvidenceExpiry;
         bool aggregateFreshEvidenceRequired;
+        bool anyCured;
         uint256 length = policyIds.length;
 
         for (uint256 i; i < length; ++i) {
@@ -339,6 +340,7 @@ contract RecourseFacilityV2 is IPolicyFacilityV1, ReentrancyGuard {
             PolicyEffect storage effect = stored.effect;
             uint8 severity = _severity(effect.outcome);
             if (severity > aggregateSeverity) aggregateSeverity = severity;
+            if (effect.outcome == PolicyOutcome.Cured) anyCured = true;
             if (effect.creditLimitBps < aggregateCreditLimitBps) {
                 aggregateCreditLimitBps = effect.creditLimitBps;
             }
@@ -350,7 +352,7 @@ contract RecourseFacilityV2 is IPolicyFacilityV1, ReentrancyGuard {
             }
         }
 
-        policyOutcome = _outcomeForSeverity(aggregateSeverity);
+        policyOutcome = _outcomeForSeverity(aggregateSeverity, anyCured);
         creditLimitBps = aggregateCreditLimitBps;
         futureDrawFeeBps = aggregateDrawFeeBps;
         freshEvidenceRequired = aggregateFreshEvidenceRequired;
@@ -365,12 +367,12 @@ contract RecourseFacilityV2 is IPolicyFacilityV1, ReentrancyGuard {
         return 0;
     }
 
-    function _outcomeForSeverity(uint8 severity) private pure returns (PolicyOutcome) {
+    function _outcomeForSeverity(uint8 severity, bool anyCured) private pure returns (PolicyOutcome) {
         if (severity == 1) return PolicyOutcome.Watch;
         if (severity == 2) return PolicyOutcome.Restricted;
         if (severity == 3) return PolicyOutcome.MarginCalled;
         if (severity == 4) return PolicyOutcome.Breached;
-        return PolicyOutcome.Eligible;
+        return anyCured ? PolicyOutcome.Cured : PolicyOutcome.Eligible;
     }
 
     function _releaseUndrawn() private {

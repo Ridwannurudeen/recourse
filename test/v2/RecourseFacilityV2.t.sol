@@ -135,6 +135,7 @@ contract RecourseFacilityV2Test is Test {
         kernel.applyEffect(
             facility, 1, _effect(PolicyOutcome.Cured, 10_000, 200, false, false, false), uint64(block.timestamp + 100)
         );
+        assertEq(uint256(facility.policyOutcome()), uint256(PolicyOutcome.Cured));
         vm.prank(borrower);
         facility.requestDraw(UNIT);
 
