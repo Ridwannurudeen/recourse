@@ -8,6 +8,7 @@
   "scripts": {
     "balances": "node scripts/balances.mjs",
     "daemon": "node daemon/index.mjs",
+    "daemon:horizon1": "node daemon/horizon1.mjs",
     "wallets:new": "node scripts/new-wallets.mjs"
   },
   "dependencies": {

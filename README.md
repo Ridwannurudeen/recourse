@@ -37,6 +37,12 @@ CC3 Testnet, chain ID `102031`:
 
 The breach transaction succeeded, emitted seven events, and used 699,409 gas.
 
+## Horizon 1 generation
+
+The additive Horizon 1 generation is live on CC3 without changing the proven facilities above. It adds a committed graded Policy Kernel, event-derived Verified Credit State, permissionless commit/reveal Proof Jobs, an ERC-20 facility factory, fully recoverable public policy manifests, and bounded draw/creation circuit breakers.
+
+The new demonstration facility is [`0xF1E51D2d648E7FeA60fE4B2C739f7591426d14FA`](https://creditcoin-testnet.blockscout.com/address/0xF1E51D2d648E7FeA60fE4B2C739f7591426d14FA). It is Active with 40,000 of 100,000 six-decimal demo rUSD drawn and proof job 1 funded. The demo token is fixed-supply testnet scaffolding, not a production stablecoin. See [the Horizon 1 technical note](docs/HORIZON1.md) and [`deployments-horizon1.json`](deployments-horizon1.json) for exact addresses, mechanics, limitations, and reproduction.
+
 ## Quickstart
 
 The checked-in `deployments.json` points to the already-breached live facility. To reproduce the full demo with a fresh facility, use fresh development wallets and CC3 testnet funds.
@@ -125,17 +131,17 @@ The borrower's activation commits to an ordered hash covering both the identity 
 
 ## Testing
 
-`forge test` passes 134 tests across seven suites. The suite covers every facility transition, proof verification ordering, reverted receipts, replay and duplicate-query handling, forged or irrelevant logs, exact cap boundaries, native-transfer failures, reentrancy, and real encoded mainnet receipt fixtures.
+`forge test` passes 217 tests across the frozen and Horizon 1 generations. The original 134 tests remain green. New coverage adds graded multi-policy aggregation, exact-expiry behavior, ERC-20 accounting, public manifests, verified observations, source-position monotonicity, proof-job authorization, commit reservations, duplicate-proof recovery, conservative cures, the factory circuit breaker, and an end-to-end factory-to-proof-to-policy flow.
 
 The stateful invariant suite completed 256 runs and 128,000 calls with zero reverts. It asserts asset conservation and claim solvency. A separate regression test asserts that the bond can be claimed at most once.
 
 ## Honest limitations
 
 - **No cross-chain write-back.** Attestcoin writability is not live on testnet, so Recourse cannot reach back to Ethereum. The bond, draw freeze, permanent default state, and on-Creditcoin repayment obligation are the recourse. This project does not claim legal or cross-chain recovery.
-- **Hunter MEV.** Proofs are public. A pending hunter submission can be copied and outbid. This is disclosed and unsolved in this version; commit/reveal is on the roadmap.
+- **Legacy hunter MEV.** The frozen generation's direct submissions remain copyable. Horizon 1 routes submissions through hunter-bound proof jobs with evidence-digest reservation and commit/reveal; this does not change the old contracts.
 - **Historical simulation.** The hero demo uses real historical Ethereum mainnet evidence that necessarily predates the facility. It is a historical simulation over real data, and the demo must be described that way; it is not evidence of post-funding borrower conduct.
 - **Fixed predicates.** The implementation contains three hardcoded covenant predicates, not a general covenant DSL.
-- **Hash-only configuration recovery.** The deployed covenants expose a configuration hash, not their original parameters, and emit no configuration event. The application verifies checked-in or browser-local metadata against that hash and labels parameters unavailable when it cannot do so.
+- **Legacy hash-only configuration recovery.** The frozen covenants expose only a configuration hash. Horizon 1 evaluators expose their complete typed configuration and the kernel stores the ABI-encoded public manifest.
 - **Browser proof source.** Browser-built hunter batches currently support Ethereum mainnet (`chainKey = 3`). The application cross-checks the Proof Builder response against an independent public Ethereum RPC and the CC3 verifier-derived transaction index before review.
 - **Plaintext development wallets.** `npm run wallets:new` writes throwaway testnet keys to a plaintext, gitignored file. The file is not encrypted, although none of these keys appear in git history.
 - **Native-transfer compatibility.** Each participant address must be able to receive native transfers. A contract address that rejects them can block its own withdrawal.
@@ -145,7 +151,7 @@ The stateful invariant suite completed 256 runs and 128,000 calls with zero reve
 
 Recourse's trajectory is not “more covenants.” It is a cross-chain credit policy layer that turns verified external reality into continuously serviced credit state and bounded consequences, then, when the underlying protocol support exists, closes that loop wherever the exposure lives.
 
-- **Horizon 1 — Pilotable credit system.** Build the Policy Kernel, verified credit state, permissionless proof jobs, and a capped design-partner pilot. There is no design partner or independent audit today; both are explicit gates.
+- **Horizon 1 — Technical foundation built.** The Policy Kernel, verified credit state, permissionless proof jobs, ERC-20 factory, public manifests, and incident controls are live on testnet. A design partner, independent audit, legal review, and real-asset pilot remain explicit gates and are not claimed.
 - **Horizon 2 — Closed-loop cross-chain servicing.** Add pre-authorized remedy adapters, acknowledgements and cure workflows, plus an SDK and policy registry. Cross-chain execution is blocked until Attestcoin writability is live in the target environment.
 - **Horizon 3 — Credit coordination network.** Extend proven policy across customer-required, actually provisioned chains, open monitoring to competing operators, and support programmable credit portfolios only after real servicing history exists.
 

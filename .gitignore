@@ -17,3 +17,5 @@ broadcast/
 .DS_Store
 *.log
 /lib/
+daemon/horizon1-state.json
+daemon/horizon1-state.json.*.tmp
