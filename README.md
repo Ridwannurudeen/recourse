@@ -143,11 +143,13 @@ The stateful invariant suite completed 256 runs and 128,000 calls with zero reve
 
 ## Roadmap
 
-- [ ] Use Attestcoin writability for repayment sweeps when testnet support is live.
-- [ ] Add commit/reveal submissions to reduce proof-copying MEV.
-- [ ] Add proof-of-compliance deadlines, where failure to prove continued compliance triggers a facility consequence.
-- [ ] Add audited covenant templates for each integrated protocol.
-- [ ] Support additional Attestcoin source chains.
+Recourse's trajectory is not “more covenants.” It is a cross-chain credit policy layer that turns verified external reality into continuously serviced credit state and bounded consequences, then, when the underlying protocol support exists, closes that loop wherever the exposure lives.
+
+- **Horizon 1 — Pilotable credit system.** Build the Policy Kernel, verified credit state, permissionless proof jobs, and a capped design-partner pilot. There is no design partner or independent audit today; both are explicit gates.
+- **Horizon 2 — Closed-loop cross-chain servicing.** Add pre-authorized remedy adapters, acknowledgements and cure workflows, plus an SDK and policy registry. Cross-chain execution is blocked until Attestcoin writability is live in the target environment.
+- **Horizon 3 — Credit coordination network.** Extend proven policy across customer-required, actually provisioned chains, open monitoring to competing operators, and support programmable credit portfolios only after real servicing history exists.
+
+See the [full three-horizon roadmap](docs/ROADMAP.md) for the ten-item plan, investment milestones, dependencies, and deliberate cut list.
 
 ## Attribution
 
