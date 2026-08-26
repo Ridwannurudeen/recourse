@@ -18,6 +18,12 @@ enum ObservationKind {
     Behaviour
 }
 
+enum EvidenceKind {
+    TransactionControl,
+    EventDelta,
+    EventTransition
+}
+
 enum FacilityStatus {
     Created,
     Active,
@@ -45,8 +51,13 @@ struct PolicyEffect {
 
 struct CreditObservation {
     ObservationKind kind;
+    EvidenceKind evidenceKind;
     uint64 sourceChain;
+    uint64 sourceBlock;
+    uint64 transactionIndex;
     address subject;
+    address emitter;
+    uint256 observedValue;
     uint64 proofTime;
     uint64 expiry;
     bytes32 evidenceDigest;
