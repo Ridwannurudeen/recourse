@@ -4,6 +4,8 @@ pragma solidity ^0.8.30;
 interface IProofJobsKernelV1 {
     function incidentPaused(address facility) external view returns (bool);
 
+    function canPublishJob(address facility, address sponsor, address token) external view returns (bool);
+
     function evaluateProofJob(
         address facility,
         uint256 policyId,

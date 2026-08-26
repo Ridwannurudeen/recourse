@@ -17,6 +17,7 @@ contract ProofJobsToken is ERC20 {
 
 contract MockProofJobsKernel is IProofJobsKernelV1 {
     mapping(address facility => bool paused) public override incidentPaused;
+    mapping(bytes32 permissionKey => bool allowed) private _publishPermission;
 
     bool public accepted = true;
     uint8 public outcomeLevel;
@@ -39,6 +40,14 @@ contract MockProofJobsKernel is IProofJobsKernelV1 {
 
     function setPaused(address facility, bool value) external {
         incidentPaused[facility] = value;
+    }
+
+    function setPublishPermission(address facility, address sponsor, address token, bool allowed) external {
+        _publishPermission[keccak256(abi.encode(facility, sponsor, token))] = allowed;
+    }
+
+    function canPublishJob(address facility, address sponsor, address token) external view override returns (bool) {
+        return _publishPermission[keccak256(abi.encode(facility, sponsor, token))];
     }
 
     function evaluateProofJob(
@@ -84,6 +93,7 @@ contract MockProofJobsKernel is IProofJobsKernelV1 {
             token.mint(SPONSOR, 1_000e6);
             token.mint(HUNTER, 100e6);
             token.mint(SECOND_HUNTER, 100e6);
+            kernel.setPublishPermission(FACILITY, SPONSOR, address(token), true);
 
             vm.prank(SPONSOR);
             token.approve(address(jobs), type(uint256).max);
@@ -118,6 +128,25 @@ contract MockProofJobsKernel is IProofJobsKernelV1 {
             vm.prank(SPONSOR);
             vm.expectRevert(ProofJobsV1.FacilityIncidentPaused.selector);
             jobs.createJob(_params());
+        }
+
+        function test_createJobRejectsSponsorWhoIsNotFacilityLender() public {
+            vm.prank(HUNTER);
+            vm.expectRevert(ProofJobsV1.UnauthorizedJobPublisher.selector);
+            jobs.createJob(_params());
+        }
+
+        function test_createJobRejectsTokenOtherThanFacilityDenomination() public {
+            ProofJobsToken otherToken = new ProofJobsToken();
+            otherToken.mint(SPONSOR, 1_000e6);
+            vm.prank(SPONSOR);
+            otherToken.approve(address(jobs), type(uint256).max);
+            ProofJobsV1.JobParams memory params = _params();
+            params.token = otherToken;
+
+            vm.prank(SPONSOR);
+            vm.expectRevert(ProofJobsV1.UnauthorizedJobPublisher.selector);
+            jobs.createJob(params);
         }
 
         function test_multipleHuntersCanCommitAndRevealNeedsOneLaterBlock() public {
