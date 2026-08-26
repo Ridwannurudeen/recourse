@@ -21,8 +21,13 @@ contract MockPolicyKernelV2 {
         policySetCommitment[facility] = commitment;
     }
 
-    function applyEffect(RecourseFacilityV2 facility, PolicyEffect calldata effect, uint64 evidenceExpiry) external {
-        facility.applyPolicyEffect(effect, evidenceExpiry);
+    function applyEffect(
+        RecourseFacilityV2 facility,
+        uint256 policyId,
+        PolicyEffect calldata effect,
+        uint64 evidenceExpiry
+    ) external {
+        facility.applyPolicyEffect(policyId, effect, evidenceExpiry);
     }
 }
 
@@ -92,7 +97,7 @@ contract RecourseFacilityV2Test is Test {
     function test_onlyKernelCanApplyPolicyEffect() public {
         _activate();
         vm.expectRevert();
-        facility.applyPolicyEffect(_effect(PolicyOutcome.Restricted, 5_000, 300, true, true, false), 0);
+        facility.applyPolicyEffect(1, _effect(PolicyOutcome.Restricted, 5_000, 300, true, true, false), 0);
     }
 
     function test_policyCanFreezePendingDrawAndReduceCredit() public {
@@ -100,7 +105,7 @@ contract RecourseFacilityV2Test is Test {
         vm.prank(borrower);
         facility.requestDraw(400 * UNIT);
 
-        kernel.applyEffect(facility, _effect(PolicyOutcome.Restricted, 5_000, 300, true, false, false), 0);
+        kernel.applyEffect(facility, 1, _effect(PolicyOutcome.Restricted, 5_000, 300, true, false, false), 0);
 
         assertEq(facility.pendingDrawAmount(), 0);
         assertEq(facility.availableCredit(), 500 * UNIT);
@@ -111,7 +116,7 @@ contract RecourseFacilityV2Test is Test {
         _activate();
         vm.prank(borrower);
         facility.requestDraw(600 * UNIT);
-        kernel.applyEffect(facility, _effect(PolicyOutcome.Restricted, 5_000, 200, false, false, false), 0);
+        kernel.applyEffect(facility, 1, _effect(PolicyOutcome.Restricted, 5_000, 200, false, false, false), 0);
         vm.roll(block.number + 10);
 
         vm.prank(borrower);
@@ -122,13 +127,13 @@ contract RecourseFacilityV2Test is Test {
 
     function test_freshEvidenceGateAndExpiryBlockDraws() public {
         _activate();
-        kernel.applyEffect(facility, _effect(PolicyOutcome.Watch, 10_000, 200, false, true, false), 0);
+        kernel.applyEffect(facility, 1, _effect(PolicyOutcome.Watch, 10_000, 200, false, true, false), 0);
         vm.prank(borrower);
         vm.expectRevert();
         facility.requestDraw(UNIT);
 
         kernel.applyEffect(
-            facility, _effect(PolicyOutcome.Cured, 10_000, 200, false, false, false), uint64(block.timestamp + 100)
+            facility, 1, _effect(PolicyOutcome.Cured, 10_000, 200, false, false, false), uint64(block.timestamp + 100)
         );
         vm.prank(borrower);
         facility.requestDraw(UNIT);
@@ -145,7 +150,7 @@ contract RecourseFacilityV2Test is Test {
         _draw(100 * UNIT);
         assertEq(facility.outstandingDebt(), 102 * UNIT);
 
-        kernel.applyEffect(facility, _effect(PolicyOutcome.Watch, 10_000, 500, false, false, false), 0);
+        kernel.applyEffect(facility, 1, _effect(PolicyOutcome.Watch, 10_000, 500, false, false, false), 0);
         _draw(100 * UNIT);
         assertEq(facility.outstandingDebt(), 207 * UNIT);
     }
@@ -153,7 +158,7 @@ contract RecourseFacilityV2Test is Test {
     function test_terminationReleasesUndrawnFundsAndNeverBlocksRepayment() public {
         _activate();
         _draw(400 * UNIT);
-        kernel.applyEffect(facility, _effect(PolicyOutcome.Breached, 0, 0, true, true, true), 0);
+        kernel.applyEffect(facility, 1, _effect(PolicyOutcome.Breached, 0, 0, true, true, true), 0);
 
         assertEq(uint256(facility.status()), uint256(FacilityStatus.Terminated));
         assertEq(facility.lenderClaimable(), 600 * UNIT);
@@ -256,14 +261,69 @@ contract RecourseFacilityV2Test is Test {
         facility.setDrawPaused(true);
     }
 
+    function test_twoPolicyAggregationIsConservativeAndOrderIndependent() public {
+        _activate();
+        RecourseFacilityV2 reversed = _newActivatedFacility();
+        uint64 laterExpiry = uint64(block.timestamp + 200);
+        uint64 earlierExpiry = uint64(block.timestamp + 100);
+        PolicyEffect memory restricted = _effect(PolicyOutcome.Restricted, 6_000, 300, false, false, false);
+        PolicyEffect memory watch = _effect(PolicyOutcome.Watch, 8_000, 500, false, true, false);
+
+        kernel.applyEffect(facility, 11, restricted, laterExpiry);
+        kernel.applyEffect(facility, 22, watch, earlierExpiry);
+        kernel.applyEffect(reversed, 22, watch, earlierExpiry);
+        kernel.applyEffect(reversed, 11, restricted, laterExpiry);
+
+        assertEq(uint256(facility.policyOutcome()), uint256(PolicyOutcome.Restricted));
+        assertEq(facility.creditLimitBps(), 6_000);
+        assertEq(facility.futureDrawFeeBps(), 500);
+        assertTrue(facility.freshEvidenceRequired());
+        assertEq(facility.evidenceValidUntil(), earlierExpiry);
+        assertEq(uint256(reversed.policyOutcome()), uint256(facility.policyOutcome()));
+        assertEq(reversed.creditLimitBps(), facility.creditLimitBps());
+        assertEq(reversed.futureDrawFeeBps(), facility.futureDrawFeeBps());
+        assertEq(reversed.freshEvidenceRequired(), facility.freshEvidenceRequired());
+        assertEq(reversed.evidenceValidUntil(), facility.evidenceValidUntil());
+        assertEq(facility.policyCount(), 2);
+        assertEq(facility.policyIdAt(0), 11);
+        assertEq(facility.policyIdAt(1), 22);
+    }
+
+    function test_cureOnlyRelaxesItsOwnPolicy() public {
+        _activate();
+        uint64 restrictedExpiry = uint64(block.timestamp + 100);
+        uint64 marginExpiry = uint64(block.timestamp + 50);
+        kernel.applyEffect(
+            facility, 1, _effect(PolicyOutcome.Restricted, 5_000, 300, false, true, false), restrictedExpiry
+        );
+        kernel.applyEffect(
+            facility, 2, _effect(PolicyOutcome.MarginCalled, 7_000, 600, false, false, false), marginExpiry
+        );
+
+        kernel.applyEffect(
+            facility, 1, _effect(PolicyOutcome.Cured, 10_000, 200, false, false, false), uint64(block.timestamp + 200)
+        );
+
+        assertEq(uint256(facility.policyOutcome()), uint256(PolicyOutcome.MarginCalled));
+        assertEq(facility.creditLimitBps(), 7_000);
+        assertEq(facility.futureDrawFeeBps(), 600);
+        assertFalse(facility.freshEvidenceRequired());
+        assertEq(facility.evidenceValidUntil(), marginExpiry);
+        (PolicyEffect memory cured, uint64 curedExpiry, bool exists) = facility.policyEffectOf(1);
+        assertTrue(exists);
+        assertEq(uint256(cured.outcome), uint256(PolicyOutcome.Cured));
+        assertEq(cured.creditLimitBps, 10_000);
+        assertEq(curedExpiry, uint64(block.timestamp + 200));
+    }
+
     function test_invalidPolicyBasisPointsRevertWithoutChangingState() public {
         _activate();
         vm.expectRevert();
-        kernel.applyEffect(facility, _effect(PolicyOutcome.Restricted, 10_001, 200, false, false, false), 0);
+        kernel.applyEffect(facility, 1, _effect(PolicyOutcome.Restricted, 10_001, 200, false, false, false), 0);
         assertEq(facility.creditLimitBps(), 10_000);
 
         vm.expectRevert();
-        kernel.applyEffect(facility, _effect(PolicyOutcome.Watch, 10_000, 10_001, false, false, false), 0);
+        kernel.applyEffect(facility, 1, _effect(PolicyOutcome.Watch, 10_000, 10_001, false, false, false), 0);
         assertEq(facility.futureDrawFeeBps(), 200);
     }
 
@@ -278,6 +338,24 @@ contract RecourseFacilityV2Test is Test {
         _fundAndBond();
         vm.prank(borrower);
         facility.activate(commitment);
+    }
+
+    function _newActivatedFacility() internal returns (RecourseFacilityV2 created) {
+        created = new RecourseFacilityV2(
+            token, address(kernel), lender, borrower, LIMIT, BOND, 200, uint64(block.number + 100_000), 10
+        );
+        kernel.setCommitment(address(created), commitment);
+        token.mint(lender, LIMIT);
+        token.mint(borrower, BOND);
+        vm.startPrank(lender);
+        token.approve(address(created), LIMIT);
+        created.fundAsLender(LIMIT);
+        vm.stopPrank();
+        vm.startPrank(borrower);
+        token.approve(address(created), BOND);
+        created.postBond(BOND);
+        created.activate(commitment);
+        vm.stopPrank();
     }
 
     function _draw(uint256 amount) internal {

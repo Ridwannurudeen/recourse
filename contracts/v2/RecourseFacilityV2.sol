@@ -40,7 +40,9 @@ contract RecourseFacilityV2 is IPolicyFacilityV1, ReentrancyGuard {
     event DrawRequested(uint256 amount, uint256 readyAtBlock);
     event LenderClaimed(uint256 amount);
     event LenderFunded(uint256 amount);
-    event PolicyEffectApplied(PolicyOutcome indexed outcome, uint16 creditLimitBps, uint16 futureDrawFeeBps);
+    event PolicyEffectApplied(
+        uint256 indexed policyId, PolicyOutcome indexed outcome, uint16 creditLimitBps, uint16 futureDrawFeeBps
+    );
     event Repaid(uint256 amount, uint256 outstandingDebt);
 
     IERC20 public immutable override asset;
@@ -49,6 +51,7 @@ contract RecourseFacilityV2 is IPolicyFacilityV1, ReentrancyGuard {
     address public immutable override borrower;
     uint256 public immutable facilityLimit;
     uint256 public immutable bondRequired;
+    uint16 public immutable initialDrawFeeBps;
     uint64 public immutable maturityBlock;
     uint32 public immutable drawDelayBlocks;
 
@@ -68,6 +71,15 @@ contract RecourseFacilityV2 is IPolicyFacilityV1, ReentrancyGuard {
     uint256 public drawReadyAtBlock;
     uint256 public lenderClaimable;
     uint256 public borrowerClaimable;
+
+    struct StoredPolicyEffect {
+        PolicyEffect effect;
+        uint64 evidenceExpiry;
+        bool exists;
+    }
+
+    mapping(uint256 policyId => StoredPolicyEffect stored) private policyEffects;
+    uint256[] private policyIds;
 
     constructor(
         IERC20 asset_,
@@ -95,10 +107,11 @@ contract RecourseFacilityV2 is IPolicyFacilityV1, ReentrancyGuard {
         borrower = borrower_;
         facilityLimit = facilityLimit_;
         bondRequired = bondRequired_;
+        initialDrawFeeBps = drawFeeBps_;
         futureDrawFeeBps = drawFeeBps_;
         maturityBlock = maturityBlock_;
         drawDelayBlocks = drawDelayBlocks_;
-        creditLimitBps = uint16(BPS_DENOMINATOR);
+        creditLimitBps = 10_000;
         status = FacilityStatus.Created;
         policyOutcome = PolicyOutcome.Eligible;
     }
@@ -247,22 +260,25 @@ contract RecourseFacilityV2 is IPolicyFacilityV1, ReentrancyGuard {
         emit DrawPauseSet(msg.sender, paused);
     }
 
-    function applyPolicyEffect(PolicyEffect calldata effect, uint64 evidenceExpiry) external override nonReentrant {
+    function applyPolicyEffect(uint256 policyId, PolicyEffect calldata effect, uint64 evidenceExpiry)
+        external
+        override
+        nonReentrant
+    {
         if (msg.sender != kernel) revert NotKernel();
         _requireStatus(FacilityStatus.Active);
         if (effect.creditLimitBps > BPS_DENOMINATOR || effect.futureDrawFeeBps > BPS_DENOMINATOR) {
             revert InvalidBasisPoints();
         }
 
-        policyOutcome = effect.outcome;
-        creditLimitBps = effect.creditLimitBps;
-        futureDrawFeeBps = effect.futureDrawFeeBps;
-        evidenceValidUntil = evidenceExpiry;
-        if (effect.outcome == PolicyOutcome.Eligible || effect.outcome == PolicyOutcome.Cured) {
-            freshEvidenceRequired = false;
-        } else if (effect.requireFreshEvidence) {
-            freshEvidenceRequired = true;
+        StoredPolicyEffect storage stored = policyEffects[policyId];
+        if (!stored.exists) {
+            stored.exists = true;
+            policyIds.push(policyId);
         }
+        stored.effect = effect;
+        stored.evidenceExpiry = evidenceExpiry;
+        _recomputePolicyState();
         if (effect.freezePendingDraw) _clearPendingDraw();
         if (effect.terminate) {
             status = FacilityStatus.Terminated;
@@ -270,7 +286,24 @@ contract RecourseFacilityV2 is IPolicyFacilityV1, ReentrancyGuard {
             _releaseUndrawn();
             if (outstandingDebt == 0) _releaseBond();
         }
-        emit PolicyEffectApplied(effect.outcome, effect.creditLimitBps, effect.futureDrawFeeBps);
+        emit PolicyEffectApplied(policyId, effect.outcome, creditLimitBps, futureDrawFeeBps);
+    }
+
+    function policyEffectOf(uint256 policyId)
+        external
+        view
+        returns (PolicyEffect memory effect, uint64 evidenceExpiry, bool exists)
+    {
+        StoredPolicyEffect storage stored = policyEffects[policyId];
+        return (stored.effect, stored.evidenceExpiry, stored.exists);
+    }
+
+    function policyCount() external view returns (uint256) {
+        return policyIds.length;
+    }
+
+    function policyIdAt(uint256 index) external view returns (uint256) {
+        return policyIds[index];
     }
 
     function incidentPaused() public view override returns (bool) {
@@ -291,6 +324,53 @@ contract RecourseFacilityV2 is IPolicyFacilityV1, ReentrancyGuard {
         if (evidenceValidUntil != 0 && block.timestamp >= evidenceValidUntil) {
             revert EvidenceExpired(evidenceValidUntil);
         }
+    }
+
+    function _recomputePolicyState() private {
+        uint8 aggregateSeverity;
+        uint16 aggregateCreditLimitBps = 10_000;
+        uint16 aggregateDrawFeeBps = initialDrawFeeBps;
+        uint64 aggregateEvidenceExpiry;
+        bool aggregateFreshEvidenceRequired;
+        uint256 length = policyIds.length;
+
+        for (uint256 i; i < length; ++i) {
+            StoredPolicyEffect storage stored = policyEffects[policyIds[i]];
+            PolicyEffect storage effect = stored.effect;
+            uint8 severity = _severity(effect.outcome);
+            if (severity > aggregateSeverity) aggregateSeverity = severity;
+            if (effect.creditLimitBps < aggregateCreditLimitBps) {
+                aggregateCreditLimitBps = effect.creditLimitBps;
+            }
+            if (effect.futureDrawFeeBps > aggregateDrawFeeBps) aggregateDrawFeeBps = effect.futureDrawFeeBps;
+            if (effect.requireFreshEvidence) aggregateFreshEvidenceRequired = true;
+            uint64 expiry = stored.evidenceExpiry;
+            if (expiry != 0 && (aggregateEvidenceExpiry == 0 || expiry < aggregateEvidenceExpiry)) {
+                aggregateEvidenceExpiry = expiry;
+            }
+        }
+
+        policyOutcome = _outcomeForSeverity(aggregateSeverity);
+        creditLimitBps = aggregateCreditLimitBps;
+        futureDrawFeeBps = aggregateDrawFeeBps;
+        freshEvidenceRequired = aggregateFreshEvidenceRequired;
+        evidenceValidUntil = aggregateEvidenceExpiry;
+    }
+
+    function _severity(PolicyOutcome outcome) private pure returns (uint8) {
+        if (outcome == PolicyOutcome.Watch) return 1;
+        if (outcome == PolicyOutcome.Restricted) return 2;
+        if (outcome == PolicyOutcome.MarginCalled) return 3;
+        if (outcome == PolicyOutcome.Breached) return 4;
+        return 0;
+    }
+
+    function _outcomeForSeverity(uint8 severity) private pure returns (PolicyOutcome) {
+        if (severity == 1) return PolicyOutcome.Watch;
+        if (severity == 2) return PolicyOutcome.Restricted;
+        if (severity == 3) return PolicyOutcome.MarginCalled;
+        if (severity == 4) return PolicyOutcome.Breached;
+        return PolicyOutcome.Eligible;
     }
 
     function _releaseUndrawn() private {
