@@ -20,6 +20,7 @@ contract PolicyKernelV1 is ReentrancyGuard, IPolicyConfigurationContextV1 {
     error FacilityNotCreated();
     error FacilityNotActive();
     error InvalidManifest();
+    error InvalidBatch();
     error InvalidObservation();
     error InvalidPolicyEffect();
     error IrrelevantEvidence();
@@ -115,6 +116,83 @@ contract PolicyKernelV1 is ReentrancyGuard, IPolicyConfigurationContextV1 {
         );
     }
 
+    function submitBatch(
+        address facility,
+        uint256 policyId,
+        uint64 chainKey,
+        uint64[] calldata heights,
+        bytes[] calldata encodedTransactions,
+        INativeQueryVerifier.MerkleProof[] calldata merkleProofs,
+        INativeQueryVerifier.ContinuityProof calldata sharedContinuityProof
+    ) external nonReentrant returns (PolicyOutcome outcome) {
+        uint256 length = heights.length;
+        if (length == 0 || encodedTransactions.length != length || merkleProofs.length != length) {
+            revert InvalidBatch();
+        }
+        if (!verifier.verify(chainKey, heights, encodedTransactions, merkleProofs, sharedContinuityProof)) {
+            revert VerificationFailed();
+        }
+
+        PolicyRegistration storage registration = _activePolicy(facility, policyId);
+        ProvenTransaction[] memory proven = new ProvenTransaction[](length);
+        bytes32[] memory queryIds = new bytes32[](length);
+        for (uint256 i; i < length; ++i) {
+            EvmV1Decoder.ReceiptFields memory receipt =
+                EvmV1Decoder.decodeReceiptFields(encodedTransactions[i]);
+            if (receipt.receiptStatus != 1) revert TransactionReverted();
+
+            uint64 txIndex = verifier.calculateTxIndex(merkleProofs[i]);
+            bytes32 qid = queryId(chainKey, heights[i], txIndex);
+            if (processedQueries[facility][policyId][qid]) revert ProofAlreadyUsed(qid);
+            for (uint256 j; j < i; ++j) {
+                if (queryIds[j] == qid) revert ProofAlreadyUsed(qid);
+            }
+            queryIds[i] = qid;
+            proven[i] = ProvenTransaction({
+                chainKey: chainKey,
+                blockHeight: heights[i],
+                txIndex: txIndex,
+                encodedTransaction: encodedTransactions[i]
+            });
+        }
+
+        PolicyResult memory result = registration.evaluator.evaluate(facility, policyId, proven);
+        _validateResultBase(facility, result);
+        bool sourceFound;
+        for (uint256 i; i < length; ++i) {
+            if (result.sourceBlock == proven[i].blockHeight && result.transactionIndex == proven[i].txIndex) {
+                sourceFound = true;
+                break;
+            }
+        }
+        if (!sourceFound) revert InvalidObservation();
+
+        uint64 proofTime = _timestamp64();
+        uint64 expiry = _expiry(proofTime, result.freshnessPeriod);
+        CreditObservation memory observation = CreditObservation({
+            kind: result.observationKind,
+            evidenceKind: result.evidenceKind,
+            sourceChain: chainKey,
+            sourceBlock: result.sourceBlock,
+            transactionIndex: result.transactionIndex,
+            subject: result.subject,
+            emitter: result.emitter,
+            observedValue: result.observedValue,
+            proofTime: proofTime,
+            expiry: expiry,
+            evidenceDigest: keccak256(abi.encode(chainKey, heights, queryIds, encodedTransactions)),
+            policyEffectHash: keccak256(abi.encode(result.effect))
+        });
+
+        for (uint256 i; i < length; ++i) {
+            processedQueries[facility][policyId][queryIds[i]] = true;
+            emit EvidenceAccepted(facility, policyId, queryIds[i], msg.sender, result.effect.outcome);
+        }
+        creditState.recordObservation(facility, policyId, observation);
+        IPolicyFacilityV1(facility).applyPolicyEffect(result.effect, expiry);
+        return result.effect.outcome;
+    }
+
     function setProofJobs(address proofJobs_) external {
         if (msg.sender != owner) revert NotOwner();
         if (proofJobs != address(0)) revert ProofJobsAlreadySet();
@@ -191,7 +269,8 @@ contract PolicyKernelV1 is ReentrancyGuard, IPolicyConfigurationContextV1 {
             encodedTransaction: encodedTransaction
         });
         PolicyResult memory result = registration.evaluator.evaluate(facility, policyId, proven);
-        _validateResult(facility, result, height, txIndex);
+        _validateResultBase(facility, result);
+        if (result.sourceBlock != height || result.transactionIndex != txIndex) revert InvalidObservation();
 
         uint64 proofTime = _timestamp64();
         uint64 expiry = _expiry(proofTime, result.freshnessPeriod);
@@ -253,10 +332,10 @@ contract PolicyKernelV1 is ReentrancyGuard, IPolicyConfigurationContextV1 {
         if (IPolicyFacilityV1(facility).status() != FacilityStatus.Active) revert FacilityNotActive();
     }
 
-    function _validateResult(address facility, PolicyResult memory result, uint64 height, uint64 txIndex) private view {
+    function _validateResultBase(address facility, PolicyResult memory result) private view {
         if (
             result.subject != IPolicyFacilityV1(facility).borrower() || result.emitter == address(0)
-                || result.sourceBlock != height || result.transactionIndex != txIndex || result.freshnessPeriod == 0
+                || result.freshnessPeriod == 0
         ) revert InvalidObservation();
         if (result.effect.creditLimitBps > 10_000 || result.effect.futureDrawFeeBps > 10_000) {
             revert InvalidPolicyEffect();

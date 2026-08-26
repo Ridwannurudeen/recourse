@@ -245,6 +245,66 @@ contract PolicyKernelV1Test is Test {
         kernel.setProofJobs(HUNTER);
     }
 
+    function test_batchUsesEachProofIndexAndConsumesOnlyAfterSuccessfulEvaluation() public {
+        _registerAndActivate();
+        bytes32 firstRoot = bytes32(uint256(11));
+        bytes32 secondRoot = bytes32(uint256(22));
+        verifier.setTxIndexForRoot(firstRoot, 4);
+        verifier.setTxIndexForRoot(secondRoot, 5);
+
+        PolicyResult memory result = _result();
+        result.sourceBlock = HEIGHT + 1;
+        result.transactionIndex = 5;
+        evaluator.setResult(result);
+
+        uint64[] memory heights = new uint64[](2);
+        heights[0] = HEIGHT;
+        heights[1] = HEIGHT + 1;
+        bytes[] memory encodedTransactions = new bytes[](2);
+        encodedTransactions[0] = _encodedTransaction(1);
+        encodedTransactions[1] = _encodedTransaction(1);
+        INativeQueryVerifier.MerkleProof[] memory proofs = new INativeQueryVerifier.MerkleProof[](2);
+        proofs[0].root = firstRoot;
+        proofs[1].root = secondRoot;
+        INativeQueryVerifier.ContinuityProof memory continuityProof;
+
+        vm.prank(HUNTER);
+        kernel.submitBatch(
+            address(facility), POLICY_ID, CHAIN_KEY, heights, encodedTransactions, proofs, continuityProof
+        );
+
+        assertTrue(kernel.isProcessed(address(facility), POLICY_ID, kernel.queryId(CHAIN_KEY, HEIGHT, 4)));
+        assertTrue(kernel.isProcessed(address(facility), POLICY_ID, kernel.queryId(CHAIN_KEY, HEIGHT + 1, 5)));
+        assertEq(facility.applyCalls(), 1);
+    }
+
+    function test_batchRejectsDuplicateAndRevertedReceiptWithoutConsumption() public {
+        _registerAndActivate();
+        uint64[] memory heights = new uint64[](2);
+        heights[0] = HEIGHT;
+        heights[1] = HEIGHT;
+        bytes[] memory encodedTransactions = new bytes[](2);
+        encodedTransactions[0] = _encodedTransaction(1);
+        encodedTransactions[1] = _encodedTransaction(1);
+        INativeQueryVerifier.MerkleProof[] memory proofs = new INativeQueryVerifier.MerkleProof[](2);
+        INativeQueryVerifier.ContinuityProof memory continuityProof;
+        bytes32 query = kernel.queryId(CHAIN_KEY, HEIGHT, 0);
+
+        vm.expectRevert(abi.encodeWithSelector(PolicyKernelV1.ProofAlreadyUsed.selector, query));
+        kernel.submitBatch(
+            address(facility), POLICY_ID, CHAIN_KEY, heights, encodedTransactions, proofs, continuityProof
+        );
+        assertFalse(kernel.isProcessed(address(facility), POLICY_ID, query));
+
+        heights[1] = HEIGHT + 1;
+        encodedTransactions[1] = _encodedTransaction(0);
+        vm.expectRevert(PolicyKernelV1.TransactionReverted.selector);
+        kernel.submitBatch(
+            address(facility), POLICY_ID, CHAIN_KEY, heights, encodedTransactions, proofs, continuityProof
+        );
+        assertFalse(kernel.isProcessed(address(facility), POLICY_ID, query));
+    }
+
     function _registerAndActivate() private {
         vm.prank(LENDER);
         kernel.registerPolicy(address(facility), POLICY_ID, evaluator);
