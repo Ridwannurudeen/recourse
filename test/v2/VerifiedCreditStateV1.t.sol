@@ -88,9 +88,7 @@ contract VerifiedCreditStateV1Test is Test {
     }
 
     function test_freshnessExpiresAtTheCc3ExpiryBoundary() public {
-        creditState.recordObservation(
-            FACILITY, POLICY_ID, _observation(ObservationKind.Ownership, 1_000, 1_100, 1)
-        );
+        creditState.recordObservation(FACILITY, POLICY_ID, _observation(ObservationKind.Ownership, 1_000, 1_100, 1));
 
         vm.warp(1_099);
         assertTrue(creditState.isFresh(FACILITY, BORROWER, ObservationKind.Ownership));
@@ -99,14 +97,10 @@ contract VerifiedCreditStateV1Test is Test {
     }
 
     function test_newObservationRefreshesAnExpiredKind() public {
-        creditState.recordObservation(
-            FACILITY, POLICY_ID, _observation(ObservationKind.Position, 900, 1_000, 10)
-        );
+        creditState.recordObservation(FACILITY, POLICY_ID, _observation(ObservationKind.Position, 900, 1_000, 10));
         assertFalse(creditState.isFresh(FACILITY, BORROWER, ObservationKind.Position));
 
-        creditState.recordObservation(
-            FACILITY, POLICY_ID + 1, _observation(ObservationKind.Position, 1_000, 1_200, 20)
-        );
+        creditState.recordObservation(FACILITY, POLICY_ID + 1, _observation(ObservationKind.Position, 1_000, 1_200, 20));
         assertTrue(creditState.isFresh(FACILITY, BORROWER, ObservationKind.Position));
     }
 

@@ -96,9 +96,8 @@ contract PolicyKernelV1 is ReentrancyGuard, IPolicyConfigurationContextV1, IProo
         if (manifestBytes.length == 0 || configurationHash == bytes32(0)) revert InvalidManifest();
         if (keccak256(manifestBytes) != configurationHash) revert InvalidManifest();
 
-        policies[facility][policyId] = PolicyRegistration({
-            evaluator: evaluator, configHash: configurationHash, manifest: manifestBytes
-        });
+        policies[facility][policyId] =
+            PolicyRegistration({evaluator: evaluator, configHash: configurationHash, manifest: manifestBytes});
         policySetCommitment[facility] =
             keccak256(abi.encode(policySetCommitment[facility], policyId, address(evaluator), configurationHash));
 
@@ -116,15 +115,7 @@ contract PolicyKernelV1 is ReentrancyGuard, IPolicyConfigurationContextV1, IProo
     ) external nonReentrant returns (PolicyOutcome outcome) {
         if (proofJobs != address(0)) revert UseProofJobs();
         (outcome,) = _submitSingle(
-            facility,
-            policyId,
-            chainKey,
-            height,
-            encodedTransaction,
-            merkleProof,
-            continuityProof,
-            msg.sender,
-            false
+            facility, policyId, chainKey, height, encodedTransaction, merkleProof, continuityProof, msg.sender, false
         );
         return outcome;
     }
@@ -151,8 +142,7 @@ contract PolicyKernelV1 is ReentrancyGuard, IPolicyConfigurationContextV1, IProo
         ProvenTransaction[] memory proven = new ProvenTransaction[](length);
         bytes32[] memory queryIds = new bytes32[](length);
         for (uint256 i; i < length; ++i) {
-            EvmV1Decoder.ReceiptFields memory receipt =
-                EvmV1Decoder.decodeReceiptFields(encodedTransactions[i]);
+            EvmV1Decoder.ReceiptFields memory receipt = EvmV1Decoder.decodeReceiptFields(encodedTransactions[i]);
             if (receipt.receiptStatus != 1) revert TransactionReverted();
 
             uint64 txIndex = verifier.calculateTxIndex(merkleProofs[i]);
@@ -255,19 +245,10 @@ contract PolicyKernelV1 is ReentrancyGuard, IPolicyConfigurationContextV1, IProo
             INativeQueryVerifier.MerkleProof memory merkleProof,
             INativeQueryVerifier.ContinuityProof memory continuityProof
         ) = abi.decode(
-            proof,
-            (uint64, uint64, bytes, INativeQueryVerifier.MerkleProof, INativeQueryVerifier.ContinuityProof)
+            proof, (uint64, uint64, bytes, INativeQueryVerifier.MerkleProof, INativeQueryVerifier.ContinuityProof)
         );
         (PolicyOutcome outcome, bool newlyAccepted) = _submitSingle(
-            facility,
-            policyId,
-            chainKey,
-            height,
-            encodedTransaction,
-            merkleProof,
-            continuityProof,
-            hunter,
-            true
+            facility, policyId, chainKey, height, encodedTransaction, merkleProof, continuityProof, hunter, true
         );
         if (!newlyAccepted) return (false, 0);
         return (true, _severity(outcome));
@@ -301,10 +282,7 @@ contract PolicyKernelV1 is ReentrancyGuard, IPolicyConfigurationContextV1, IProo
 
         ProvenTransaction[] memory proven = new ProvenTransaction[](1);
         proven[0] = ProvenTransaction({
-            chainKey: chainKey,
-            blockHeight: height,
-            txIndex: txIndex,
-            encodedTransaction: encodedTransaction
+            chainKey: chainKey, blockHeight: height, txIndex: txIndex, encodedTransaction: encodedTransaction
         });
         PolicyResult memory result = registration.evaluator.evaluate(facility, policyId, proven);
         _validateResultBase(facility, result);

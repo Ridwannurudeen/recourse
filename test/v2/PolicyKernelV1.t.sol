@@ -382,13 +382,7 @@ contract PolicyKernelV1Test is Test {
         INativeQueryVerifier.ContinuityProof memory continuityProof;
         vm.prank(HUNTER);
         kernel.submitSingle(
-            facilityAddress,
-            policyId,
-            CHAIN_KEY,
-            height,
-            encodedTransaction,
-            merkleProof,
-            continuityProof
+            facilityAddress, policyId, CHAIN_KEY, height, encodedTransaction, merkleProof, continuityProof
         );
     }
 

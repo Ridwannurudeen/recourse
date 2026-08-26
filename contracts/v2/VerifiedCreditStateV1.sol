@@ -44,12 +44,7 @@ contract VerifiedCreditStateV1 is IVerifiedCreditStateV1 {
         latestObservationIndex[facility][observation.subject][observation.kind] = observationId + 1;
 
         emit ObservationRecorded(
-            facility,
-            observation.subject,
-            observationId,
-            policyId,
-            observation.kind,
-            observation.evidenceDigest
+            facility, observation.subject, observationId, policyId, observation.kind, observation.evidenceDigest
         );
     }
 
