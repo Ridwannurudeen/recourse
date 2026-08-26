@@ -123,7 +123,7 @@ contract Horizon1IntegrationTest is Test {
         bytes32 salt = keccak256("hunter salt");
         bytes32 commitment = jobs.computeCommitment(jobId, HUNTER, evidenceDigest, salt);
         vm.prank(HUNTER);
-        jobs.commitEvidence(jobId, commitment);
+        jobs.commitEvidence(jobId, evidenceDigest, commitment);
         vm.roll(block.number + 1);
         vm.prank(HUNTER);
         jobs.revealEvidence(jobId, evidenceDigest, salt, proof);

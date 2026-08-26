@@ -34,7 +34,9 @@ contract PolicyKernelV1 is ReentrancyGuard, IPolicyConfigurationContextV1, IProo
     error ProofAlreadyUsed(bytes32 queryId);
     error TransactionReverted();
     error RequirementsMismatch();
+    error StaleSourcePosition();
     error VerificationFailed();
+    error UseProofJobs();
     error ZeroAddress();
 
     event PolicyRegistered(
@@ -58,6 +60,12 @@ contract PolicyKernelV1 is ReentrancyGuard, IPolicyConfigurationContextV1, IProo
         bytes manifest;
     }
 
+    struct SourcePosition {
+        uint64 blockHeight;
+        uint64 transactionIndex;
+        bool recorded;
+    }
+
     INativeQueryVerifier public immutable verifier;
     VerifiedCreditStateV1 public immutable creditState;
     address public immutable owner;
@@ -67,6 +75,7 @@ contract PolicyKernelV1 is ReentrancyGuard, IPolicyConfigurationContextV1, IProo
     mapping(address facility => bytes32 commitment) public policySetCommitment;
     mapping(address facility => mapping(uint256 policyId => mapping(bytes32 queryId => bool processed))) private
         processedQueries;
+    mapping(address facility => mapping(uint256 policyId => SourcePosition position)) private latestSourcePositions;
 
     constructor(INativeQueryVerifier verifier_) {
         if (address(verifier_) == address(0)) revert ZeroAddress();
@@ -105,7 +114,8 @@ contract PolicyKernelV1 is ReentrancyGuard, IPolicyConfigurationContextV1, IProo
         INativeQueryVerifier.MerkleProof calldata merkleProof,
         INativeQueryVerifier.ContinuityProof calldata continuityProof
     ) external nonReentrant returns (PolicyOutcome outcome) {
-        return _submitSingle(
+        if (proofJobs != address(0)) revert UseProofJobs();
+        (outcome,) = _submitSingle(
             facility,
             policyId,
             chainKey,
@@ -113,8 +123,10 @@ contract PolicyKernelV1 is ReentrancyGuard, IPolicyConfigurationContextV1, IProo
             encodedTransaction,
             merkleProof,
             continuityProof,
-            msg.sender
+            msg.sender,
+            false
         );
+        return outcome;
     }
 
     function submitBatch(
@@ -126,6 +138,7 @@ contract PolicyKernelV1 is ReentrancyGuard, IPolicyConfigurationContextV1, IProo
         INativeQueryVerifier.MerkleProof[] calldata merkleProofs,
         INativeQueryVerifier.ContinuityProof calldata sharedContinuityProof
     ) external nonReentrant returns (PolicyOutcome outcome) {
+        if (proofJobs != address(0)) revert UseProofJobs();
         uint256 length = heights.length;
         if (length == 0 || encodedTransactions.length != length || merkleProofs.length != length) {
             revert InvalidBatch();
@@ -167,6 +180,7 @@ contract PolicyKernelV1 is ReentrancyGuard, IPolicyConfigurationContextV1, IProo
             }
         }
         if (!sourceFound) revert InvalidObservation();
+        _requireAdvancingSource(facility, policyId, result.sourceBlock, result.transactionIndex);
 
         uint64 proofTime = _timestamp64();
         uint64 expiry = _expiry(proofTime, result.freshnessPeriod);
@@ -189,8 +203,11 @@ contract PolicyKernelV1 is ReentrancyGuard, IPolicyConfigurationContextV1, IProo
             processedQueries[facility][policyId][queryIds[i]] = true;
             emit EvidenceAccepted(facility, policyId, queryIds[i], msg.sender, result.effect.outcome);
         }
+        latestSourcePositions[facility][policyId] = SourcePosition({
+            blockHeight: result.sourceBlock, transactionIndex: result.transactionIndex, recorded: true
+        });
         creditState.recordObservation(facility, policyId, observation);
-        IPolicyFacilityV1(facility).applyPolicyEffect(result.effect, expiry);
+        IPolicyFacilityV1(facility).applyPolicyEffect(policyId, result.effect, expiry);
         return result.effect.outcome;
     }
 
@@ -205,9 +222,18 @@ contract PolicyKernelV1 is ReentrancyGuard, IPolicyConfigurationContextV1, IProo
         return IPolicyFacilityV1(facility).incidentPaused();
     }
 
-    function canPublishJob(address facility, address sponsor, address token) external view override returns (bool) {
+    function canPublishJob(
+        address facility,
+        address sponsor,
+        address token,
+        uint256 policyId,
+        bytes32 requirementsDigest
+    ) external view override returns (bool) {
         IPolicyFacilityV1 facilityContract = IPolicyFacilityV1(facility);
-        return sponsor == facilityContract.lender() && token == address(facilityContract.asset());
+        PolicyRegistration storage registration = policies[facility][policyId];
+        return facilityContract.status() == FacilityStatus.Active && sponsor == facilityContract.lender()
+            && token == address(facilityContract.asset()) && address(registration.evaluator) != address(0)
+            && requirementsDigest == registration.configHash;
     }
 
     function evaluateProofJob(
@@ -232,7 +258,7 @@ contract PolicyKernelV1 is ReentrancyGuard, IPolicyConfigurationContextV1, IProo
             proof,
             (uint64, uint64, bytes, INativeQueryVerifier.MerkleProof, INativeQueryVerifier.ContinuityProof)
         );
-        PolicyOutcome outcome = _submitSingle(
+        (PolicyOutcome outcome, bool newlyAccepted) = _submitSingle(
             facility,
             policyId,
             chainKey,
@@ -240,8 +266,10 @@ contract PolicyKernelV1 is ReentrancyGuard, IPolicyConfigurationContextV1, IProo
             encodedTransaction,
             merkleProof,
             continuityProof,
-            hunter
+            hunter,
+            true
         );
+        if (!newlyAccepted) return (false, 0);
         return (true, _severity(outcome));
     }
 
@@ -253,8 +281,9 @@ contract PolicyKernelV1 is ReentrancyGuard, IPolicyConfigurationContextV1, IProo
         bytes memory encodedTransaction,
         INativeQueryVerifier.MerkleProof memory merkleProof,
         INativeQueryVerifier.ContinuityProof memory continuityProof,
-        address submitter
-    ) private returns (PolicyOutcome outcome) {
+        address submitter,
+        bool allowProcessed
+    ) private returns (PolicyOutcome outcome, bool accepted) {
         if (!verifier.verify(chainKey, height, encodedTransaction, merkleProof, continuityProof)) {
             revert VerificationFailed();
         }
@@ -265,7 +294,10 @@ contract PolicyKernelV1 is ReentrancyGuard, IPolicyConfigurationContextV1, IProo
 
         uint64 txIndex = verifier.calculateTxIndex(merkleProof);
         bytes32 qid = queryId(chainKey, height, txIndex);
-        if (processedQueries[facility][policyId][qid]) revert ProofAlreadyUsed(qid);
+        if (processedQueries[facility][policyId][qid]) {
+            if (allowProcessed) return (PolicyOutcome.Eligible, false);
+            revert ProofAlreadyUsed(qid);
+        }
 
         ProvenTransaction[] memory proven = new ProvenTransaction[](1);
         proven[0] = ProvenTransaction({
@@ -277,6 +309,7 @@ contract PolicyKernelV1 is ReentrancyGuard, IPolicyConfigurationContextV1, IProo
         PolicyResult memory result = registration.evaluator.evaluate(facility, policyId, proven);
         _validateResultBase(facility, result);
         if (result.sourceBlock != height || result.transactionIndex != txIndex) revert InvalidObservation();
+        _requireAdvancingSource(facility, policyId, result.sourceBlock, result.transactionIndex);
 
         uint64 proofTime = _timestamp64();
         uint64 expiry = _expiry(proofTime, result.freshnessPeriod);
@@ -296,11 +329,14 @@ contract PolicyKernelV1 is ReentrancyGuard, IPolicyConfigurationContextV1, IProo
         });
 
         processedQueries[facility][policyId][qid] = true;
+        latestSourcePositions[facility][policyId] = SourcePosition({
+            blockHeight: result.sourceBlock, transactionIndex: result.transactionIndex, recorded: true
+        });
         creditState.recordObservation(facility, policyId, observation);
-        IPolicyFacilityV1(facility).applyPolicyEffect(result.effect, expiry);
+        IPolicyFacilityV1(facility).applyPolicyEffect(policyId, result.effect, expiry);
 
         emit EvidenceAccepted(facility, policyId, qid, submitter, result.effect.outcome);
-        return result.effect.outcome;
+        return (result.effect.outcome, true);
     }
 
     function policyOf(address facility, uint256 policyId)
@@ -326,6 +362,15 @@ contract PolicyKernelV1 is ReentrancyGuard, IPolicyConfigurationContextV1, IProo
 
     function isProcessed(address facility, uint256 policyId, bytes32 qid) external view returns (bool) {
         return processedQueries[facility][policyId][qid];
+    }
+
+    function latestSourcePosition(address facility, uint256 policyId)
+        external
+        view
+        returns (bool recorded, uint64 blockHeight, uint64 transactionIndex)
+    {
+        SourcePosition storage position = latestSourcePositions[facility][policyId];
+        return (position.recorded, position.blockHeight, position.transactionIndex);
     }
 
     function _activePolicy(address facility, uint256 policyId)
@@ -364,5 +409,17 @@ contract PolicyKernelV1 is ReentrancyGuard, IPolicyConfigurationContextV1, IProo
         if (outcome == PolicyOutcome.MarginCalled) return 3;
         if (outcome == PolicyOutcome.Breached) return 4;
         return 0;
+    }
+
+    function _requireAdvancingSource(address facility, uint256 policyId, uint64 blockHeight, uint64 transactionIndex)
+        private
+        view
+    {
+        SourcePosition storage position = latestSourcePositions[facility][policyId];
+        if (
+            position.recorded
+                && (blockHeight < position.blockHeight
+                    || (blockHeight == position.blockHeight && transactionIndex <= position.transactionIndex))
+        ) revert StaleSourcePosition();
     }
 }

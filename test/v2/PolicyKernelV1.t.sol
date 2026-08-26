@@ -48,7 +48,7 @@ contract MockPolicyFacility is IPolicyFacilityV1 {
         incidentPaused = value;
     }
 
-    function applyPolicyEffect(PolicyEffect calldata effect, uint64 evidenceExpiry) external {
+    function applyPolicyEffect(uint256, PolicyEffect calldata effect, uint64 evidenceExpiry) external {
         lastEffect = effect;
         lastEvidenceExpiry = evidenceExpiry;
         ++applyCalls;
@@ -251,12 +251,40 @@ contract PolicyKernelV1Test is Test {
         kernel.setProofJobs(HUNTER);
     }
 
+    function test_directSubmissionIsDisabledAfterProofJobsIsConfigured() public {
+        _registerAndActivate();
+        kernel.setProofJobs(address(this));
+        vm.expectRevert(PolicyKernelV1.UseProofJobs.selector);
+        _submit(HEIGHT, _encodedTransaction(1));
+    }
+
+    function test_proofJobReturnsDuplicateWithoutRevertingAfterVerifiedReplay() public {
+        _registerAndActivate();
+        bytes32 requirementsDigest = evaluator.configHash(address(facility), POLICY_ID);
+        bytes memory proof = _encodedProof(HEIGHT, _encodedTransaction(1));
+        _submit(HEIGHT, _encodedTransaction(1));
+        kernel.setProofJobs(address(this));
+
+        (bool accepted, uint8 outcomeLevel) =
+            kernel.evaluateProofJob(address(facility), POLICY_ID, requirementsDigest, proof, HUNTER);
+        assertFalse(accepted);
+        assertEq(outcomeLevel, 0);
+    }
+
     function test_jobPublicationIsBoundToFacilityLenderAndDenomination() public {
         address token = address(0x20);
         facility.setAsset(IERC20(token));
-        assertTrue(kernel.canPublishJob(address(facility), LENDER, token));
-        assertFalse(kernel.canPublishJob(address(facility), HUNTER, token));
-        assertFalse(kernel.canPublishJob(address(facility), LENDER, address(0x21)));
+        vm.prank(LENDER);
+        kernel.registerPolicy(address(facility), POLICY_ID, evaluator);
+        bytes32 requirementsDigest = evaluator.configHash(address(facility), POLICY_ID);
+        assertFalse(kernel.canPublishJob(address(facility), LENDER, token, POLICY_ID, requirementsDigest));
+
+        facility.setStatus(FacilityStatus.Active);
+        assertTrue(kernel.canPublishJob(address(facility), LENDER, token, POLICY_ID, requirementsDigest));
+        assertFalse(kernel.canPublishJob(address(facility), HUNTER, token, POLICY_ID, requirementsDigest));
+        assertFalse(kernel.canPublishJob(address(facility), LENDER, address(0x21), POLICY_ID, requirementsDigest));
+        assertFalse(kernel.canPublishJob(address(facility), LENDER, token, POLICY_ID + 1, requirementsDigest));
+        assertFalse(kernel.canPublishJob(address(facility), LENDER, token, POLICY_ID, keccak256("wrong")));
     }
 
     function test_batchUsesEachProofIndexAndConsumesOnlyAfterSuccessfulEvaluation() public {
@@ -317,6 +345,20 @@ contract PolicyKernelV1Test is Test {
             address(facility), POLICY_ID, CHAIN_KEY, heights, encodedTransactions, proofs, continuityProof
         );
         assertFalse(kernel.isProcessed(address(facility), POLICY_ID, query));
+    }
+
+    function test_sourcePositionMustAdvanceWithinEachPolicy() public {
+        _registerAndActivate();
+        PolicyResult memory newer = _result();
+        newer.sourceBlock = HEIGHT + 1;
+        evaluator.setResult(newer);
+        _submit(HEIGHT + 1, _encodedTransaction(1));
+
+        evaluator.setResult(_result());
+        bytes32 olderQuery = kernel.queryId(CHAIN_KEY, HEIGHT, 0);
+        vm.expectRevert(PolicyKernelV1.StaleSourcePosition.selector);
+        _submit(HEIGHT, _encodedTransaction(1));
+        assertFalse(kernel.isProcessed(address(facility), POLICY_ID, olderQuery));
     }
 
     function _registerAndActivate() private {

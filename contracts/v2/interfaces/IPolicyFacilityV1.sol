@@ -10,5 +10,5 @@ interface IPolicyFacilityV1 {
     function asset() external view returns (IERC20);
     function status() external view returns (FacilityStatus);
     function incidentPaused() external view returns (bool);
-    function applyPolicyEffect(PolicyEffect calldata effect, uint64 evidenceExpiry) external;
+    function applyPolicyEffect(uint256 policyId, PolicyEffect calldata effect, uint64 evidenceExpiry) external;
 }
