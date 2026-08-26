@@ -7,6 +7,7 @@ import {INativeQueryVerifier} from "@gluwa/usc-contracts/contracts/write-ability
 import {IPolicyConfigurationContextV1} from "./interfaces/IPolicyConfigurationContextV1.sol";
 import {IPolicyEvaluatorV1} from "./interfaces/IPolicyEvaluatorV1.sol";
 import {IPolicyFacilityV1} from "./interfaces/IPolicyFacilityV1.sol";
+import {IProofJobsKernelV1} from "./interfaces/IProofJobsKernelV1.sol";
 import {VerifiedCreditStateV1} from "./VerifiedCreditStateV1.sol";
 import {
     CreditObservation,
@@ -16,7 +17,7 @@ import {
     ProvenTransaction
 } from "./types/RecourseTypesV2.sol";
 
-contract PolicyKernelV1 is ReentrancyGuard, IPolicyConfigurationContextV1 {
+contract PolicyKernelV1 is ReentrancyGuard, IPolicyConfigurationContextV1, IProofJobsKernelV1 {
     error FacilityNotCreated();
     error FacilityNotActive();
     error InvalidManifest();
@@ -200,11 +201,11 @@ contract PolicyKernelV1 is ReentrancyGuard, IPolicyConfigurationContextV1 {
         proofJobs = proofJobs_;
     }
 
-    function incidentPaused(address facility) external view returns (bool) {
+    function incidentPaused(address facility) external view override returns (bool) {
         return IPolicyFacilityV1(facility).incidentPaused();
     }
 
-    function canPublishJob(address facility, address sponsor, address token) external view returns (bool) {
+    function canPublishJob(address facility, address sponsor, address token) external view override returns (bool) {
         IPolicyFacilityV1 facilityContract = IPolicyFacilityV1(facility);
         return sponsor == facilityContract.lender() && token == address(facilityContract.asset());
     }
@@ -215,7 +216,7 @@ contract PolicyKernelV1 is ReentrancyGuard, IPolicyConfigurationContextV1 {
         bytes32 requirementsDigest,
         bytes calldata proof,
         address hunter
-    ) external nonReentrant returns (bool accepted, uint8 outcomeLevel) {
+    ) external override nonReentrant returns (bool accepted, uint8 outcomeLevel) {
         if (msg.sender != proofJobs) revert NotProofJobs();
         PolicyRegistration storage registration = policies[facility][policyId];
         if (address(registration.evaluator) == address(0)) revert PolicyNotRegistered();
