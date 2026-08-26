@@ -7,7 +7,8 @@ import {
     EvidenceKind,
     ObservationKind,
     PolicyEffect,
-    PolicyOutcome
+    PolicyOutcome,
+    PolicyResult
 } from "../../contracts/v2/types/RecourseTypesV2.sol";
 
 contract RecourseTypesV2Test is Test {
@@ -49,5 +50,19 @@ contract RecourseTypesV2Test is Test {
         assertEq(decodedObservation.observedValue, 50_000_000);
         assertEq(decodedObservation.expiry, 200);
         assertEq(decodedObservation.policyEffectHash, keccak256(abi.encode(effect)));
+
+        PolicyResult memory result = PolicyResult({
+            effect: effect,
+            observationKind: ObservationKind.Liability,
+            evidenceKind: EvidenceKind.EventDelta,
+            sourceBlock: 25_826_525,
+            transactionIndex: 7,
+            subject: address(0xB0B),
+            emitter: address(0xA4A4),
+            observedValue: 50_000_000,
+            freshnessPeriod: 1 days
+        });
+        assertEq(result.sourceBlock, observation.sourceBlock);
+        assertEq(result.observedValue, observation.observedValue);
     }
 }

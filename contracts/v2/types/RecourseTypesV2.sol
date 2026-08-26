@@ -67,6 +67,11 @@ struct CreditObservation {
 struct PolicyResult {
     PolicyEffect effect;
     ObservationKind observationKind;
+    EvidenceKind evidenceKind;
+    uint64 sourceBlock;
+    uint64 transactionIndex;
     address subject;
+    address emitter;
+    uint256 observedValue;
     uint64 freshnessPeriod;
 }
