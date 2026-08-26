@@ -8,6 +8,7 @@ import {
     EvidenceKind,
     ObservationKind,
     PolicyEffect,
+    PolicyOutcome,
     PolicyResult,
     ProvenTransaction
 } from "../types/RecourseTypesV2.sol";
@@ -154,7 +155,9 @@ contract EventHistoryPolicyV1 is IPolicyEvaluatorV1 {
             && configuration.dataLength % 32 == 0 && configuration.observedValueOffset % 32 == 0
             && uint256(configuration.observedValueOffset) + 32 <= configuration.dataLength
             && configuration.evidenceKind != EvidenceKind.TransactionControl && configuration.freshnessPeriod > 0
-            && configuration.effect.creditLimitBps <= 10_000 && configuration.effect.futureDrawFeeBps <= 10_000;
+            && configuration.effect.outcome != PolicyOutcome.Eligible
+            && configuration.effect.outcome != PolicyOutcome.Cured && configuration.effect.creditLimitBps <= 10_000
+            && configuration.effect.futureDrawFeeBps <= 10_000;
     }
 
     function _wordAt(bytes memory data, uint256 offset) private pure returns (uint256 value) {

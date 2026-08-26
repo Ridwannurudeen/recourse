@@ -142,6 +142,28 @@ contract EventHistoryPolicyV1Test is Test {
         _expectInvalidConfiguration(configuration);
     }
 
+    function test_rejectsFavorableOutcomesThatStaleEventsCouldReplay() public {
+        EventHistoryPolicyV1.Configuration memory configuration = _configuration();
+        configuration.effect.outcome = PolicyOutcome.Eligible;
+        _expectInvalidConfiguration(configuration);
+
+        configuration.effect.outcome = PolicyOutcome.Cured;
+        _expectInvalidConfiguration(configuration);
+    }
+
+    function test_allAdverseOutcomesRemainConfigurable() public {
+        PolicyOutcome[4] memory outcomes =
+            [PolicyOutcome.Watch, PolicyOutcome.Restricted, PolicyOutcome.MarginCalled, PolicyOutcome.Breached];
+
+        for (uint256 i; i < outcomes.length; ++i) {
+            EventHistoryPolicyV1.Configuration memory configuration = _configuration();
+            configuration.effect.outcome = outcomes[i];
+            vm.prank(LENDER);
+            policy.configure(FACILITY, POLICY_ID + i, configuration);
+            assertTrue(policy.isConfigured(FACILITY, POLICY_ID + i));
+        }
+    }
+
     function test_onlyKernelContextCanEvaluate() public {
         _configure();
         ProvenTransaction[] memory proven = _singleProven(START_BLOCK, _receipt(1, _matchingLogs(25)));
