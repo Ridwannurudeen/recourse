@@ -153,6 +153,10 @@ await send('postBond', facility.connect(borrower).postBond(BOND_REQUIRED));
 const policySetCommitment = await kernelDeployment.contract.policySetCommitment(facilityAddress);
 await send('activate', facility.connect(borrower).activate(policySetCommitment));
 await send('requestDraw', facility.connect(borrower).requestDraw(DRAW_AMOUNT));
+const drawReadyAtBlock = Number(await facility.drawReadyAtBlock());
+while ((await provider.getBlockNumber()) < drawReadyAtBlock) {
+  await new Promise((resolve) => setTimeout(resolve, 2_000));
+}
 await send('executeDraw', facility.connect(borrower).executeDraw());
 
 const configHash = await policyDeployment.contract.configHash(facilityAddress, POLICY_ID);

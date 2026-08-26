@@ -1,0 +1,31 @@
+{
+  "generation": "horizon-1",
+  "chainId": 102031,
+  "verifier": "0x0000000000000000000000000000000000000FD2",
+  "demoAsset": "0x3c6eF93E1d2C539c5EFefbBc51cc6a1E120fBf77",
+  "policyKernel": "0x5cE48b776CBFa04Bf3f375809d16B33B3d413Dbb",
+  "facilityFactory": "0x04719DA84B91AC2Cb2bf9ad770F412989DF61fbd",
+  "eventHistoryPolicy": "0xcB6cc391E524966438a6B1f9ac411e7d2e500cA5",
+  "proofJobs": "0xdA28730f8BCd7dAd54Fe3c77D01aacC41E8DeB4b",
+  "demonstrationFacility": "0xF1E51D2d648E7FeA60fE4B2C739f7591426d14FA",
+  "verifiedCreditState": "0x574916dc2D41b2Ac57FF77c4bc47e91D26550AE4",
+  "demoAssetKind": "fixed-supply testnet demonstration token; not a production stablecoin",
+  "policyId": "1",
+  "policyConfigHash": "0x92881676163ea1b9536f7dd31cc62631f2c2abc021c00e37d1beeee21dc1abe6",
+  "policySetCommitment": "0x590a6a0f7987d680bd6b845ef9bc8a1214e72b0b17221176af123e961398bd03",
+  "proofJobId": "1",
+  "sourceWindow": {
+    "chainKey": 3,
+    "startBlock": 25839959,
+    "endBlock": 25849958
+  },
+  "demonstration": {
+    "facilityLimit": "100000000000",
+    "bondRequired": "20000000000",
+    "drawnPrincipal": "40000000000",
+    "outstandingDebt": "40800000000",
+    "denominationDecimals": 6
+  },
+  "deploymentBlock": 5377746,
+  "legacyDeploymentsSha256": "2a5987eeb9f7cc6fd9e0bc63161cbf10bc6a17d4628f2d94666f8ed485fea08f"
+}
