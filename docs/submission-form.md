@@ -42,9 +42,18 @@ indices and batch continuity to all be verified on-chain inside a single adjudic
 
 The proof does not release an escrow. It changes credit risk.
 
+Two generations are live on CC3. The team-audited v1 contracts enforce the original
+covenant facility, including a real autonomous mainnet catch: its policy window was
+configured on CC3 before the qualifying Ethereum block was mined, then the unattended
+operator detected the USDC outflow, built the Attestcoin proof, and submitted the breach.
+Horizon 1 adds a graded policy kernel, event-derived Verified Credit State, a permissionless
+commit/reveal proof-job market, and an ERC-20 facility factory. Seven Horizon 1 contracts are
+deployed on CC3 around an Active demonstration facility denominated in a fixed-supply testnet
+token. The contracts have not been independently audited.
+
 ## Attestcoin Protocol Integration Summary
 
-Recourse uses Attestcoin as an adjudication layer, not a trigger.
+Recourse uses Attestcoin as the evidence and adjudication layer for both live generations.
 
 A hunter submits several real Ethereum mainnet transactions in one batch, sharing a single
 continuity proof. The adjudicator calls the BlockProver precompile's `verify` to establish
@@ -71,6 +80,20 @@ are load-bearing:
 The cumulative predicate is what makes this depth necessary rather than decorative. A
 centralized oracle could report the same facts, but a bonded credit consequence backed by an
 oracle that can collude with the borrower is worth nothing. The trustlessness is the product.
+
+Horizon 1 generalizes that path. The kernel verifies and decodes proven Ethereum receipts,
+maps accepted event evidence to graded outcomes from Watch through Breached, applies the
+most conservative result across policies, and records the observation in Verified Credit
+State. Permissionless operators compete for escrowed proof jobs through hunter-bound
+commit/reveal, so evidence is reserved before disclosure and rewarded only after on-chain
+evaluation. The ERC-20 factory makes the same machinery reusable across token-denominated
+facilities.
+
+The shipped interfaces also define the boundary precisely: Attestcoin proves transaction
+inclusion and encoded transaction, receipt, and log data. It does not expose account,
+balance, storage, `eth_call`-result, or source-block-timestamp proofs. Horizon 1 therefore
+records proven event deltas and transitions rather than verified current balances; proof
+time is CC3 acceptance time, and asset valuation remains external.
 
 Live on CC3 Testnet, adjudicated against real Ethereum mainnet transactions. The breach
 succeeded at CC3 block 5,371,462 and used 699,409 gas.

@@ -1,0 +1,44 @@
+Recourse Horizon 1 operator capture
+Captured: 2026-08-26T20:03:24.214Z
+Facility: 0xF1E51D2d648E7FeA60fE4B2C739f7591426d14FA
+Proof job: 1
+Ethereum source window: 25,839,959..25,849,958
+
+What was run
+------------
+A read-only live qualification pass against the deployed facility, proof job,
+policy configuration, CC3 attested height, and Ethereum mainnet USDC Transfer
+logs through the attested height. The scan matched the deployed policy exactly:
+USDC Transfer(address,address,uint256), with the configured borrower in topic 1.
+
+The transaction-producing command is:
+
+  npm run daemon:horizon1 -- <qualifying-mainnet-tx-hash> 1
+
+It was not invoked because the operator is a hash-driven commit/reveal submitter,
+not a watcher, and the live scan found no qualifying transaction hash. Supplying
+an arbitrary in-window transaction would commit a 10 rUSD bond before its policy
+relevance is evaluated during reveal. No activity was manufactured.
+
+Live output
+-----------
+capture_utc=2026-08-26T20:03:24.214Z
+facility=0xF1E51D2d648E7FeA60fE4B2C739f7591426d14FA
+facility_status=1 (Active)
+proof_job=1 state=0 (Open) successful_proofs=0/3
+source_window=25839959..25849958
+mainnet_head=25841651
+attested_height=25841610
+cc3_head=5379087
+scan_range=25839959..25841610
+qualifying_usdc_transfer_from_subject_count=0
+operator_action=WITHHELD: no qualifying transaction hash; no approval,
+commitment, reveal, or state file created
+
+Result
+------
+The facility and proof job were live and usable, and Attestcoin had accepted
+source blocks inside the configured window. There was no policy-qualifying USDC
+outflow through the attested height, so this capture proves live readiness and a
+correct no-submit decision. It is not evidence of a Horizon 1 autonomous
+submission and is not labelled as one.

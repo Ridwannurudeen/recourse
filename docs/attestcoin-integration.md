@@ -1,6 +1,11 @@
 # Attestcoin integration
 
-Recourse depends on Attestcoin for adjudication, not for a peripheral trigger. Its central covenant is cumulative: no individual transfer violates the facility's terms, so the breach exists only if several Ethereum receipts can be verified, decoded, indexed, replay-protected, and added together inside one Creditcoin transaction. Replacing any of those steps with an assertion from the borrower or a trusted oracle removes the security property the credit consequence relies on.
+Recourse depends on Attestcoin for adjudication, not for a peripheral trigger. Both deployed generations make proven source-chain evidence load-bearing. In v1, the central covenant is cumulative: no individual transfer violates the facility's terms, so the breach exists only if several Ethereum receipts can be verified, decoded, indexed, replay-protected, and added together inside one Creditcoin transaction. Horizon 1 generalizes the same verified intake into graded policies, durable credit observations, and a permissionless proof-job market. Replacing proof with an assertion from the borrower or a trusted oracle removes the security property the credit consequence relies on.
+
+## Two deployed generations
+
+- **v1:** five team-audited, not independently audited contracts implement the native-token facility, proof adjudicator, and three covenant predicates. The historical hero batch proves the cumulative predicate below. A separate live facility was configured on CC3 before its qualifying Ethereum block was mined; the unattended daemon later detected the 147.41949 USDC outflow, built the proof, and submitted the successful breach at CC3 block 5,371,828.
+- **Horizon 1:** seven contracts are live on CC3: a graded Policy Kernel, kernel-created Verified Credit State, ERC-20 facility factory and demonstration facility, event-history policy, permissionless commit/reveal Proof Jobs market, and fixed-supply testnet demo token. The demonstration facility is Active; the token is testnet scaffolding, not a production stablecoin.
 
 ## The adjudicated evidence
 
@@ -87,6 +92,32 @@ Attestcoin is load-bearing because the predicate depends on a sequence, not a si
 6. the sum, 274.79 USDC, is greater than the 232.545 USDC cap.
 
 A centralized oracle could report the same facts. It could also collude with the borrower, omit a transfer, replay a favourable subset, or report a fabricated aggregate. A penalty bond, draw freeze, and permanent default state backed by such an oracle would not be credible recourse. Here, the contract derives the aggregate and the consequence from the verified receipt bytes in one transaction. Trustlessness is part of the credit control, not an attachment to it.
+
+## Horizon 1: proofs become credit state
+
+Horizon 1 separates proof verification, policy interpretation, credit state, facility accounting, and proof procurement while preserving proof-first execution.
+
+The Policy Kernel calls the same pinned BlockProver interface, verifies inclusion and continuity before interpretation, decodes the successful receipt, derives the transaction index from the Merkle path, and scopes replay protection by facility and policy. An event-history evaluator then binds the proven log to its configured source chain, inclusive block window, canonical emitter, event signature, indexed subject, data shape, and value offset.
+
+Instead of returning a boolean breach, a policy returns a graded effect: `Eligible`, `Watch`, `Restricted`, `MarginCalled`, `Breached`, or `Cured`, plus credit-limit, future-draw-fee, pending-draw, freshness, and termination controls. The facility aggregates multiple policies conservatively: highest severity, lowest credit limit, highest fee, any freshness requirement, and earliest expiry win. A favourable result cannot cancel an adverse result from another policy.
+
+Every accepted result is written to Verified Credit State with its evidence kind, observation kind, source chain and block, proof-derived transaction index, subject, canonical emitter, raw event-reported value, CC3 proof-acceptance time, expiry, evidence digest, and policy-effect hash. History is ordered per facility and borrower, with latest-by-kind and freshness queries. This is durable, inspectable underwriting evidence rather than an off-chain score asserted to the facility.
+
+Proof Jobs makes evidence procurement permissionless without exposing it before reservation. A lender publishes an escrowed job bound to a facility, policy, denomination token, and public requirements digest. Any hunter may commit a hunter-bound hash of the job, evidence digest, and salt; reveal is allowed only in a later CC3 block and inside a bounded window. The revealed proof must hash to the reserved evidence and still pass the live kernel policy. Successful proofs release the bond and reimbursement; sufficiently severe outcomes can also release the outcome reward. The market is commit/reveal, while job publication remains constrained by the facility and registered policy.
+
+The ERC-20 factory deploys and indexes facilities denominated in an exact-transfer token. On CC3, the live Horizon 1 set comprises the demo token, Policy Kernel, kernel-created Verified Credit State, facility factory, event-history policy, Proof Jobs market, and demonstration facility.
+
+## Protocol limits learned from the shipped integration
+
+These limits are stated from the pinned `@gluwa/usc-contracts` interfaces and Recourse's deployed implementation, not attributed as claims or quotations from Attestcoin documentation.
+
+- The installed proof surface proves transaction inclusion and continuity plus encoded transaction, receipt, and log data. Its decoded fields include transaction data, receipt status, gas fields, logs, and bloom.
+- It exposes no account, balance, storage, `eth_call`-result, or source-block-timestamp proof. Verified Credit State therefore records proven event deltas and transitions, not cryptographically verified current balances.
+- `proofTime` is the CC3 timestamp when the kernel accepts the proof. It is not the time of the source-chain event; source ordering is represented separately by source block and proof-derived transaction index.
+- Raw event amounts are not asset valuations. Asset valuation remains an external input.
+- Event-history policies reject favourable `Eligible` and `Cured` configurations, and the kernel rejects evidence that does not advance the source position. A stale favourable event must not reopen credit.
+
+These boundaries are why Horizon 1 calls the store Verified Credit State rather than verified balance state. Writability remains blocked: the deployed system observes and adjudicates proven source-chain activity but does not write back to Ethereum.
 
 ## Measured deployment and cost
 
