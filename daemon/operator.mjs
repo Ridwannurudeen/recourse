@@ -5,7 +5,13 @@ import {
   isHexString,
   solidityPackedKeccak256,
 } from "ethers";
-import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+} from "node:fs";
 import { fileURLToPath } from "node:url";
 import { basename, resolve } from "node:path";
 import { discoverProofJobs, writeDiscoveryReport } from "./job-discovery.mjs";
@@ -702,6 +708,17 @@ function runtimeInputs() {
   };
 }
 
+export function isOperatorMainModule(
+  moduleUrl,
+  argvPath,
+  canonicalize = realpathSync,
+) {
+  if (!argvPath) return false;
+  return (
+    canonicalize(resolve(argvPath)) === canonicalize(fileURLToPath(moduleUrl))
+  );
+}
+
 async function main() {
   if (!process.env.CREDITCOIN_RPC_URL)
     throw new Error("CREDITCOIN_RPC_URL is required");
@@ -735,10 +752,7 @@ async function main() {
   }
 }
 
-if (
-  process.argv[1] &&
-  resolve(process.argv[1]) === fileURLToPath(import.meta.url)
-) {
+if (isOperatorMainModule(import.meta.url, process.argv[1])) {
   main().catch((error) => {
     process.stderr.write(`${errorMessage(error)}\n`);
     process.exitCode = 1;

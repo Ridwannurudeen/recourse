@@ -1,14 +1,16 @@
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import test from "node:test";
+import { pathToFileURL } from "node:url";
 import { getAddress, id } from "ethers";
 import {
   OPERATOR_LIMITS,
   assertEthereumMainnetProvider,
   assertExecutionKernelCapability,
   executeQueuedCandidates,
+  isOperatorMainModule,
   prefilterExecutionCandidates,
   runOperatorCycle,
   runOperatorService,
@@ -24,6 +26,21 @@ const OTHER = ADDRESS("a11");
 const TRANSACTION_HASH = `0x${"11".repeat(32)}`;
 const BLOCK_HASH = `0x${"22".repeat(32)}`;
 const SIGNATURE = id("Observed(address,uint256)");
+
+test("operator entrypoint recognizes an immutable module reached through the current symlink", () => {
+  const releasePath = resolve(join(tmpdir(), "recourse-release", "daemon", "operator.mjs"));
+  const currentPath = resolve(join(tmpdir(), "recourse-current", "daemon", "operator.mjs"));
+  const canonicalize = (path) => (resolve(path) === currentPath ? releasePath : resolve(path));
+
+  assert.equal(
+    isOperatorMainModule(pathToFileURL(releasePath).href, currentPath, canonicalize),
+    true,
+  );
+  assert.equal(
+    isOperatorMainModule(pathToFileURL(releasePath).href, join(tmpdir(), "other.mjs"), canonicalize),
+    false,
+  );
+});
 
 function topicAddress(address) {
   return `0x${"0".repeat(24)}${address.slice(2).toLowerCase()}`;
