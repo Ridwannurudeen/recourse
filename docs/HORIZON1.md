@@ -79,7 +79,7 @@ node scripts/deploy-horizon1.mjs
 
 The script checks CC3, the verifier, role key/address pairs, bytecode, wiring, manifest recovery, commitment, ERC-20 accounting, the demonstration draw, job escrow, and the legacy deployment checksum. It writes only `deployments-horizon1.json`.
 
-The first reference operator runs separately from the frozen facility-2 daemon:
+Run the first reference operator separately from the frozen facility-2 daemon:
 
 ```bash
 npm run daemon:horizon1 -- <ethereum-transaction-hash> [job-id]

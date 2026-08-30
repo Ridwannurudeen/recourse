@@ -4,7 +4,7 @@
 
 Recourse now has two live generations on CC3 Testnet, with 12 deployed contracts in total. The proven v1 generation remains live and untouched: its five contracts provide three fixed covenant predicates, an ordered covenant-set commitment, a permissionless adjudicator, a native-token credit-facility state machine, the original autonomous hunter daemon, and a zero-build wallet application covering the lender, borrower, and hunter workflow. Facilities 1 and 2 both remain `Breached`.
 
-The v1 evidence stands as before. A live autonomous daemon run detected a qualifying Ethereum mainnet USDC outflow, built the Attestcoin proof, submitted it, and moved Facility 2 to `Breached` without manual intervention. Horizon 1 is an additive seven-contract generation: a Policy Kernel, Verified Credit State, Permissionless Proof Jobs, facility factory, event-history policy, demonstration facility, and fixed-supply demo asset. Its demonstration facility is ERC-20 denominated with six decimals, and its resumable proof operator runs alongside the original daemon.
+The v1 evidence stands as before. A live autonomous daemon run detected a qualifying Ethereum mainnet USDC outflow, built the Attestcoin proof, submitted it, and moved Facility 2 to `Breached` without manual intervention. Horizon 1 is an additive seven-contract generation: a Policy Kernel, Verified Credit State, Permissionless Proof Jobs, facility factory, event-history policy, demonstration facility, and fixed-supply demo asset. Its demonstration facility is ERC-20 denominated with six decimals. Its resumable reference operator is implemented and tested but is not installed as a service; it is designed to run separately from the original daemon.
 
 A separate roadmap build now adds the v1 SDK and simulation package, `PolicyRegistryV1`, an issuer-declaration and exact-audit model, a signerless Proof Jobs discovery and observable-metrics report, and a read-only Horizon 1 console. The committed static console is [publicly hosted](https://ridwan.gudman.xyz/recourse/horizon1.html); the SDK remains unpublished, the registry remains undeployed, and the operator remains source-only rather than an installed service. None of these foundations has been independently audited, frozen, or validated by an external integration.
 
@@ -61,7 +61,7 @@ This qualifies Attestcoin's own “lending against verified on-chain balances”
 
 ### 3. Permissionless Proof Jobs — delivered and deployed
 
-**What shipped:** Facilities publish typed monitoring jobs with evidence requirements, expiry, maximum proof reimbursement, and outcome rewards. Hunters commit a hunter-bound evidence digest before revealing the proof, reserving their right to the application reward without hiding the eventual evidence. A resumable Horizon 1 reference operator persists and validates commit/reveal state alongside the unchanged original daemon.
+**What shipped:** Facilities publish typed monitoring jobs with evidence requirements, expiry, maximum proof reimbursement, and outcome rewards. Hunters commit a hunter-bound evidence digest before revealing the proof, reserving their right to the application reward without hiding the eventual evidence. When run, the resumable Horizon 1 reference operator persists and validates commit/reveal state without modifying the unchanged original daemon.
 
 **Why it is the natural extension of Recourse:** Recourse already had a live autonomous hunter and an application-funded breach reward. Proof Jobs turns that working operator model into repeatable infrastructure.
 
