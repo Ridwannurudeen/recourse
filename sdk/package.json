@@ -1,0 +1,32 @@
+{
+  "name": "@recourse/sdk",
+  "version": "0.1.0",
+  "description": "Typed Horizon 1 SDK and deterministic policy tooling for Recourse",
+  "license": "MIT",
+  "type": "module",
+  "main": "./src/index.mjs",
+  "types": "./src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "import": "./src/index.mjs"
+    }
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.mjs && npm run typecheck",
+    "typecheck": "tsc --strict --noEmit --module NodeNext --moduleResolution NodeNext --target ES2022 test/types.test.ts",
+    "pack:check": "npm pack --dry-run"
+  },
+  "dependencies": {
+    "ethers": "^6.17.0"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

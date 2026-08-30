@@ -4,7 +4,7 @@ Recourse depends on Attestcoin for adjudication, not for a peripheral trigger. B
 
 ## Two deployed generations
 
-- **v1:** five team-audited, not independently audited contracts implement the native-token facility, proof adjudicator, and three covenant predicates. The historical hero batch proves the cumulative predicate below. A separate live facility was configured on CC3 before its qualifying Ethereum block was mined; the unattended daemon later detected the 147.41949 USDC outflow, built the proof, and submitted the successful breach at CC3 block 5,371,828.
+- **v1:** five internally reviewed and tested, not independently audited contracts implement the native-token facility, proof adjudicator, and three covenant predicates. The historical hero batch proves the cumulative predicate below. A separate live facility was configured on CC3 before its qualifying Ethereum block was mined; the unattended daemon later detected the 147.41949 USDC outflow, built the proof, and submitted the successful breach at CC3 block 5,371,828.
 - **Horizon 1:** seven contracts are live on CC3: a graded Policy Kernel, kernel-created Verified Credit State, ERC-20 facility factory and demonstration facility, event-history policy, permissionless commit/reveal Proof Jobs market, and fixed-supply testnet demo token. The demonstration facility is Active; the token is testnet scaffolding, not a production stablecoin.
 
 ## The adjudicated evidence
@@ -64,7 +64,7 @@ This is deliberate. Creditcoin's upstream documentation warns:
 
 > “The block prover precompile does not validate if a transaction was successful or not. ... a dApp's ASC MUST check the ‘status’ field.”
 
-Source: [Attestcoin Smart Contracts](https://docs.creditcoin.org/attestcoin-protocol/dapp-builder-infrastructure/attestcoin-smart-contracts.md).
+Source: [Attestcoin smart contracts](https://docs.attestcoin.org/attestcoin-protocol/dapp-builder-infrastructure/attestcoin-smart-contracts).
 
 A reverted attempt is not a breach. The precompile proves that the transaction is in the confirmed source chain; Recourse separately proves from the receipt that its effects were committed. The test suite includes reverted-receipt cases for the adjudicator and all three covenant evaluators.
 

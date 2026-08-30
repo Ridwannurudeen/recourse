@@ -19,3 +19,5 @@ broadcast/
 /lib/
 daemon/horizon1-state.json
 daemon/horizon1-state.json.*.tmp
+daemon/job-discovery-cursor.json
+daemon/job-discovery-cursor.json.*.tmp

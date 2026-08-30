@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <meta
+      name="description"
+      content="Live Horizon 1 policy, credit-state, and proof-job telemetry for Recourse on CC3 Testnet."
+    />
+    <title>Recourse · Horizon 1</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="./style.css" />
+    <link rel="stylesheet" href="./horizon1.css" />
+    <script src="./ethers.umd.min.js"></script>
+    <script type="module" src="./horizon1.js"></script>
+  </head>
+  <body class="horizon-page">
+    <a class="skip-link" href="#main">Skip to policy state</a>
+
+    <header class="site-header">
+      <div class="shell header-inner">
+        <a
+          class="brand-lockup"
+          href="./index.html"
+          aria-label="Recourse v1 dashboard"
+        >
+          <span class="brand-mark" aria-hidden="true">R</span>
+          <div>
+            <p class="brand-name">Recourse</p>
+            <p class="brand-line">Verified credit state.</p>
+          </div>
+        </a>
+        <nav class="generation-nav" aria-label="Protocol generations">
+          <a href="./index.html">v1 facilities</a>
+          <a href="./horizon1.html" aria-current="page">Horizon 1</a>
+        </nav>
+        <div
+          class="network-status"
+          id="network-status"
+          role="status"
+          aria-live="polite"
+        >
+          <span class="network-dot" aria-hidden="true"></span>
+          <span id="network-label">Reading CC3</span>
+        </div>
+      </div>
+    </header>
+
+    <main class="shell horizon-main" id="main">
+      <section class="horizon-loading" id="loading" aria-live="polite">
+        <p class="eyebrow">CC3 testnet · Horizon 1</p>
+        <h1>Assembling one-block credit state</h1>
+        <p id="loading-detail">
+          Discovering facilities, policies, observations, and proof jobs.
+        </p>
+        <button class="retry-button" id="retry-button" type="button" hidden>
+          Retry
+        </button>
+      </section>
+
+      <div id="horizon-dashboard" hidden>
+        <section class="horizon-intro" aria-labelledby="horizon-title">
+          <div>
+            <p class="eyebrow">Policy kernel · live state</p>
+            <h1 id="horizon-title">Credit that changes when evidence lands.</h1>
+            <p class="horizon-summary">
+              One block-consistent view of the ERC-20 facility, ordered policy
+              commitment, verified observations, and permissionless proof work.
+            </p>
+          </div>
+          <div class="snapshot-stamp">
+            <span class="live-pulse" aria-hidden="true"></span>
+            <span>Block</span>
+            <strong id="snapshot-block"></strong>
+            <time id="snapshot-time"></time>
+          </div>
+        </section>
+
+        <section
+          class="facility-switcher"
+          aria-labelledby="facility-switcher-title"
+        >
+          <div>
+            <p class="eyebrow">Factory catalog</p>
+            <h2 id="facility-switcher-title">Deployed facilities</h2>
+            <p class="facility-catalog-note" id="facility-catalog-note"></p>
+          </div>
+          <div class="facility-pills" id="facility-pills"></div>
+        </section>
+
+        <section class="capacity-stage" aria-labelledby="capacity-title">
+          <div class="capacity-signature">
+            <div class="capacity-kicker">
+              <span>Available credit</span>
+              <span class="status-badge" id="facility-status"></span>
+            </div>
+            <p
+              class="capacity-number"
+              id="available-credit"
+              aria-live="polite"
+            ></p>
+            <p class="capacity-caption" id="capacity-caption"></p>
+            <div
+              class="capacity-track"
+              aria-label="Facility capacity allocation"
+            >
+              <span class="capacity-drawn" id="capacity-drawn"></span>
+              <span class="capacity-available" id="capacity-available"></span>
+              <span class="capacity-frozen" id="capacity-frozen"></span>
+            </div>
+            <div class="capacity-legend">
+              <span><i class="legend-drawn"></i>Drawn</span>
+              <span><i class="legend-available"></i>Available</span>
+              <span><i class="legend-frozen"></i>Restricted / expired</span>
+            </div>
+          </div>
+
+          <dl class="capacity-ledger">
+            <div>
+              <dt>Facility limit</dt>
+              <dd id="facility-limit"></dd>
+            </div>
+            <div>
+              <dt>Outstanding debt</dt>
+              <dd id="outstanding-debt"></dd>
+            </div>
+            <div>
+              <dt>Policy limit</dt>
+              <dd id="policy-limit"></dd>
+            </div>
+            <div>
+              <dt>Future draw fee</dt>
+              <dd id="draw-fee"></dd>
+            </div>
+            <div>
+              <dt>Bond posted</dt>
+              <dd id="bond-posted"></dd>
+            </div>
+            <div>
+              <dt>Evidence valid until</dt>
+              <dd id="evidence-valid-until"></dd>
+            </div>
+          </dl>
+        </section>
+
+        <section class="policy-section" aria-labelledby="policy-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Ordered policy set</p>
+              <h2 id="policy-title">Current policy consequence</h2>
+            </div>
+            <a
+              class="quiet-link"
+              id="facility-link"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Facility contract <span aria-hidden="true">↗</span>
+            </a>
+          </div>
+          <div class="policy-banner">
+            <div>
+              <span class="policy-outcome" id="policy-outcome"></span>
+              <p id="policy-explanation"></p>
+              <p class="policy-commitment-line">
+                <span>Commitment</span>
+                <code id="policy-commitment"></code>
+              </p>
+            </div>
+            <dl>
+              <div>
+                <dt>Registered policies</dt>
+                <dd id="policy-count"></dd>
+              </div>
+              <div>
+                <dt>Fresh evidence</dt>
+                <dd id="fresh-evidence"></dd>
+              </div>
+              <div>
+                <dt>Incident pause</dt>
+                <dd id="incident-pause"></dd>
+              </div>
+            </dl>
+          </div>
+          <div class="policy-list" id="policy-list"></div>
+        </section>
+
+        <section class="evidence-stream" aria-labelledby="observations-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Verified credit state</p>
+              <h2 id="observations-title">Accepted observations</h2>
+            </div>
+            <p class="stream-count" id="observation-count"></p>
+          </div>
+          <div class="observation-list" id="observation-list"></div>
+        </section>
+
+        <section class="jobs-section" aria-labelledby="jobs-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Permissionless proof work</p>
+              <h2 id="jobs-title">Proof jobs</h2>
+            </div>
+            <p class="stream-count" id="job-count"></p>
+          </div>
+          <div class="job-list" id="job-list"></div>
+        </section>
+
+        <section class="truth-boundary" aria-labelledby="boundary-title">
+          <p class="eyebrow">Evidence boundary</p>
+          <h2 id="boundary-title">What this state does—and does not—prove</h2>
+          <div>
+            <p>
+              Accepted observations prove included, successful source
+              transactions and their encoded receipt logs. They are event deltas
+              or transitions, not current balances, storage snapshots, prices,
+              or source-chain timestamps.
+            </p>
+            <p>
+              Proof time is CC3 acceptance time. The displayed rUSD is a
+              fixed-supply testnet demonstration asset, not a production
+              stablecoin. No external audit or pilot is claimed.
+            </p>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <footer class="site-footer">
+      <div class="shell footer-inner">
+        <p>Horizon 1 · CC3 chain ID 102031 · Read-only</p>
+        <p id="refresh-readout"></p>
+      </div>
+    </footer>
+  </body>
+</html>

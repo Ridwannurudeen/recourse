@@ -43,15 +43,19 @@ The additive Horizon 1 generation is live on CC3 without changing the proven fac
 
 The new demonstration facility is [`0xF1E51D2d648E7FeA60fE4B2C739f7591426d14FA`](https://creditcoin-testnet.blockscout.com/address/0xF1E51D2d648E7FeA60fE4B2C739f7591426d14FA). It is Active with 40,000 of 100,000 six-decimal demo rUSD drawn and proof job 1 funded. The demo token is fixed-supply testnet scaffolding, not a production stablecoin. See [the Horizon 1 technical note](docs/HORIZON1.md) and [`deployments-horizon1.json`](deployments-horizon1.json) for exact addresses, mechanics, limitations, and reproduction.
 
+The additive [Horizon 1 console](web/horizon1.html) reads the live factory, facility, kernel, credit state, and proof jobs at one pinned CC3 block. It shows registered policies separately from accepted policy effects and never requests a wallet or submits a transaction.
+
+Local roadmap work now also includes a typed [SDK](sdk/README.md), policy simulation and calldata builders, an issuer-attested `PolicyRegistryV1`, and a resumable read-only operator discovery and metrics tool. These foundations are tested but are not deployed, independently audited, frozen, or externally integrated.
+
 ## Quickstart
 
-The checked-in `deployments.json` points to the already-breached live facility. To reproduce the full demo with a fresh facility, use fresh development wallets and CC3 testnet funds.
+The checked-in `deployments.json` points to the already-breached live facility. To reproduce the full demo with a fresh facility, use fresh development wallets and CC3 testnet funds. Install Foundry and ensure `forge` is on `PATH` before running the unified test command.
 
 ```bash
 git submodule update --init --recursive
 npm install
 forge build
-forge test
+npm test
 npm run wallets:new
 ```
 
@@ -88,7 +92,7 @@ To run the static application:
 python -m http.server 8000
 ```
 
-Open `http://localhost:8000/web/`. There is no build step. The application discovers facilities from live `FacilityOpened` events and remains fully readable without a wallet. Connect an injected EVM wallet such as MetaMask to add or switch to CC3 Testnet and operate facilities through wallet-owned signatures; browser code never reads a private key.
+Open `http://localhost:8000/web/`. There is no build step. The application discovers facilities from live `FacilityOpened` events and remains fully readable without a wallet. Connect an injected EVM wallet such as MetaMask to add or switch to CC3 Testnet and operate facilities through wallet-owned signatures; browser code never reads a private key. Open `http://localhost:8000/web/horizon1.html` for the separate read-only Horizon 1 console.
 
 The application exposes the complete deployed surface:
 
@@ -126,18 +130,20 @@ AttestcoinAdjudicator on Creditcoin
 - `AttestcoinAdjudicator.sol` is the only contract that calls the BlockProver precompile. It verifies first, decodes receipts, rejects reverted transactions, enforces facility-and-covenant-scoped replay protection, and dispatches proven transactions.
 - Each contract in `contracts/covenants/` is a small, separately configured predicate. It validates the source chain, window, emitting contract, indexed subjects, and event data relevant to that covenant.
 - `scripts/` handles deployment, facility setup, proof retrieval, and unattended submission. `web/` is the zero-build wallet application and walletless facility monitor.
+- `sdk/` exposes typed reads, simulations, exact ABI encodings, and calldata-only builders. `PolicyRegistryV1` records bounded issuer declarations, approved runtime variants, exact deployment attestations, and release- or deployment-scoped audit artifacts.
+- `daemon/job-discovery.mjs` scans confirmed Proof Jobs history without a signer, pins hydrated state to the report block, persists a reorg-checked cursor, and derives only metrics observable from contract events.
 
 The borrower's activation commits to an ordered hash covering both the identity and configuration of every registered covenant. Registration is limited to the pre-activation `Created` state, and each covenant rejects reconfiguration after registration, so neither the covenant set nor anything the borrower agreed to can change afterwards.
 
 ## Testing
 
-`forge test` passes 217 tests across the frozen and Horizon 1 generations, and the Node suite passes 11 tests across both operators and their proof tooling. The original 134 Forge tests remain green. New coverage adds graded multi-policy aggregation, exact-expiry behavior, ERC-20 accounting, public manifests, verified observations, source-position monotonicity, proof-job authorization, commit reservations, duplicate-proof recovery, conservative cures, the factory circuit breaker, and an end-to-end factory-to-proof-to-policy flow.
+`npm test` passes 231 Forge tests, 35 root Node tests, and 17 SDK tests across both generations and the local roadmap foundations, followed by a strict SDK declaration compile. The original 134 Forge tests remain green. New coverage includes registry declarations and exact audit scopes, ABI parity, reorg-anchored aggregate reads, graded multi-policy aggregation, exact-expiry behavior, ERC-20 accounting, public manifests, verified observations, source-position monotonicity, proof-job authorization, cursor continuity, block-pinned operator reports, conservative cures, and an end-to-end factory-to-proof-to-policy flow.
 
-The stateful invariant suite completed 256 runs and 128,000 calls with zero reverts. It asserts asset conservation and claim solvency. A separate regression test asserts that the bond can be claimed at most once.
+Three stateful invariant properties each complete 256 runs and 128,000 calls with zero handler reverts. They cover native and ERC-20 asset conservation, claim solvency, Horizon 1 facility and draw bounds, and zero available credit outside the Active state. A separate regression test asserts that the original-generation bond can be claimed at most once.
 
 ## Honest limitations
 
-- **No cross-chain write-back.** Attestcoin writability is not live on testnet, so Recourse cannot reach back to Ethereum. The bond, draw freeze, permanent default state, and on-Creditcoin repayment obligation are the recourse. This project does not claim legal or cross-chain recovery.
+- **No cross-chain write-back.** [Attestcoin writability](https://docs.attestcoin.org/attestcoin-protocol/attestcoin-writability) is not live on testnet, so Recourse cannot reach back to Ethereum. The bond, draw freeze, permanent default state, and on-Creditcoin repayment obligation are the recourse. This project does not claim legal or cross-chain recovery.
 - **Legacy hunter MEV.** The frozen generation's direct submissions remain copyable. Horizon 1 routes submissions through hunter-bound proof jobs with evidence-digest reservation and commit/reveal; this does not change the old contracts.
 - **Historical simulation.** The hero demo uses real historical Ethereum mainnet evidence that necessarily predates the facility. It is a historical simulation over real data, and the demo must be described that way; it is not evidence of post-funding borrower conduct.
 - **Fixed predicates.** The implementation contains three hardcoded covenant predicates, not a general covenant DSL.
@@ -145,6 +151,7 @@ The stateful invariant suite completed 256 runs and 128,000 calls with zero reve
 - **Browser proof source.** Browser-built hunter batches currently support Ethereum mainnet (`chainKey = 3`). The application cross-checks the Proof Builder response against an independent public Ethereum RPC and the CC3 verifier-derived transaction index before review.
 - **Plaintext development wallets.** `npm run wallets:new` writes throwaway testnet keys to a plaintext, gitignored file. The file is not encrypted, although none of these keys appear in git history.
 - **Native-transfer compatibility.** Each participant address must be able to receive native transfers. A contract address that rejects them can block its own withdrawal.
+- **Local registry trust model.** `PolicyRegistryV1` records issuer-attested, facility/kernel-consistent, evaluator-runtime/config-bound deployments. It does not certify a canonical factory or kernel build, and its constructor binding currently models kernel-only policy constructors. Audit artifacts identify their publisher and exact release or deployment scope; they are not a registry-wide audit verdict.
 - **Testnet and unaudited.** Recourse is deployed only on CC3 Testnet and has not received an independent security audit beyond the project's own adversarial review and test suite.
 
 ## Roadmap
@@ -152,14 +159,14 @@ The stateful invariant suite completed 256 runs and 128,000 calls with zero reve
 Recourse's trajectory is not “more covenants.” It is a cross-chain credit policy layer that turns verified external reality into continuously serviced credit state and bounded consequences, then, when the underlying protocol support exists, closes that loop wherever the exposure lives.
 
 - **Horizon 1 — Items 1–3 delivered; item 4 scaffolding delivered.** The Policy Kernel, event-derived Verified Credit State, permissionless Proof Jobs, resumable operator, ERC-20 facility factory, public manifests, and incident controls are live on testnet. The six-decimal demo asset is a fixed-supply testnet token, not a stablecoin. No pilot has been run: a design partner, independent audit, legal review, and production asset and custody decisions remain explicit gates.
-- **Horizon 2 — Closed-loop cross-chain servicing.** Items 5 and 6—pre-authorized remedy adapters plus acknowledgement and cure workflows—remain blocked until Attestcoin writability is live in the target environment. Item 7, the SDK and Policy Registry, does not depend on writability and is buildable today.
-- **Horizon 3 — Credit coordination network.** Extend proven policy across customer-required, actually provisioned chains, open monitoring to competing operators, and support programmable credit portfolios only after real servicing history exists.
+- **Horizon 2 — Closed-loop cross-chain servicing.** Items 5 and 6—pre-authorized remedy adapters plus acknowledgement and cure workflows—remain blocked until Attestcoin writability is live in the target environment. Item 7 now has a local v1 SDK, simulation, package, and registry foundation; deployment, an independent audit, interface freezing, and two external integrations remain gates.
+- **Horizon 3 — Credit coordination network.** Item 9 now has a local read-only discovery and observable-metrics foundation, not an open operator market. Multi-chain customer policy, paid competition, and programmable portfolios still depend on provisioned chains, demand, economics, and real servicing history.
 
 See the [full three-horizon roadmap](docs/ROADMAP.md) for the ten-item plan, investment milestones, dependencies, and deliberate cut list.
 
 ## Attribution
 
-The Attestcoin integration follows the patterns in Creditcoin's [Attestcoin smart-contract documentation](https://docs.creditcoin.org/attestcoin-protocol/dapp-builder-infrastructure/attestcoin-smart-contracts) and the MIT-licensed [`gluwa/usc-testnet-bridge-examples`](https://github.com/gluwa/usc-testnet-bridge-examples). Receipt decoding and verifier interfaces come from [`@gluwa/usc-contracts`](https://www.npmjs.com/package/@gluwa/usc-contracts); proof construction uses [`@gluwa/usc-sdk`](https://www.npmjs.com/package/@gluwa/usc-sdk). Facility safeguards use OpenZeppelin Contracts. Runtime dependencies are permissively licensed, and their required notices are retained in the installed packages.
+The Attestcoin integration follows the patterns in the current [Attestcoin readability documentation](https://docs.attestcoin.org/attestcoin-protocol/attestcoin-readability) and the MIT-licensed [`gluwa/usc-testnet-bridge-examples`](https://github.com/gluwa/usc-testnet-bridge-examples). Receipt decoding and verifier interfaces come from [`@gluwa/usc-contracts`](https://www.npmjs.com/package/@gluwa/usc-contracts); proof construction uses [`@gluwa/usc-sdk`](https://www.npmjs.com/package/@gluwa/usc-sdk). Facility safeguards use OpenZeppelin Contracts. Runtime dependencies are permissively licensed, and their required notices are retained in the installed packages.
 
 ## Licence
 
