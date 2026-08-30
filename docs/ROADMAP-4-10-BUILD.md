@@ -36,6 +36,29 @@ No pilot has run. A design partner, independent audit of the exact commit, legal
 review, pilot budget, production asset/custody decision, testnet rehearsal,
 production watcher, and accountable human approvals remain external gates.
 
+The CC3 V3 core deployment command is `npm run deploy:v3`. Its default mode is
+a non-broadcast preflight against `config/v3-cc3.json`: it verifies chain
+102031, the exact native verifier, separated roles, asset bytecode and decimals,
+declared balances and allowances, pilot bounds, the deployer identity, and all
+required build artifacts. Only `npm run deploy:v3 -- --broadcast` can send
+transactions. That explicit path deploys and verifies `PolicyKernelV2`,
+`PolicyRegistryV1`, `CappedPilotFactoryV1`, `MultiChainEventPolicyV1`, and
+`ProofJobsV1`, wires the proof-jobs address once, then atomically writes
+`deployments-v3.json`. It does not create or activate a facility, configure a
+policy, publish a registry claim, transfer an asset, or enable a transport or
+operator market.
+
+Broadcast mode reserves `deployments-v3.json.lock` before its first transaction.
+An interrupted or partially mined deployment leaves that lock in place; reconcile
+the predicted addresses and transaction history before removing it or attempting
+another broadcast.
+
+The checked-in guardian is the existing Horizon 1 hunter wallet only as a
+testnet candidate. Its owner has not accepted the immutable guardian duty, so
+the dry-run result is not authorization to use `--broadcast`. Confirm that role
+with the accountable owner, or replace it with an approved guardian, before any
+transaction is sent.
+
 ## 5. Cross-chain remedy adapters
 
 The repository defines a transport-neutral remedy boundary:

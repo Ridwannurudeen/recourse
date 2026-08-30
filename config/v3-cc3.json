@@ -1,0 +1,43 @@
+{
+  "generation": "v3-core",
+  "chainId": 102031,
+  "verifier": "0x0000000000000000000000000000000000000FD2",
+  "asset": {
+    "address": "0x3c6eF93E1d2C539c5EFefbBc51cc6a1E120fBf77",
+    "decimals": 6
+  },
+  "roles": {
+    "deployer": "0xB9262d47B4d6d569A7C5230B3BF7De1080dD6e49",
+    "lender": "0x3d97e8eB57CBf459e22965162B5DEc182862e312",
+    "borrower": "0x1aBE54FE9aDB691Df093F1d3711ec3D5fCd99F1D",
+    "guardian": "0xa61B1518691dF7655226fF944b6f3Eade4E4B228"
+  },
+  "pilotBounds": {
+    "maximumFacilityLimit": "100000000000",
+    "maximumTotalLimit": "300000000000",
+    "minimumBondBps": 2000,
+    "maximumDrawFeeBps": 400,
+    "maximumMaturityBlocks": 100000,
+    "maximumDrawDelayBlocks": 50,
+    "maximumFacilityCount": 3
+  },
+  "requirements": {
+    "nativeBalances": [
+      {
+        "role": "deployer",
+        "minimumWei": "10000000000000000000"
+      }
+    ],
+    "assetBalances": [
+      {
+        "role": "lender",
+        "minimumBaseUnits": "300000000000"
+      },
+      {
+        "role": "borrower",
+        "minimumBaseUnits": "20000000000"
+      }
+    ],
+    "assetAllowances": []
+  }
+}

@@ -1,3 +1,7 @@
+import { queryLegacyEvents, readFacilityCatalog } from "./app-core.mjs";
+
+const { ethers } = window;
+
 const CONFIG = Object.freeze({
   rpcUrl: "https://rpc.cc3-testnet.creditcoin.network",
   ethereumRpcUrl: "https://ethereum-rpc.publicnode.com",
@@ -11,6 +15,7 @@ const CONFIG = Object.freeze({
     newBorrowCovenant: "0x5f1DCF18622663a046a55Ad86c61dd339E1e5dE4",
     lpLockCovenant: "0x2826913E2917d905F7658AAa81288f3C4b98A53d",
     verifier: "0x0000000000000000000000000000000000000FD2",
+    facilityId: 1,
     deploymentBlock: 5371433,
     explorer: "https://creditcoin-testnet.blockscout.com",
   }),
@@ -407,14 +412,13 @@ function selectedBlockOverride() {
   return Number(raw);
 }
 
-function selectedFacilityId(availableIds) {
+function selectedFacilityId(availableIds = null) {
   const raw = new URLSearchParams(window.location.search).get("facility");
-  if (raw === null) return availableIds[0];
-  if (!/^\d+$/.test(raw) || !Number.isSafeInteger(Number(raw))) {
+  if (raw !== null && (!/^\d+$/.test(raw) || !Number.isSafeInteger(Number(raw)))) {
     throw new Error("The facility query parameter must be a positive integer.");
   }
-  const facilityId = Number(raw);
-  if (!availableIds.includes(facilityId)) {
+  const facilityId = raw === null ? CONFIG.deployments.facilityId : Number(raw);
+  if (availableIds && !availableIds.includes(facilityId)) {
     throw new Error(`Facility #${facilityId} was not found in the registry.`);
   }
   return facilityId;
@@ -434,31 +438,6 @@ function readProvider() {
   return new ethers.JsonRpcProvider(connection, CONFIG.chainId, {
     staticNetwork: true,
   });
-}
-
-async function readFacilityCatalog(provider, facility, blockNumber) {
-  const opened = await facility.queryFilter(
-    facility.filters.FacilityOpened(),
-    CONFIG.deployments.deploymentBlock,
-    blockNumber,
-  );
-  const ids = opened.map((event) => Number(event.args.facilityId));
-  const uniqueIds = [...new Set(ids)].sort((left, right) => left - right);
-  return Promise.all(
-    uniqueIds.map(async (facilityId) => {
-      const data = await facility.facilityOf(facilityId, {
-        blockTag: blockNumber,
-      });
-      if (data.lender === ethers.ZeroAddress || data.facilityLimit === 0n) {
-        throw new Error(`Facility #${facilityId} returned an invalid record.`);
-      }
-      return {
-        facilityId,
-        data,
-        stateName: STATE_NAMES[Number(data.state)],
-      };
-    }),
-  );
 }
 
 function parseReceiptEvents(receipt, facilityInterface, adjudicatorInterface) {
@@ -507,18 +486,37 @@ async function readSnapshot() {
     ADJUDICATOR_ABI,
     provider,
   );
-  const catalog = await readFacilityCatalog(provider, facility, blockNumber);
-  const facilityId = selectedFacilityId(
-    catalog.map((entry) => entry.facilityId),
-  );
+  const facilityId = selectedFacilityId();
+  const [catalog, registrations, breachEvents] = await Promise.all([
+    readFacilityCatalog({
+      facility,
+      filter: facility.filters.FacilityOpened(),
+      deploymentBlock: CONFIG.deployments.deploymentBlock,
+      blockNumber,
+      stateNames: STATE_NAMES,
+      zeroAddress: ethers.ZeroAddress,
+    }),
+    queryLegacyEvents(
+      adjudicator,
+      adjudicator.filters.CovenantRegistered(facilityId),
+      CONFIG.deployments.deploymentBlock,
+      blockNumber,
+    ),
+    queryLegacyEvents(
+      facility,
+      facility.filters.Breached(facilityId),
+      CONFIG.deployments.deploymentBlock,
+      blockNumber,
+    ),
+  ]);
+  selectedFacilityId(catalog.map((entry) => entry.facilityId));
   const facilityData = catalog.find(
     (entry) => entry.facilityId === facilityId,
   ).data;
-  const registrations = await adjudicator.queryFilter(
-    adjudicator.filters.CovenantRegistered(facilityId),
-    CONFIG.deployments.deploymentBlock,
-    blockNumber,
-  );
+  const stateName = STATE_NAMES[Number(facilityData.state)];
+  if (!stateName)
+    throw new Error(`Facility returned unknown state ${facilityData.state}.`);
+
   const registrationDetails = await Promise.all(
     registrations.map(async (event) => ({
       covenantId: event.args.covenantId,
@@ -592,17 +590,8 @@ async function readSnapshot() {
     covenant ? covenant.configHash(facilityId, readOverrides) : ethers.ZeroHash,
   ]);
 
-  const stateName = STATE_NAMES[Number(facilityData.state)];
-  if (!stateName)
-    throw new Error(`Facility returned unknown state ${facilityData.state}.`);
-
   let breach = null;
   if (stateName === "Breached") {
-    const breachEvents = await facility.queryFilter(
-      facility.filters.Breached(facilityId),
-      CONFIG.deployments.deploymentBlock,
-      blockNumber,
-    );
     const breachEvent = breachEvents.at(-1);
     if (!breachEvent) {
       throw new Error(

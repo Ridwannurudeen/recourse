@@ -7,11 +7,11 @@ Wants=network-online.target
 Type=simple
 User=recourse
 Group=recourse
-WorkingDirectory=/opt/recourse
-EnvironmentFile=/etc/recourse/operator.env
+WorkingDirectory=/opt/recourse-operator/current
+EnvironmentFile=/etc/recourse/operator-runtime.conf
 Environment=RECOURSE_OPERATOR_CONFIG=/etc/recourse/operator.json
 Environment=RECOURSE_OPERATOR_DATA_DIRECTORY=/var/lib/recourse-operator
-ExecStart=/usr/bin/node /opt/recourse/daemon/operator.mjs
+ExecStart=/usr/bin/node /opt/recourse-operator/current/daemon/operator.mjs
 Restart=on-failure
 RestartSec=10s
 KillSignal=SIGTERM

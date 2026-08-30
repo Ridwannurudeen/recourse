@@ -12,9 +12,11 @@ import {
   normalizeTokenSymbol,
   outcomeLabel,
   partitionFacilityCatalog,
+  queryFilterInBlockPages,
   registeredPolicyIds,
   statusLabel,
 } from "../web/horizon1-core.mjs";
+import { readFacilityCatalog } from "../web/app-core.mjs";
 
 function deferred() {
   let resolve;
@@ -205,6 +207,88 @@ test("loadFacilityJobs pages long log ranges and hydrates only matching jobs at 
     [6n, { blockTag: 4_250 }],
     [8n, { blockTag: 4_250 }],
   ]);
+});
+
+test("legacy event-history reads are bounded and concurrent", async () => {
+  const calls = { queries: [], facilities: [] };
+  let activeQueries = 0;
+  let peakQueries = 0;
+  const facility = {
+    queryFilter: async (_filter, fromBlock, toBlock) => {
+      calls.queries.push([fromBlock, toBlock]);
+      if (toBlock - fromBlock + 1 > 2_000) {
+        throw new Error("query timeout of 10 seconds exceeded");
+      }
+      activeQueries += 1;
+      peakQueries = Math.max(peakQueries, activeQueries);
+      await new Promise((resolve) => setImmediate(resolve));
+      activeQueries -= 1;
+      return fromBlock === 5_371_433
+        ? [
+            { args: { facilityId: 2n } },
+            { args: { facilityId: 1n } },
+            { args: { facilityId: 2n } },
+          ]
+        : [];
+    },
+    facilityOf: async (facilityId, overrides) => {
+      calls.facilities.push([facilityId, overrides]);
+      return {
+        lender: "0x0000000000000000000000000000000000000001",
+        facilityLimit: 1n,
+        state: facilityId,
+      };
+    },
+  };
+
+  assert.deepEqual(
+    await readFacilityCatalog({
+      facility,
+      filter: {},
+      deploymentBlock: 5_371_433,
+      blockNumber: 5_377_434,
+      stateNames: ["Created", "Active", "Breached"],
+      zeroAddress: "0x0000000000000000000000000000000000000000",
+    }),
+    [
+      {
+        facilityId: 1,
+        data: {
+          lender: "0x0000000000000000000000000000000000000001",
+          facilityLimit: 1n,
+          state: 1,
+        },
+        stateName: "Active",
+      },
+      {
+        facilityId: 2,
+        data: {
+          lender: "0x0000000000000000000000000000000000000001",
+          facilityLimit: 1n,
+          state: 2,
+        },
+        stateName: "Breached",
+      },
+    ],
+  );
+  assert.deepEqual(calls.queries, [
+    [5_371_433, 5_373_432],
+    [5_373_433, 5_375_432],
+    [5_375_433, 5_377_432],
+    [5_377_433, 5_377_434],
+  ]);
+  assert.deepEqual(calls.facilities, [
+    [1, { blockTag: 5_377_434 }],
+    [2, { blockTag: 5_377_434 }],
+  ]);
+  assert.equal(peakQueries, 4);
+});
+
+test("paged event-history reads reject concurrency that cannot advance", async () => {
+  await assert.rejects(
+    () => queryFilterInBlockPages({ queryFilter: async () => [] }, {}, 1, 2, Number.NaN),
+    /concurrency must be a positive safe integer/,
+  );
 });
 
 test("formatUnixTimestamp renders uint64 values outside the Date range without throwing", () => {

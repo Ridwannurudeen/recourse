@@ -125,15 +125,33 @@ export async function queryFilterInBlockPages(
   filter,
   fromBlock,
   toBlock,
+  concurrency = 1,
 ) {
-  const events = [];
+  if (!Number.isSafeInteger(concurrency) || concurrency <= 0) {
+    throw new Error("Event query concurrency must be a positive safe integer.");
+  }
+  const ranges = [];
   for (
     let pageStart = fromBlock;
     pageStart <= toBlock;
     pageStart += EVENT_QUERY_BLOCKS
   ) {
-    const pageEnd = Math.min(toBlock, pageStart + EVENT_QUERY_BLOCKS - 1);
-    events.push(...(await contract.queryFilter(filter, pageStart, pageEnd)));
+    ranges.push([
+      pageStart,
+      Math.min(toBlock, pageStart + EVENT_QUERY_BLOCKS - 1),
+    ]);
+  }
+
+  const events = [];
+  for (let offset = 0; offset < ranges.length; offset += concurrency) {
+    const pages = await Promise.all(
+      ranges
+        .slice(offset, offset + concurrency)
+        .map(([pageStart, pageEnd]) =>
+          contract.queryFilter(filter, pageStart, pageEnd),
+        ),
+    );
+    for (const page of pages) events.push(...page);
   }
   return events;
 }

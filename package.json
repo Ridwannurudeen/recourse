@@ -9,6 +9,7 @@
     "balances": "node scripts/balances.mjs",
     "daemon": "node daemon/index.mjs",
     "daemon:horizon1": "node daemon/horizon1.mjs",
+    "deploy:v3": "node scripts/deploy-v3.mjs",
     "operator:discover": "node daemon/job-discovery.mjs",
     "operator": "node daemon/operator.mjs",
     "pilot:readiness": "node scripts/pilot-readiness.mjs",
