@@ -1,0 +1,54 @@
+{
+  "generation": "v3-core",
+  "chainId": 102031,
+  "verifier": "0x0000000000000000000000000000000000000FD2",
+  "asset": {
+    "address": "0x3c6eF93E1d2C539c5EFefbBc51cc6a1E120fBf77",
+    "decimals": 6
+  },
+  "roles": {
+    "deployer": "0xB9262d47B4d6d569A7C5230B3BF7De1080dD6e49",
+    "lender": "0x3d97e8eB57CBf459e22965162B5DEc182862e312",
+    "borrower": "0x1aBE54FE9aDB691Df093F1d3711ec3D5fCd99F1D",
+    "guardian": "0xa61B1518691dF7655226fF944b6f3Eade4E4B228"
+  },
+  "pilotBounds": {
+    "maximumFacilityLimit": "100000000000",
+    "maximumTotalLimit": "300000000000",
+    "minimumBondBps": 2000,
+    "maximumDrawFeeBps": 400,
+    "maximumMaturityBlocks": 100000,
+    "maximumDrawDelayBlocks": 50,
+    "maximumFacilityCount": 3
+  },
+  "contracts": {
+    "policyKernel": "0xC96EEf1D5105f2D1f44ecBf998a5989bd27912C7",
+    "verifiedCreditState": "0x09E8e25ad1cDE0937A58B3a2629bF0323aDe11Eb",
+    "policyRegistry": "0x07459CC8065e46BC3E5F519c715e71DDb10f6c30",
+    "cappedPilotFactory": "0x3c69a7AB4D4b76C0A8139063E44E08FBdA2c474D",
+    "multiChainEventPolicy": "0x82C6B7f5a4E1cc41d6e10De3506F73B888a4Ebab",
+    "proofJobs": "0x1e2B21006dbce769fA8608aD86A7B8B94Bd28485"
+  },
+  "transactions": {
+    "policyKernel": "0x6cb84eeab7d8540fb2bfd209c6f76abe792dade72a8b5e6ac4cb97c6466e247e",
+    "policyRegistry": "0x87c6320a389672bf3eb619659935e476ddd4266c9836d461bc4463d29103ed72",
+    "cappedPilotFactory": "0xc81c71f552309a17b30b7e03956e209e539d4c67bf36f3dcb60193210405cb8d",
+    "multiChainEventPolicy": "0x8ef060b89c97d45e23878748ce9c7cff68a362e699d362069332034eec03d165",
+    "proofJobs": "0x003c3eee6a540492d5b382e347e819ccc0a1eafdab3b0a0083a96f404f7bea3b",
+    "setProofJobs": "0x58cfc374793615e39a573d322a0f7bff1a008df322f7652ee83a7add8d916bb5"
+  },
+  "deploymentBlocks": {
+    "PolicyKernelV2": 5400125,
+    "PolicyRegistryV1": 5400126,
+    "CappedPilotFactoryV1": 5400127,
+    "MultiChainEventPolicyV1": 5400128,
+    "ProofJobsV1": 5400129
+  },
+  "wiringVerifiedAtBlock": 5400130,
+  "activation": {
+    "facilitiesCreated": 0,
+    "policiesConfigured": 0,
+    "registryClaimsPublished": 0,
+    "assetsTransferred": "0"
+  }
+}
