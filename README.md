@@ -43,9 +43,9 @@ The additive Horizon 1 generation is live on CC3 without changing the proven fac
 
 The new demonstration facility is [`0xF1E51D2d648E7FeA60fE4B2C739f7591426d14FA`](https://creditcoin-testnet.blockscout.com/address/0xF1E51D2d648E7FeA60fE4B2C739f7591426d14FA). It is Active with 40,000 of 100,000 six-decimal demo rUSD drawn and proof job 1 funded. The demo token is fixed-supply testnet scaffolding, not a production stablecoin. See [the Horizon 1 technical note](docs/HORIZON1.md) and [`deployments-horizon1.json`](deployments-horizon1.json) for exact addresses, mechanics, limitations, and reproduction.
 
-The additive [Horizon 1 console](web/horizon1.html) reads the live factory, facility, kernel, credit state, and proof jobs at one pinned CC3 block. It shows registered policies separately from accepted policy effects and never requests a wallet or submits a transaction.
+The additive [public Horizon 1 console](https://ridwan.gudman.xyz/recourse/horizon1.html), served from [`web/horizon1.html`](web/horizon1.html), reads the live factory, facility, kernel, credit state, and proof jobs at one pinned CC3 block. It shows registered policies separately from accepted policy effects and never requests a wallet or submits a transaction.
 
-Local roadmap work now also includes a typed [SDK](sdk/README.md), policy simulation and calldata builders, an issuer-attested `PolicyRegistryV1`, and a resumable read-only operator discovery and metrics tool. These foundations are tested but are not deployed, independently audited, frozen, or externally integrated.
+Roadmap work now also includes a typed [SDK](sdk/README.md), policy simulation and calldata builders, an issuer-attested `PolicyRegistryV1`, and a resumable read-only operator discovery and metrics tool. The committed static console is publicly hosted; the SDK remains unpublished, the registry remains undeployed, and the operator remains source-only rather than an installed service. These foundations are tested but are not independently audited, frozen, or externally integrated.
 
 ## Quickstart
 
@@ -137,7 +137,7 @@ The borrower's activation commits to an ordered hash covering both the identity 
 
 ## Testing
 
-`npm test` passes 231 Forge tests, 35 root Node tests, and 17 SDK tests across both generations and the local roadmap foundations, followed by a strict SDK declaration compile. The original 134 Forge tests remain green. New coverage includes registry declarations and exact audit scopes, ABI parity, reorg-anchored aggregate reads, graded multi-policy aggregation, exact-expiry behavior, ERC-20 accounting, public manifests, verified observations, source-position monotonicity, proof-job authorization, cursor continuity, block-pinned operator reports, conservative cures, and an end-to-end factory-to-proof-to-policy flow.
+`npm test` passes 231 Forge tests, 35 root Node tests, and 17 SDK tests across both generations and the roadmap foundations, followed by a strict SDK declaration compile. The original 134 Forge tests remain green. New coverage includes registry declarations and exact audit scopes, ABI parity, reorg-anchored aggregate reads, graded multi-policy aggregation, exact-expiry behavior, ERC-20 accounting, public manifests, verified observations, source-position monotonicity, proof-job authorization, cursor continuity, block-pinned operator reports, conservative cures, and an end-to-end factory-to-proof-to-policy flow.
 
 Three stateful invariant properties each complete 256 runs and 128,000 calls with zero handler reverts. They cover native and ERC-20 asset conservation, claim solvency, Horizon 1 facility and draw bounds, and zero available credit outside the Active state. A separate regression test asserts that the original-generation bond can be claimed at most once.
 

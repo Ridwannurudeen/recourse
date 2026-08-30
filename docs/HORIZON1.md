@@ -55,7 +55,7 @@ Non-reveal bonds become slashable after the deadline. Invalid or irrelevant proo
 
 The lender and borrower have independent draw-pause flags. Neither can clear the other's pause. Pauses cancel pending draws but never block repayment or claims. The factory guardian can pause only new creation; it cannot alter policy, seize assets, stop repayment, or stop withdrawals.
 
-## Local SDK, registry, dashboard, and discovery foundations
+## SDK, registry, hosted console, and discovery foundations
 
 The local [`sdk/`](../sdk/README.md) package exposes typed reads for both Horizon 1 and `PolicyRegistryV1`, exact ABI encodings, calldata-only builders, event-policy manifest hashing, proof-job commitments, and conservative facility simulation. Its off-chain `recourse-policy-package` artifact is intentionally separate from the registry's on-chain issuer declarations.
 
@@ -63,7 +63,7 @@ The local [`sdk/`](../sdk/README.md) package exposes typed reads for both Horizo
 
 Deployment history is issuer-attested, not factory-certified. The registry does not prove that a facility came from `RecourseFacilityFactoryV2` or that its kernel is a canonical Recourse build. Its v1 constructor check models the current kernel-only `EventHistoryPolicyV1` constructor. The correct description is issuer-attested, facility/kernel-consistent, evaluator-runtime/config-bound deployment records.
 
-The additive [`web/horizon1.html`](../web/horizon1.html) console reads the live factory at one pinned block, filters facilities to the configured kernel and credit state, discovers registered policies from `PolicyRegistered` logs, and keeps an unapplied registration distinct from an accepted policy effect. It never requests a wallet or exposes a transaction path.
+The additive [public Horizon 1 console](https://ridwan.gudman.xyz/recourse/horizon1.html), served from [`web/horizon1.html`](../web/horizon1.html), reads the live factory at one pinned block, filters facilities to the configured kernel and credit state, discovers registered policies from `PolicyRegistered` logs, and keeps an unapplied registration distinct from an accepted policy effect. It never requests a wallet or exposes a transaction path.
 
 `daemon/job-discovery.mjs` is a signerless Proof Jobs catalog and metrics report. It scans only confirmed blocks, checks canonical block hashes, checkpoints cumulative metrics plus cached state and a bounded recent-event window in an atomic cursor, refreshes changed jobs in bounded batches, pins every hydrated job and policy read to the report block, and reports only observable coverage, completion, reveal, slash, release, and latency data. Partial history is marked incomplete and does not invent lifecycle denominators, invalid-proof rates, uptime, reputation, or economics.
 
@@ -93,7 +93,7 @@ The read-only catalog requires only a CC3 RPC and writes its gitignored cursor l
 CREDITCOIN_RPC_URL=https://rpc.cc3-testnet.creditcoin.network npm run operator:discover
 ```
 
-Serve the zero-build consoles from the repository root and open `/web/horizon1.html`:
+The public static console is hosted at <https://ridwan.gudman.xyz/recourse/horizon1.html>. For a local reproduction, serve the zero-build consoles from the repository root and open `/web/horizon1.html`:
 
 ```bash
 python -m http.server 8000
