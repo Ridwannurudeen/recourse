@@ -1,12 +1,6 @@
 import "dotenv/config";
 import { Contract, Interface, JsonRpcProvider, getAddress } from "ethers";
-import {
-  existsSync,
-  readFileSync,
-  renameSync,
-  unlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import {
@@ -17,6 +11,7 @@ import {
   sortAndDedupeEvents,
   updateMetricCheckpoint,
 } from "./job-discovery-core.mjs";
+import { atomicWriteJson } from "./operator-core.mjs";
 
 export const PROOF_JOBS_ABI = [
   "event JobCreated(uint256 indexed jobId,address indexed sponsor,address indexed facility,uint256 policyId,bytes32 requirementsDigest,uint256 escrow)",
@@ -69,20 +64,6 @@ function bigintString(value) {
   return BigInt(value).toString();
 }
 
-function atomicWriteJson(path, value) {
-  const temporaryPath = `${path}.${process.pid}.tmp`;
-  try {
-    writeFileSync(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, {
-      encoding: "utf8",
-      flag: "wx",
-    });
-    renameSync(temporaryPath, path);
-  } catch (error) {
-    if (existsSync(temporaryPath)) unlinkSync(temporaryPath);
-    throw error;
-  }
-}
-
 function canonicalBigintString(value, label, { positive = false } = {}) {
   const string = String(value);
   let parsed;
@@ -104,7 +85,9 @@ function canonicalBigintString(value, label, { positive = false } = {}) {
 function readCursor(path, deployments, confirmations) {
   if (!existsSync(path)) return undefined;
   const cursor = JSON.parse(readFileSync(path, "utf8"));
-  if (cursor.version !== 2) throw new Error("Invalid discovery cursor version");
+  if (cursor.version !== 2 && cursor.version !== 3) {
+    throw new Error("Invalid discovery cursor version");
+  }
   if (cursor.chainId !== Number(deployments.chainId)) {
     throw new Error("Discovery cursor chain mismatch");
   }
@@ -149,6 +132,13 @@ function readCursor(path, deployments, confirmations) {
     !/^0x[0-9a-fA-F]{64}$/.test(cursor.lastScannedBlockHash)
   ) {
     throw new Error("Invalid discovery cursor block hash");
+  }
+  if (
+    cursor.version === 3 &&
+    (!Number.isSafeInteger(cursor.lastScannedBlockTimestamp) ||
+      cursor.lastScannedBlockTimestamp < 0)
+  ) {
+    throw new Error("Invalid discovery cursor block timestamp");
   }
   if (!Array.isArray(cursor.events))
     throw new Error("Invalid discovery cursor events");
@@ -410,8 +400,9 @@ export async function discoverProofJobs({
   }
   const resolvedCursorPath = resolve(cursorPath || DEFAULT_CURSOR_PATH);
   const cursor = readCursor(resolvedCursorPath, deployments, confirmations);
+  let cursorBlock;
   if (cursor) {
-    const cursorBlock = await provider.getBlock(cursor.lastScannedBlock);
+    cursorBlock = await provider.getBlock(cursor.lastScannedBlock);
     if (
       !cursorBlock ||
       cursorBlock.hash.toLowerCase() !==
@@ -475,6 +466,8 @@ export async function discoverProofJobs({
       toBlock: end,
       historyFromBlock,
       stateBlock,
+      stateBlockHash: cursorBlock?.hash?.toLowerCase() ?? null,
+      stateBlockTimestamp: cursorBlock?.timestamp ?? null,
       historyComplete,
       eventsTruncated: cursor?.eventsTruncated ?? false,
       confirmations,
@@ -573,6 +566,8 @@ export async function discoverProofJobs({
     toBlock: end,
     historyFromBlock,
     stateBlock: end,
+    stateBlockHash: finalBlock.hash.toLowerCase(),
+    stateBlockTimestamp: finalBlock.timestamp,
     historyComplete,
     eventsTruncated: retained.truncated,
     confirmations,
@@ -582,7 +577,7 @@ export async function discoverProofJobs({
     metrics: metricsFromCheckpoint(checkpoint),
   });
   atomicWriteJson(resolvedCursorPath, {
-    version: 2,
+    version: 3,
     chainId: Number(deployments.chainId),
     contractAddress: getAddress(deployments.proofJobs),
     historyFromBlock,
@@ -590,6 +585,7 @@ export async function discoverProofJobs({
     nextBlock: end + 1,
     lastScannedBlock: end,
     lastScannedBlockHash: finalBlock.hash.toLowerCase(),
+    lastScannedBlockTimestamp: finalBlock.timestamp,
     confirmations,
     eventsTruncated: retained.truncated,
     events: report.events,
@@ -606,7 +602,27 @@ function optionalBlock(value, label) {
     : unsignedInteger(value, label);
 }
 
+export function writeDiscoveryReport(path, report) {
+  atomicWriteJson(resolve(path), report);
+}
+
+function outputPathFromArgs(args) {
+  let outputPath = process.env.HORIZON1_DISCOVERY_OUTPUT_FILE;
+  for (let index = 0; index < args.length; index += 1) {
+    if (args[index] !== "--output") {
+      throw new Error(`Unknown discovery argument: ${args[index]}`);
+    }
+    if (index + 1 >= args.length || args[index + 1].startsWith("--")) {
+      throw new Error("--output requires a path");
+    }
+    outputPath = args[index + 1];
+    index += 1;
+  }
+  return outputPath ? resolve(outputPath) : undefined;
+}
+
 async function main() {
+  const outputPath = outputPathFromArgs(process.argv.slice(2));
   const deploymentPath = resolve(
     process.env.HORIZON1_DISCOVERY_DEPLOYMENTS_FILE ||
       "deployments-horizon1.json",
@@ -630,6 +646,7 @@ async function main() {
       process.env.HORIZON1_DISCOVERY_CONFIRMATIONS || DEFAULT_CONFIRMATIONS,
     chunkSize: process.env.HORIZON1_DISCOVERY_CHUNK_SIZE || DEFAULT_CHUNK_SIZE,
   });
+  if (outputPath) writeDiscoveryReport(outputPath, report);
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
 }
 

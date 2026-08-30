@@ -4,9 +4,15 @@ import type {
   EventHistoryManifest,
   FacilityRead,
   FacilitySimulationInput,
+  FacilityPolicyCatalogCursor,
+  PolicyRegistryAuditCursor,
   PolicyRegistryAuditScopeRead,
+  PolicyRegistryCatalogCursor,
   PolicyRegistryReleaseRead,
+  PolicyRegistryReleaseCursor,
+  PolicyRegistryCatalogRead,
   PolicyEffect,
+  PortfolioMandateSimulationInput,
   ProofCommitment,
   ProofJob,
   PublishPolicyRegistryReleaseRequest,
@@ -15,13 +21,18 @@ import type {
   RegistryDeploymentRecord,
   RegistryPackageRelease,
   RegistryRuntimeVariant,
+  buildPolicyRegistryCalldata,
+  decodeEventHistoryManifest,
+  readFacilityPolicyCatalog,
   readCreditState,
   readFacilityFactory,
   readPolicyRegistration,
   readPolicyRegistryAuditArtifact,
+  readPolicyRegistryCatalog,
   readPolicyRegistryDeployment,
   readPolicyRegistryRuntimeVariant,
   readProofJob,
+  simulatePortfolioMandateEligibility,
 } from "@recourse/sdk";
 
 declare const facility: FacilityRead;
@@ -58,6 +69,16 @@ void decodedFutureDrawFeeBps;
 void facilitySnapshotBlock;
 void simulation;
 
+declare const mandateSimulationInput: PortfolioMandateSimulationInput;
+type MandateSimulationResult = ReturnType<
+  typeof simulatePortfolioMandateEligibility
+>;
+declare const mandateSimulationResult: MandateSimulationResult;
+const mandateEligibilityCode: number = mandateSimulationResult;
+
+void mandateSimulationInput;
+void mandateEligibilityCode;
+
 type CreditStateRead = Awaited<ReturnType<typeof readCreditState>>;
 type ProofJobRead = Awaited<ReturnType<typeof readProofJob>>;
 type FacilityFactoryRead = Awaited<ReturnType<typeof readFacilityFactory>>;
@@ -73,6 +94,9 @@ type RegistryDeploymentRead = Awaited<
 type RegistryAuditArtifactRead = Awaited<
   ReturnType<typeof readPolicyRegistryAuditArtifact>
 >;
+type FacilityPolicyCatalogRead = Awaited<
+  ReturnType<typeof readFacilityPolicyCatalog>
+>;
 declare const creditStateRead: CreditStateRead;
 declare const proofJobRead: ProofJobRead;
 declare const facilityFactoryRead: FacilityFactoryRead;
@@ -80,6 +104,7 @@ declare const policyRegistrationRead: PolicyRegistrationRead;
 declare const registryRuntimeVariantRead: RegistryRuntimeVariantRead;
 declare const registryDeploymentRead: RegistryDeploymentRead;
 declare const registryAuditArtifactRead: RegistryAuditArtifactRead;
+declare const facilityPolicyCatalogRead: FacilityPolicyCatalogRead;
 
 const decodedObservation: CreditObservation =
   creditStateRead.observations[0].observation;
@@ -98,6 +123,7 @@ const otherSnapshotBlocks: BlockTag[] = [
   registryRuntimeVariantRead.blockTag,
   registryDeploymentRead.blockTag,
   registryAuditArtifactRead.blockTag,
+  facilityPolicyCatalogRead.blockTag,
 ];
 
 void decodedObservationKind;
@@ -135,6 +161,28 @@ const publishReleaseRequest: PublishPolicyRegistryReleaseRequest = {
   actionAdapters: [],
 };
 
+declare const registryCatalog: PolicyRegistryCatalogRead;
+const registryCatalogPage = registryCatalog.releases;
+const registryCatalogNext: number | null = registryCatalog.nextIndex;
+const registryCatalogCursor: PolicyRegistryCatalogCursor | null =
+  registryCatalog.nextCursor;
+const registryReleaseCursor: PolicyRegistryReleaseCursor | null =
+  registryRead.nextCursor;
+const registryAuditCursor: PolicyRegistryAuditCursor | null =
+  registryAuditScope.nextCursor;
+const facilityCatalogCursor: FacilityPolicyCatalogCursor | null =
+  facilityPolicyCatalogRead.nextCursor;
+type DecodedManifest = ReturnType<typeof decodeEventHistoryManifest>;
+declare const decodedManifest: DecodedManifest;
+const typedManifest: EventHistoryManifest = decodedManifest;
+type RegistryCalls = ReturnType<typeof buildPolicyRegistryCalldata>;
+declare const registryCalls: RegistryCalls;
+const publishedReleaseCall: string | undefined = registryCalls.publishRelease;
+type RegistryCatalogRead = Awaited<
+  ReturnType<typeof readPolicyRegistryCatalog>
+>;
+declare const inferredRegistryCatalog: RegistryCatalogRead;
+
 void registryReleasedAt;
 void registryApprovedAt;
 void registryChainId;
@@ -142,3 +190,14 @@ void registryScope;
 void registryReleaseSnapshotBlock;
 void registryAuditSnapshotBlock;
 void publishReleaseRequest;
+void registryCatalogPage;
+void registryCatalogNext;
+void registryCatalogCursor;
+void registryReleaseCursor;
+void registryAuditCursor;
+void facilityCatalogCursor;
+void decodedManifest;
+void typedManifest;
+void registryCalls;
+void publishedReleaseCall;
+void inferredRegistryCatalog;

@@ -101,6 +101,7 @@ contract PolicyRegistryV1 is IPolicyRegistryV1 {
     );
 
     mapping(bytes32 releaseId => PackageRelease release) private releases;
+    bytes32[] private releaseIds;
     mapping(bytes32 releaseId => EvidenceKind[] evidenceKinds) private releaseEvidenceKinds;
     mapping(bytes32 releaseId => mapping(EvidenceKind evidenceKind => bool declared)) private evidenceDeclarations;
     mapping(bytes32 releaseId => ActionAdapterDeclaration[] adapters) private releaseActionAdapters;
@@ -162,6 +163,7 @@ contract PolicyRegistryV1 is IPolicyRegistryV1 {
         release.releaseContentHash = releaseContentHash;
         release.releasedAt = releasedAt;
         release.exists = true;
+        releaseIds.push(releaseId);
 
         _storeEvidenceDeclarations(releaseId, evidenceKinds);
         _storeActionAdapterDeclarations(releaseId, actionAdapters);
@@ -332,6 +334,14 @@ contract PolicyRegistryV1 is IPolicyRegistryV1 {
 
     function packageRelease(bytes32 releaseId) external view returns (PackageRelease memory) {
         return releases[releaseId];
+    }
+
+    function releaseCount() external view returns (uint256) {
+        return releaseIds.length;
+    }
+
+    function releaseAt(uint256 index) external view returns (bytes32) {
+        return releaseIds[index];
     }
 
     function runtimeVariant(bytes32 runtimeVariantId) external view returns (RuntimeVariant memory) {

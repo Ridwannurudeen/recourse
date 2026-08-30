@@ -57,6 +57,22 @@ export const AuditScope = Object.freeze({
   Release: 0,
   Deployment: 1,
 });
+export const PortfolioEligibilityCode = Object.freeze({
+  Eligible: 0,
+  UnknownFacility: 1,
+  WrongAsset: 2,
+  WrongKernel: 3,
+  InvalidStatus: 4,
+  FacilityLimitExceeded: 5,
+  BondBelowMinimum: 6,
+  DrawFeeExceeded: 7,
+  InvalidMaturity: 8,
+  PolicySetMismatch: 9,
+  UnknownRelease: 10,
+  InvalidDeployment: 11,
+  MissingEvidenceKind: 12,
+  MissingActionAdapter: 13,
+});
 
 const coder = AbiCoder.defaultAbiCoder();
 const MAX_UINT256 = (1n << 256n) - 1n;
@@ -319,6 +335,54 @@ export function hashEventHistoryManifest(value) {
   return keccak256(encodeEventHistoryManifest(value));
 }
 
+export function decodeEventHistoryManifest(manifestBytes) {
+  const encoded = bytes(manifestBytes, "manifestBytes");
+  let decoded;
+  try {
+    [decoded] = coder.decode([eventHistoryConfigurationTuple], encoded);
+  } catch {
+    throw new TypeError("Invalid manifestBytes");
+  }
+  const manifest = validateEventHistoryManifest({
+    sourceChain: decoded.sourceChain,
+    emitter: decoded.emitter,
+    eventSignature: decoded.eventSignature,
+    subject: decoded.subject,
+    startSourceBlock: decoded.startSourceBlock,
+    endSourceBlock: decoded.endSourceBlock,
+    topicCount: Number(decoded.topicCount),
+    subjectTopicIndex: Number(decoded.subjectTopicIndex),
+    dataLength: Number(decoded.dataLength),
+    observedValueOffset: Number(decoded.observedValueOffset),
+    observationKind: Number(decoded.observationKind),
+    evidenceKind: Number(decoded.evidenceKind),
+    freshnessPeriod: decoded.freshnessPeriod,
+    effect: decoded.effect,
+  });
+  if (encodeEventHistoryManifest(manifest).toLowerCase() !== encoded) {
+    throw new TypeError(
+      "EventHistory manifestBytes are not canonical ABI encoding",
+    );
+  }
+  return manifest;
+}
+
+export function validateEventHistoryManifestBinding(
+  manifestBytes,
+  expectedConfigHash,
+) {
+  const encoded = bytes(manifestBytes, "manifestBytes");
+  const expected = nonzeroBytes32(expectedConfigHash, "expectedConfigHash");
+  const manifestHash = keccak256(encoded);
+  if (manifestHash !== expected) {
+    throw new RangeError("EventHistory manifest config hash mismatch");
+  }
+  return {
+    manifest: decodeEventHistoryManifest(encoded),
+    manifestHash,
+  };
+}
+
 function severity(outcome) {
   return outcome >= PolicyOutcome.Watch && outcome <= PolicyOutcome.Breached
     ? outcome
@@ -407,6 +471,148 @@ export function simulateFacilityPolicyState({
     effectiveLimit,
     availableCredit,
   };
+}
+
+export function simulatePortfolioMandateEligibility({
+  mandate,
+  facility,
+  deployment,
+  releaseExists,
+  factoryRecognized,
+  evidenceKindDeclared,
+  actionAdapters,
+  chainId,
+  blockNumber,
+}) {
+  if (!mandate || typeof mandate !== "object")
+    throw new TypeError("Invalid mandate");
+  if (!facility || typeof facility !== "object")
+    throw new TypeError("Invalid facility");
+  if (!deployment || typeof deployment !== "object")
+    throw new TypeError("Invalid deployment");
+  if (
+    typeof releaseExists !== "boolean" ||
+    typeof factoryRecognized !== "boolean" ||
+    typeof evidenceKindDeclared !== "boolean"
+  ) {
+    throw new TypeError("Invalid mandate evidence state");
+  }
+  if (!Array.isArray(actionAdapters))
+    throw new TypeError("Invalid actionAdapters");
+  const currentChainId = positiveInteger(chainId, "chainId", MAX_UINT256);
+  const currentBlock = integer(blockNumber, "blockNumber", MAX_UINT256);
+  const requiredAsset = address(mandate.asset, "mandate.asset");
+  const requiredKernel = address(mandate.kernel, "mandate.kernel");
+  const requiredReleaseId = nonzeroBytes32(
+    mandate.requiredReleaseId,
+    "mandate.requiredReleaseId",
+  );
+  const requiredPolicySetCommitment = nonzeroBytes32(
+    mandate.requiredPolicySetCommitment,
+    "mandate.requiredPolicySetCommitment",
+  );
+  const requiredActionAdapterKind = nonzeroBytes32(
+    mandate.requiredActionAdapterKind,
+    "mandate.requiredActionAdapterKind",
+  );
+  integer(mandate.requiredEvidenceKind, "mandate.requiredEvidenceKind", 2n);
+  const maximumFacilityLimit = positiveInteger(
+    mandate.maximumFacilityLimit,
+    "mandate.maximumFacilityLimit",
+    MAX_UINT256,
+  );
+  const minimumBondBps = positiveInteger(
+    mandate.minimumBondBps,
+    "mandate.minimumBondBps",
+    10_000n,
+  );
+  const maximumDrawFeeBps = integer(
+    mandate.maximumDrawFeeBps,
+    "mandate.maximumDrawFeeBps",
+    10_000n,
+  );
+  const maximumRemainingMaturityBlocks = positiveInteger(
+    mandate.maximumRemainingMaturityBlocks,
+    "mandate.maximumRemainingMaturityBlocks",
+    MAX_UINT64,
+  );
+  const facilityAddress = address(facility.address, "facility.address");
+  if (!factoryRecognized) return PortfolioEligibilityCode.UnknownFacility;
+  if (address(facility.asset, "facility.asset") !== requiredAsset) {
+    return PortfolioEligibilityCode.WrongAsset;
+  }
+  if (address(facility.kernel, "facility.kernel") !== requiredKernel) {
+    return PortfolioEligibilityCode.WrongKernel;
+  }
+  const status = Number(integer(facility.status, "facility.status", 5n));
+  if (status !== FacilityStatus.Created && status !== FacilityStatus.Active) {
+    return PortfolioEligibilityCode.InvalidStatus;
+  }
+  const facilityLimit = integer(
+    facility.facilityLimit,
+    "facility.facilityLimit",
+    MAX_UINT256,
+  );
+  if (facilityLimit === 0n || facilityLimit > maximumFacilityLimit) {
+    return PortfolioEligibilityCode.FacilityLimitExceeded;
+  }
+  const minimumBond = (facilityLimit * minimumBondBps + 9_999n) / 10_000n;
+  if (
+    integer(facility.bondRequired, "facility.bondRequired", MAX_UINT256) <
+    minimumBond
+  ) {
+    return PortfolioEligibilityCode.BondBelowMinimum;
+  }
+  if (
+    integer(
+      facility.initialDrawFeeBps,
+      "facility.initialDrawFeeBps",
+      MAX_UINT16,
+    ) > maximumDrawFeeBps
+  ) {
+    return PortfolioEligibilityCode.DrawFeeExceeded;
+  }
+  const maturityBlock = integer(
+    facility.maturityBlock,
+    "facility.maturityBlock",
+    MAX_UINT64,
+  );
+  if (
+    maturityBlock <= currentBlock ||
+    maturityBlock > currentBlock + maximumRemainingMaturityBlocks
+  ) {
+    return PortfolioEligibilityCode.InvalidMaturity;
+  }
+  if (
+    bytes32(facility.policySetCommitment, "facility.policySetCommitment") !==
+    requiredPolicySetCommitment
+  ) {
+    return PortfolioEligibilityCode.PolicySetMismatch;
+  }
+  if (!releaseExists) return PortfolioEligibilityCode.UnknownRelease;
+  const deploymentValid =
+    deployment.exists === true &&
+    bytes32(deployment.releaseId, "deployment.releaseId") ===
+      requiredReleaseId &&
+    integer(deployment.chainId, "deployment.chainId", MAX_UINT256) ===
+      currentChainId &&
+    address(deployment.kernel, "deployment.kernel") === requiredKernel &&
+    address(deployment.facility, "deployment.facility") === facilityAddress &&
+    address(deployment.evaluator, "deployment.evaluator", {
+      nonzero: false,
+    }) !== ZeroAddress &&
+    bytes32(deployment.configHash, "deployment.configHash") !== ZERO_BYTES32 &&
+    bytes32(deployment.manifestHash, "deployment.manifestHash") !==
+      ZERO_BYTES32;
+  if (!deploymentValid) return PortfolioEligibilityCode.InvalidDeployment;
+  if (!evidenceKindDeclared)
+    return PortfolioEligibilityCode.MissingEvidenceKind;
+  const adapterKinds = actionAdapters.map((adapter, index) =>
+    bytes32(adapter?.adapterKind, `actionAdapters[${index}].adapterKind`),
+  );
+  return adapterKinds.includes(requiredActionAdapterKind)
+    ? PortfolioEligibilityCode.Eligible
+    : PortfolioEligibilityCode.MissingActionAdapter;
 }
 
 function nonemptyString(value, label) {
@@ -863,6 +1069,46 @@ export function encodePublishPolicyRegistryAuditArtifact({
     nonzeroBytes32(artifactHash, "artifactHash"),
     boundedUtf8String(artifactURI, "artifactURI", 256),
   ]);
+}
+
+export function buildPolicyRegistryCalldata(requests) {
+  if (!requests || typeof requests !== "object") {
+    throw new TypeError("Invalid registry calldata requests");
+  }
+  const result = {};
+  if (requests.publishRelease) {
+    result.publishRelease = encodePublishPolicyRegistryRelease(
+      requests.publishRelease,
+    );
+  }
+  if (requests.approveRuntimeVariants !== undefined) {
+    if (!Array.isArray(requests.approveRuntimeVariants)) {
+      throw new TypeError("Invalid approveRuntimeVariants");
+    }
+    result.approveRuntimeVariants = requests.approveRuntimeVariants.map(
+      encodeApprovePolicyRegistryRuntimeVariant,
+    );
+  }
+  if (requests.recordDeployments !== undefined) {
+    if (!Array.isArray(requests.recordDeployments)) {
+      throw new TypeError("Invalid recordDeployments");
+    }
+    result.recordDeployments = requests.recordDeployments.map(
+      encodeRecordPolicyRegistryDeployment,
+    );
+  }
+  if (requests.publishAuditArtifacts !== undefined) {
+    if (!Array.isArray(requests.publishAuditArtifacts)) {
+      throw new TypeError("Invalid publishAuditArtifacts");
+    }
+    result.publishAuditArtifacts = requests.publishAuditArtifacts.map(
+      encodePublishPolicyRegistryAuditArtifact,
+    );
+  }
+  if (Object.keys(result).length === 0) {
+    throw new TypeError("No registry calldata requests supplied");
+  }
+  return result;
 }
 
 export function buildHorizon1Calldata(requests) {

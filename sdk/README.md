@@ -7,6 +7,21 @@ facility/factory/credit-state/proof-job and policy-registry reads, exact
 Solidity-compatible encoders, conservative facility simulation, versioned
 policy-package validation, and dry-run calldata construction.
 
+Registry catalog, detailed release, and audit-scope reads are explicitly
+page-bounded (maximum 100 entries per collection per call). Continuation cursors
+carry the pinned block number and hash; a page fails if that anchor changed.
+Facility policy discovery requires a known deployment `fromBlock`, scans at
+most `maxPages`, and returns a cursor containing the original range start and
+next block. `historyComplete` applies only to that explicit original range, so a
+tail scan cannot claim genesis coverage. None of these APIs silently walks an
+unbounded collection or chain history.
+
+EventHistory helpers decode the exact Solidity tuple, re-run manifest
+validation, reject non-canonical encodings by exact decode/re-encode byte
+comparison, and can require the encoded bytes to match an expected on-chain
+configuration hash. Registry calldata aggregation remains dry-run only and
+preserves ordered call arrays without accepting a signer.
+
 ```js
 import {
   encodeEventHistoryManifest,

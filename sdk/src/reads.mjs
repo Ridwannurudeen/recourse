@@ -1,4 +1,4 @@
-import { Contract, getAddress } from "ethers";
+import { Contract, Interface, getAddress } from "ethers";
 import {
   policyKernelV1Abi,
   policyRegistryV1Abi,
@@ -60,7 +60,7 @@ async function snapshotBlockTag(runner, blockTag) {
   return blockTag;
 }
 
-async function beginSnapshot(runner, requestedBlockTag) {
+async function beginSnapshot(runner, requestedBlockTag, expectedHash) {
   const provider = runner.provider ?? runner;
   if (typeof provider.getBlock !== "function")
     throw new TypeError(
@@ -76,11 +76,41 @@ async function beginSnapshot(runner, requestedBlockTag) {
   ) {
     throw new RangeError(`Unable to anchor block ${String(resolvedBlockTag)}`);
   }
+  const normalizedHash = block.hash.toLowerCase();
+  if (
+    expectedHash !== undefined &&
+    (typeof expectedHash !== "string" ||
+      !/^0x[0-9a-fA-F]{64}$/.test(expectedHash) ||
+      normalizedHash !== expectedHash.toLowerCase())
+  ) {
+    throw new Error(
+      `Block ${block.number} does not match the continuation hash`,
+    );
+  }
   return {
     provider,
     blockTag: block.number,
-    expectedHash: block.hash.toLowerCase(),
+    expectedHash: normalizedHash,
   };
+}
+
+function continuation(value, nextField, label) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new TypeError(`Invalid ${label}`);
+  }
+  if (!Number.isSafeInteger(value.blockNumber) || value.blockNumber < 0) {
+    throw new TypeError(`Invalid ${label}.blockNumber`);
+  }
+  if (
+    typeof value.blockHash !== "string" ||
+    !/^0x[0-9a-fA-F]{64}$/.test(value.blockHash)
+  ) {
+    throw new TypeError(`Invalid ${label}.blockHash`);
+  }
+  if (!Number.isSafeInteger(value[nextField]) || value[nextField] < 0) {
+    throw new TypeError(`Invalid ${label}.${nextField}`);
+  }
+  return value;
 }
 
 async function assertSnapshot(snapshot) {
@@ -370,7 +400,32 @@ export async function readPolicyRegistryRelease(
   options = {},
 ) {
   const registry = contract(address, policyRegistryV1Abi, runner);
-  const snapshot = await beginSnapshot(runner, options.blockTag);
+  const cursor = options.cursor;
+  if (cursor !== undefined) {
+    continuation(cursor, "runtimeNextIndex", "release cursor");
+    if (
+      !Number.isSafeInteger(cursor.deploymentNextIndex) ||
+      cursor.deploymentNextIndex < 0
+    ) {
+      throw new TypeError("Invalid release cursor.deploymentNextIndex");
+    }
+    if (options.blockTag !== undefined) {
+      throw new TypeError("A release cursor cannot be combined with blockTag");
+    }
+  }
+  const detailLimit = options.detailLimit ?? 25;
+  if (
+    !Number.isSafeInteger(detailLimit) ||
+    detailLimit < 1 ||
+    detailLimit > 100
+  ) {
+    throw new TypeError("Invalid detailLimit");
+  }
+  const snapshot = await beginSnapshot(
+    runner,
+    cursor?.blockNumber ?? options.blockTag,
+    cursor?.blockHash,
+  );
   const { blockTag } = snapshot;
   const overrides = { blockTag };
   const [
@@ -386,6 +441,18 @@ export async function readPolicyRegistryRelease(
     registry.runtimeVariantCount(releaseId, overrides),
     registry.deploymentCount(releaseId, overrides),
   ]);
+  const totalRuntimeVariants = indexedLength(
+    runtimeVariantCount,
+    "runtimeVariantCount",
+  );
+  const totalDeployments = indexedLength(deploymentCount, "deploymentCount");
+  const runtimeStart = cursor?.runtimeNextIndex ?? 0;
+  const deploymentStart = cursor?.deploymentNextIndex ?? 0;
+  const runtimeEnd = Math.min(totalRuntimeVariants, runtimeStart + detailLimit);
+  const deploymentEnd = Math.min(
+    totalDeployments,
+    deploymentStart + detailLimit,
+  );
   const [evidenceKinds, actionAdapters, runtimeVariantIds, deploymentIds] =
     await Promise.all([
       Promise.all(
@@ -402,14 +469,24 @@ export async function readPolicyRegistryRelease(
       ),
       Promise.all(
         Array.from(
-          { length: indexedLength(runtimeVariantCount, "runtimeVariantCount") },
-          (_, index) => registry.runtimeVariantAt(releaseId, index, overrides),
+          { length: Math.max(0, runtimeEnd - runtimeStart) },
+          (_, offset) =>
+            registry.runtimeVariantAt(
+              releaseId,
+              runtimeStart + offset,
+              overrides,
+            ),
         ),
       ),
       Promise.all(
         Array.from(
-          { length: indexedLength(deploymentCount, "deploymentCount") },
-          (_, index) => registry.deploymentAt(releaseId, index, overrides),
+          { length: Math.max(0, deploymentEnd - deploymentStart) },
+          (_, offset) =>
+            registry.deploymentAt(
+              releaseId,
+              deploymentStart + offset,
+              overrides,
+            ),
         ),
       ),
     ]);
@@ -431,12 +508,235 @@ export async function readPolicyRegistryRelease(
   return {
     address: getAddress(address),
     blockTag,
+    blockHash: snapshot.expectedHash,
     releaseId,
     release,
     evidenceKinds,
     actionAdapters,
     runtimeVariants,
     deployments,
+    runtimeVariantTotalCount: totalRuntimeVariants,
+    deploymentTotalCount: totalDeployments,
+    nextCursor:
+      runtimeEnd < totalRuntimeVariants || deploymentEnd < totalDeployments
+        ? {
+            blockNumber: blockTag,
+            blockHash: snapshot.expectedHash,
+            runtimeNextIndex: runtimeEnd,
+            deploymentNextIndex: deploymentEnd,
+          }
+        : null,
+  };
+}
+
+export async function readPolicyRegistryCatalog(address, runner, options = {}) {
+  const registry = contract(address, policyRegistryV1Abi, runner);
+  const cursor =
+    options.cursor === undefined
+      ? undefined
+      : continuation(options.cursor, "nextIndex", "catalog cursor");
+  if (
+    cursor &&
+    (options.blockTag !== undefined || options.start !== undefined)
+  ) {
+    throw new TypeError(
+      "A catalog cursor cannot be combined with blockTag or start",
+    );
+  }
+  if (!cursor && options.start !== undefined && options.start !== 0) {
+    throw new TypeError(
+      "A nonzero catalog start requires a continuation cursor",
+    );
+  }
+  const snapshot = await beginSnapshot(
+    runner,
+    cursor?.blockNumber ?? options.blockTag,
+    cursor?.blockHash,
+  );
+  const { blockTag } = snapshot;
+  const overrides = { blockTag };
+  const count = await registry.releaseCount(overrides);
+  const totalCount = indexedLength(count, "release count");
+  const start = cursor?.nextIndex ?? options.start ?? 0;
+  const limit = options.limit ?? 25;
+  if (!Number.isSafeInteger(start) || start < 0) {
+    throw new TypeError("Invalid catalog start");
+  }
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+    throw new TypeError("Invalid catalog limit");
+  }
+  const end = Math.min(totalCount, start + limit);
+  const releaseIds = await Promise.all(
+    Array.from({ length: Math.max(0, end - start) }, (_, offset) =>
+      registry.releaseAt(start + offset, overrides),
+    ),
+  );
+  const releases = await Promise.all(
+    releaseIds.map(async (releaseId) => ({
+      releaseId,
+      release: await registry.packageRelease(releaseId, overrides),
+    })),
+  );
+  await assertSnapshot(snapshot);
+  return {
+    address: getAddress(address),
+    blockTag,
+    blockHash: snapshot.expectedHash,
+    totalCount,
+    start,
+    nextIndex: end < totalCount ? end : null,
+    nextCursor:
+      end < totalCount
+        ? {
+            blockNumber: blockTag,
+            blockHash: snapshot.expectedHash,
+            nextIndex: end,
+          }
+        : null,
+    truncated: end < totalCount,
+    releases,
+  };
+}
+
+export async function readFacilityPolicyCatalog(
+  address,
+  runner,
+  facilityAddress,
+  options = {},
+) {
+  const cursor =
+    options.cursor === undefined
+      ? undefined
+      : continuation(options.cursor, "nextBlock", "policy catalog cursor");
+  if (cursor !== undefined) {
+    if (
+      !Number.isSafeInteger(cursor.originalFromBlock) ||
+      cursor.originalFromBlock < 0 ||
+      cursor.nextBlock < cursor.originalFromBlock
+    ) {
+      throw new TypeError("Invalid policy catalog cursor.originalFromBlock");
+    }
+    if (options.blockTag !== undefined || options.fromBlock !== undefined) {
+      throw new TypeError(
+        "A policy catalog cursor cannot be combined with blockTag or fromBlock",
+      );
+    }
+  }
+  const snapshot = await beginSnapshot(
+    runner,
+    cursor?.blockNumber ?? options.blockTag,
+    cursor?.blockHash,
+  );
+  const { blockTag, provider } = snapshot;
+  if (typeof provider.getLogs !== "function") {
+    throw new TypeError("A provider with getLogs is required");
+  }
+  const fromBlock = cursor?.nextBlock ?? options.fromBlock;
+  const originalFromBlock = cursor?.originalFromBlock ?? fromBlock;
+  const pageSize = options.pageSize ?? 2_000;
+  const maxPages = options.maxPages ?? 25;
+  if (!Number.isSafeInteger(fromBlock) || fromBlock < 0) {
+    throw new TypeError("A non-negative fromBlock is required");
+  }
+  if (originalFromBlock > blockTag || fromBlock > blockTag + 1) {
+    throw new TypeError("Policy catalog range starts after its snapshot block");
+  }
+  if (!Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > 100_000) {
+    throw new TypeError("Invalid pageSize");
+  }
+  if (!Number.isSafeInteger(maxPages) || maxPages < 1 || maxPages > 100) {
+    throw new TypeError("Invalid maxPages");
+  }
+
+  const kernelAddress = getAddress(address);
+  const facility = getAddress(facilityAddress);
+  const iface = new Interface(policyKernelV1Abi);
+  const event = iface.getEvent("PolicyRegistered");
+  const topics = iface.encodeFilterTopics(event, [facility]);
+  const logs = [];
+  let scannedToBlock = fromBlock - 1;
+  let pages = 0;
+  for (
+    let pageStart = fromBlock;
+    pageStart <= blockTag && pages < maxPages;
+    pageStart += pageSize
+  ) {
+    const pageEnd = Math.min(blockTag, pageStart + pageSize - 1);
+    logs.push(
+      ...(await provider.getLogs({
+        address: kernelAddress,
+        topics,
+        fromBlock: pageStart,
+        toBlock: pageEnd,
+      })),
+    );
+    scannedToBlock = pageEnd;
+    pages += 1;
+  }
+  logs.sort((left, right) => {
+    if (left.blockNumber !== right.blockNumber) {
+      return left.blockNumber - right.blockNumber;
+    }
+    if (left.transactionIndex !== right.transactionIndex) {
+      return left.transactionIndex - right.transactionIndex;
+    }
+    return left.index - right.index;
+  });
+
+  const kernel = contract(address, policyKernelV1Abi, runner);
+  const seen = new Set();
+  const registrations = [];
+  for (const log of logs) {
+    const parsed = iface.parseLog(log);
+    if (parsed === null) continue;
+    const policyId = parsed.args.policyId;
+    const key = policyId.toString();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const current = await kernel.policyOf(facility, policyId, { blockTag });
+    if (
+      current.evaluator.toLowerCase() !== parsed.args.evaluator.toLowerCase() ||
+      current.configHash.toLowerCase() !==
+        parsed.args.configHash.toLowerCase() ||
+      current.manifestBytes.toLowerCase() !== parsed.args.manifest.toLowerCase()
+    ) {
+      throw new Error(`Policy ${key} registration does not match pinned state`);
+    }
+    registrations.push({
+      policyId,
+      evaluator: current.evaluator,
+      configHash: current.configHash,
+      manifest: current.manifestBytes,
+      blockNumber: log.blockNumber,
+      transactionIndex: log.transactionIndex,
+      logIndex: log.index,
+      transactionHash: log.transactionHash,
+    });
+  }
+  await assertSnapshot(snapshot);
+  return {
+    address: kernelAddress,
+    blockTag,
+    blockHash: snapshot.expectedHash,
+    facility,
+    fromBlock,
+    originalFromBlock,
+    scannedToBlock: Math.min(blockTag, Math.max(fromBlock - 1, scannedToBlock)),
+    nextBlock:
+      scannedToBlock < blockTag
+        ? Math.max(fromBlock, scannedToBlock + 1)
+        : null,
+    historyComplete: scannedToBlock >= blockTag || fromBlock > blockTag,
+    nextCursor:
+      scannedToBlock < blockTag
+        ? {
+            blockNumber: blockTag,
+            blockHash: snapshot.expectedHash,
+            originalFromBlock,
+            nextBlock: Math.max(fromBlock, scannedToBlock + 1),
+          }
+        : null,
+    registrations,
   };
 }
 
@@ -508,17 +808,34 @@ export async function readPolicyRegistryAuditScope(
   options = {},
 ) {
   const registry = contract(address, policyRegistryV1Abi, runner);
-  const snapshot = await beginSnapshot(runner, options.blockTag);
+  const cursor =
+    options.cursor === undefined
+      ? undefined
+      : continuation(options.cursor, "nextIndex", "audit cursor");
+  if (cursor && options.blockTag !== undefined) {
+    throw new TypeError("An audit cursor cannot be combined with blockTag");
+  }
+  const limit = options.limit ?? 25;
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+    throw new TypeError("Invalid audit limit");
+  }
+  const snapshot = await beginSnapshot(
+    runner,
+    cursor?.blockNumber ?? options.blockTag,
+    cursor?.blockHash,
+  );
   const { blockTag } = snapshot;
   const overrides = { blockTag };
   const [scopeHash, artifactCount] = await Promise.all([
     registry.auditScopeHash(scope, scopeId, overrides),
     registry.auditArtifactCount(scope, scopeId, overrides),
   ]);
+  const totalCount = indexedLength(artifactCount, "auditArtifactCount");
+  const start = cursor?.nextIndex ?? 0;
+  const end = Math.min(totalCount, start + limit);
   const artifactIds = await Promise.all(
-    Array.from(
-      { length: indexedLength(artifactCount, "auditArtifactCount") },
-      (_, index) => registry.auditArtifactAt(scope, scopeId, index, overrides),
+    Array.from({ length: Math.max(0, end - start) }, (_, offset) =>
+      registry.auditArtifactAt(scope, scopeId, start + offset, overrides),
     ),
   );
   const artifacts = await Promise.all(
@@ -531,9 +848,20 @@ export async function readPolicyRegistryAuditScope(
   return {
     address: getAddress(address),
     blockTag,
+    blockHash: snapshot.expectedHash,
     scope,
     scopeId,
     scopeHash,
+    totalCount,
+    start,
+    nextCursor:
+      end < totalCount
+        ? {
+            blockNumber: blockTag,
+            blockHash: snapshot.expectedHash,
+            nextIndex: end,
+          }
+        : null,
     artifacts,
   };
 }

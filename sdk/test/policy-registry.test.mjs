@@ -12,6 +12,7 @@ import {
   readPolicyRegistryAuditArtifact,
   readPolicyRegistryAuditScope,
   readPolicyRegistryDeployment,
+  readPolicyRegistryCatalog,
   readPolicyRegistryRelease,
   readPolicyRegistryRuntimeVariant,
 } from "../src/index.mjs";
@@ -71,6 +72,8 @@ test("PolicyRegistryV1 ABI matches compiled selectors, topics, and fragment coun
     publishRelease: "0xc9de395a",
     recordDeployment: "0x1020df75",
     releaseIdOf: "0x1bed5d61",
+    releaseAt: "0xe5de44d2",
+    releaseCount: "0xb8d08db2",
     runtimeVariant: "0x53a14beb",
     runtimeVariantAt: "0xa6e7c564",
     runtimeVariantCount: "0xab172a8c",
@@ -103,7 +106,7 @@ test("PolicyRegistryV1 ABI matches compiled selectors, topics, and fragment coun
   );
   assert.equal(
     registry.fragments.filter(({ type }) => type === "function").length,
-    28,
+    30,
   );
   assert.equal(
     registry.fragments.filter(({ type }) => type === "event").length,
@@ -419,6 +422,8 @@ test("PolicyRegistryV1 reads hydrate releases and every indexed collection", asy
     exists: true,
   };
   const runner = mockRegistryRunner(registry, {
+    releaseCount: () => [1],
+    releaseAt: () => [RELEASE_ID],
     packageRelease: () => [release],
     runtimeVariantCount: () => [1],
     runtimeVariantAt: () => [VARIANT_ID],
@@ -446,6 +451,7 @@ test("PolicyRegistryV1 reads hydrate releases and every indexed collection", asy
   );
   assert.equal(hydrated.address, registryAddress);
   assert.equal(hydrated.blockTag, 777);
+  assert.equal(hydrated.blockHash, HASH("aa"));
   assert.equal(hydrated.release.releaseContentHash, release.releaseContentHash);
   assert.deepEqual(hydrated.evidenceKinds, [1n, 2n]);
   assert.equal(hydrated.actionAdapters[0].metadataURI, adapter.metadataURI);
@@ -453,6 +459,21 @@ test("PolicyRegistryV1 reads hydrate releases and every indexed collection", asy
   assert.equal(hydrated.runtimeVariants[0].variant.approvedAt, 1_000n);
   assert.equal(hydrated.deployments[0].deploymentId, DEPLOYMENT_ID);
   assert.equal(hydrated.deployments[0].deployment.chainId, 102_031n);
+  assert.equal(hydrated.runtimeVariantTotalCount, 1);
+  assert.equal(hydrated.deploymentTotalCount, 1);
+  assert.equal(hydrated.nextCursor, null);
+
+  const catalog = await readPolicyRegistryCatalog(registryAddress, runner);
+  assert.equal(catalog.blockTag, 777);
+  assert.equal(catalog.blockHash, HASH("aa"));
+  assert.equal(catalog.totalCount, 1);
+  assert.equal(catalog.start, 0);
+  assert.equal(catalog.nextIndex, null);
+  assert.equal(catalog.nextCursor, null);
+  assert.equal(catalog.truncated, false);
+  assert.equal(catalog.releases.length, 1);
+  assert.equal(catalog.releases[0].releaseId, RELEASE_ID);
+  assert.equal(catalog.releases[0].release.packageName, "event-history");
 
   assert.equal(
     (
@@ -486,9 +507,227 @@ test("PolicyRegistryV1 reads hydrate releases and every indexed collection", asy
     DEPLOYMENT_ID,
   );
   assert.equal(auditScope.scopeHash, artifact.scopeHash);
+  assert.equal(auditScope.blockHash, HASH("aa"));
+  assert.equal(auditScope.totalCount, 1);
+  assert.equal(auditScope.nextCursor, null);
   assert.equal(auditScope.artifacts[0].artifactId, ARTIFACT_ID);
   assert.equal(
     auditScope.artifacts[0].artifact.artifactURI,
     artifact.artifactURI,
+  );
+});
+
+test("PolicyRegistryV1 catalog reads are bounded, paged, and safe past the final release", async () => {
+  const registry = new Interface(policyRegistryV1Abi);
+  const releaseIds = [HASH("51"), HASH("52"), HASH("53")];
+  const requestedIndexes = [];
+  const runner = mockRegistryRunner(registry, {
+    releaseCount: () => [releaseIds.length],
+    releaseAt: ([index]) => {
+      requestedIndexes.push(Number(index));
+      return [releaseIds[Number(index)]];
+    },
+    packageRelease: ([releaseId]) => [
+      {
+        issuer: ADDRESS("301"),
+        packageName: `package-${releaseIds.indexOf(releaseId)}`,
+        version: "1.0.0",
+        referenceImplementation: ADDRESS("302"),
+        buildArtifactHash: HASH("61"),
+        referenceRuntimeCodeHash: HASH("62"),
+        referenceVariantId: HASH("63"),
+        metadataHash: HASH("64"),
+        releaseContentHash: HASH("65"),
+        releasedAt: 1_000,
+        exists: true,
+      },
+    ],
+    runtimeVariantCount: () => [0],
+    evidenceKindCount: () => [0],
+    actionAdapterCount: () => [0],
+    deploymentCount: () => [0],
+  });
+
+  const first = await readPolicyRegistryCatalog(ADDRESS("303"), runner, {
+    start: 0,
+    limit: 2,
+  });
+  assert.equal(first.totalCount, 3);
+  assert.equal(first.nextIndex, 2);
+  assert.deepEqual(first.nextCursor, {
+    blockNumber: 777,
+    blockHash: HASH("aa"),
+    nextIndex: 2,
+  });
+  assert.equal(first.truncated, true);
+  assert.deepEqual(
+    first.releases.map(({ releaseId }) => releaseId),
+    releaseIds.slice(0, 2),
+  );
+
+  const final = await readPolicyRegistryCatalog(ADDRESS("303"), runner, {
+    cursor: first.nextCursor,
+    limit: 2,
+  });
+  assert.equal(final.nextIndex, null);
+  assert.equal(final.truncated, false);
+  assert.equal(final.nextCursor, null);
+  assert.deepEqual(
+    final.releases.map(({ releaseId }) => releaseId),
+    releaseIds.slice(2),
+  );
+
+  const pastFinal = await readPolicyRegistryCatalog(ADDRESS("303"), runner, {
+    cursor: {
+      blockNumber: 777,
+      blockHash: HASH("aa"),
+      nextIndex: 99,
+    },
+    limit: 2,
+  });
+  assert.deepEqual(pastFinal.releases, []);
+  assert.equal(pastFinal.nextIndex, null);
+  assert.equal(pastFinal.truncated, false);
+  assert.deepEqual(requestedIndexes, [0, 1, 2]);
+
+  await assert.rejects(
+    readPolicyRegistryCatalog(ADDRESS("303"), runner, { limit: 101 }),
+    /catalog limit/,
+  );
+  await assert.rejects(
+    readPolicyRegistryCatalog(ADDRESS("303"), runner, { start: 1 }),
+    /requires a continuation cursor/,
+  );
+});
+
+test("registry continuations reject a changed block hash and detailed collections stay bounded", async () => {
+  const registry = new Interface(policyRegistryV1Abi);
+  const releaseIds = [HASH("71"), HASH("72"), HASH("73")];
+  const variantIds = [HASH("81"), HASH("82"), HASH("83")];
+  const deploymentIds = [HASH("91"), HASH("92"), HASH("93")];
+  const artifactIds = [HASH("a1"), HASH("a2"), HASH("a3")];
+  const release = {
+    issuer: ADDRESS("401"),
+    packageName: "bounded-release",
+    version: "1.0.0",
+    referenceImplementation: ADDRESS("402"),
+    buildArtifactHash: HASH("b1"),
+    referenceRuntimeCodeHash: HASH("b2"),
+    referenceVariantId: variantIds[0],
+    metadataHash: HASH("b3"),
+    releaseContentHash: HASH("b4"),
+    releasedAt: 1_000,
+    exists: true,
+  };
+  const runner = mockRegistryRunner(registry, {
+    releaseCount: () => [releaseIds.length],
+    releaseAt: ([index]) => [releaseIds[Number(index)]],
+    packageRelease: () => [release],
+    evidenceKindCount: () => [0],
+    actionAdapterCount: () => [0],
+    runtimeVariantCount: () => [variantIds.length],
+    runtimeVariantAt: ([, index]) => [variantIds[Number(index)]],
+    runtimeVariant: ([variantId]) => [
+      {
+        releaseId: RELEASE_ID,
+        implementation: ADDRESS("402"),
+        runtimeCodeHash: HASH("b2"),
+        constructorArgumentsHash: HASH("b5"),
+        approvedAt: 1_000,
+        exists: variantIds.includes(variantId),
+      },
+    ],
+    deploymentCount: () => [deploymentIds.length],
+    deploymentAt: ([, index]) => [deploymentIds[Number(index)]],
+    deploymentRecord: () => [
+      {
+        releaseId: RELEASE_ID,
+        chainId: 102_031,
+        kernel: ADDRESS("403"),
+        facility: ADDRESS("404"),
+        policyId: 7,
+        evaluator: ADDRESS("402"),
+        runtimeVariantId: variantIds[0],
+        runtimeCodeHash: HASH("b2"),
+        constructorArgumentsHash: HASH("b5"),
+        configHash: HASH("b6"),
+        manifestHash: HASH("b6"),
+        attester: ADDRESS("401"),
+        recordedAt: 1_100,
+        exists: true,
+      },
+    ],
+    auditScopeHash: () => [HASH("c1")],
+    auditArtifactCount: () => [artifactIds.length],
+    auditArtifactAt: ([, , index]) => [artifactIds[Number(index)]],
+    auditArtifact: ([artifactId]) => [
+      {
+        scope: AuditScope.Release,
+        releaseId: RELEASE_ID,
+        deploymentId: HASH("00"),
+        scopeHash: HASH("c1"),
+        auditor: ADDRESS("405"),
+        artifactHash: artifactId,
+        artifactURI: "ipfs://audit",
+        publishedAt: 1_200,
+        exists: true,
+      },
+    ],
+  });
+
+  const firstRelease = await readPolicyRegistryRelease(
+    ADDRESS("406"),
+    runner,
+    RELEASE_ID,
+    { detailLimit: 2 },
+  );
+  assert.equal(firstRelease.runtimeVariants.length, 2);
+  assert.equal(firstRelease.deployments.length, 2);
+  assert.deepEqual(firstRelease.nextCursor, {
+    blockNumber: 777,
+    blockHash: HASH("aa"),
+    runtimeNextIndex: 2,
+    deploymentNextIndex: 2,
+  });
+  const finalRelease = await readPolicyRegistryRelease(
+    ADDRESS("406"),
+    runner,
+    RELEASE_ID,
+    { detailLimit: 2, cursor: firstRelease.nextCursor },
+  );
+  assert.equal(finalRelease.runtimeVariants.length, 1);
+  assert.equal(finalRelease.deployments.length, 1);
+  assert.equal(finalRelease.nextCursor, null);
+
+  const firstAudit = await readPolicyRegistryAuditScope(
+    ADDRESS("406"),
+    runner,
+    AuditScope.Release,
+    RELEASE_ID,
+    { limit: 2 },
+  );
+  assert.equal(firstAudit.artifacts.length, 2);
+  const finalAudit = await readPolicyRegistryAuditScope(
+    ADDRESS("406"),
+    runner,
+    AuditScope.Release,
+    RELEASE_ID,
+    { limit: 2, cursor: firstAudit.nextCursor },
+  );
+  assert.equal(finalAudit.artifacts.length, 1);
+  assert.equal(finalAudit.nextCursor, null);
+
+  const firstCatalog = await readPolicyRegistryCatalog(ADDRESS("406"), runner, {
+    limit: 1,
+  });
+  runner.provider.getBlock = async (blockTag) => ({
+    number: Number(blockTag),
+    hash: HASH("ff"),
+  });
+  await assert.rejects(
+    readPolicyRegistryCatalog(ADDRESS("406"), runner, {
+      cursor: firstCatalog.nextCursor,
+    }),
+    /continuation hash/,
   );
 });

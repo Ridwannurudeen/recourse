@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "pilotId": "recourse-capped-pilot-example",
+  "deploymentEnvironment": "testnet",
+  "gates": {
+    "designPartner": { "status": "missing", "evidence": [] },
+    "independentAudit": {
+      "status": "missing",
+      "exactCommit": "",
+      "evidence": []
+    },
+    "legalReview": { "status": "missing", "evidence": [] },
+    "pilotBudget": { "status": "missing", "evidence": [] },
+    "testnetRehearsal": { "status": "missing", "evidence": [] },
+    "productionAssetAndCustody": { "status": "missing", "evidence": [] },
+    "productionWatcher": { "status": "missing", "evidence": [] }
+  },
+  "approvals": []
+}

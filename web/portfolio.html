@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <meta
+      name="description"
+      content="Single-endpoint raw-asset observatory for facilities reported by the Recourse factory on CC3 testnet."
+    />
+    <title>Recourse · Portfolio observatory</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="./observatory.css" />
+    <script src="./ethers.umd.min.js"></script>
+    <script type="module" src="./portfolio.js"></script>
+  </head>
+  <body class="observatory-page">
+    <a class="obs-skip" href="#main">Skip to portfolio state</a>
+    <header class="obs-header">
+      <div class="obs-shell obs-header-inner">
+        <a
+          class="obs-brand"
+          href="./index.html"
+          aria-label="Recourse facility dashboard"
+          ><span class="obs-mark" aria-hidden="true">R</span
+          ><span
+            ><strong>Recourse</strong><span>Raw-asset observatory.</span></span
+          ></a
+        >
+        <nav class="obs-nav" aria-label="Recourse applications">
+          <a href="./index.html">Facilities</a
+          ><a href="./horizon1.html">Horizon 1</a
+          ><a href="./operator.html">Operators</a
+          ><a href="./portfolio.html" aria-current="page">Portfolio</a>
+        </nav>
+      </div>
+    </header>
+    <main class="obs-shell obs-main" id="main">
+      <section class="obs-state" id="portfolio-state" aria-live="polite">
+        <p class="obs-eyebrow">Factory provenance · single-endpoint reads</p>
+        <h1 id="portfolio-state-title">Reading facility inventory</h1>
+        <p id="portfolio-state-copy">
+          Enumerating the factory at one block, then grouping only exact
+          asset-address and decimal identities.
+        </p>
+        <button class="obs-button" id="portfolio-retry" type="button" hidden>
+          Retry RPC
+        </button>
+      </section>
+      <div id="portfolio-dashboard" hidden>
+        <section class="obs-intro" aria-labelledby="portfolio-title">
+          <div>
+            <p class="obs-eyebrow">Credit portfolio · raw units</p>
+            <h1 id="portfolio-title">Capital without an invented price.</h1>
+            <p class="obs-intro-copy">
+              Factory-proven facilities grouped by chain, asset contract, and
+              token decimals. Values are contract base units converted only by
+              declared decimals—never USD or TVL.
+            </p>
+          </div>
+          <div class="obs-anchor">
+            <p class="obs-label">
+              <span class="obs-live" aria-hidden="true"></span>Observed coverage
+            </p>
+            <strong id="portfolio-coverage"></strong
+            ><time id="portfolio-refresh"></time>
+          </div>
+        </section>
+        <div class="obs-badges" id="portfolio-badges"></div>
+        <section class="obs-section" aria-labelledby="networks-title">
+          <div class="obs-section-heading">
+            <div>
+              <p class="obs-eyebrow">Single-endpoint assertions</p>
+              <h2 id="networks-title">Read coverage</h2>
+            </div>
+            <p class="obs-section-note">
+              Each network is checked for chain ID and block-hash stability at
+              one configured RPC endpoint. It is not independently
+              cross-checked. A failed facility or enumeration cap makes that
+              network partial.
+            </p>
+          </div>
+          <div class="obs-network-grid" id="portfolio-networks"></div>
+        </section>
+        <section class="obs-section" aria-labelledby="assets-title">
+          <div class="obs-section-heading">
+            <div>
+              <p class="obs-eyebrow">Exact asset groups</p>
+              <h2 id="assets-title">Facility exposure</h2>
+            </div>
+            <p class="obs-section-note">
+              Amounts from different contracts, decimals, or chains are never
+              combined.
+            </p>
+          </div>
+          <div class="obs-group-grid" id="portfolio-groups"></div>
+          <p class="obs-empty" id="portfolio-empty" hidden>
+            No facilities were returned by the configured factory at the
+            anchored block.
+          </p>
+        </section>
+        <section class="obs-section" aria-labelledby="portfolio-boundary-title">
+          <div class="obs-section-heading">
+            <div>
+              <p class="obs-eyebrow">Truth boundary</p>
+              <h2 id="portfolio-boundary-title">What these totals mean</h2>
+            </div>
+          </div>
+          <ul class="obs-limitations">
+            <li>
+              Facility limit, funded principal, debt, bond, and available credit
+              are contract state—not market value, recoverable value, or
+              expected return.
+            </li>
+            <li>
+              Token symbols and decimals are issuer-declared metadata. Asset
+              identity is the chain ID plus contract address; symbol text never
+              determines grouping.
+            </li>
+            <li>
+              No capital-pool share price, utilization yield, loss rate, or
+              liquidity claim is inferred from this inventory.
+            </li>
+            <li>
+              Coverage reports exactly how many factory entries were read.
+              Partial reads remain labeled and are not extrapolated.
+            </li>
+            <li>
+              This is a single-endpoint RPC assertion, not independent consensus
+              verification. It is not suitable as the sole input for
+              value-moving decisions.
+            </li>
+          </ul>
+        </section>
+      </div>
+    </main>
+    <footer class="obs-footer">
+      <div class="obs-shell obs-footer-inner">
+        <span>Read-only · no portfolio valuation</span
+        ><span>CC3 testnet · chain ID 102031</span>
+      </div>
+    </footer>
+  </body>
+</html>

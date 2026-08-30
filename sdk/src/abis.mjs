@@ -203,6 +203,8 @@ export const policyRegistryV1Abi = [
   `function publishRelease(string packageName,string version,address referenceImplementation,bytes32 buildArtifactHash,bytes32 referenceConstructorArgumentsHash,bytes32 metadataHash,uint8[] evidenceKinds,${policyRegistryActionAdapterTuple}[] actionAdapters) returns (bytes32 releaseId)`,
   "function recordDeployment(bytes32 releaseId,address kernel,address facility,uint256 policyId,bytes32 runtimeVariantId) returns (bytes32 deploymentId)",
   "function releaseIdOf(address issuer,string packageName,string version) pure returns (bytes32)",
+  "function releaseCount() view returns (uint256)",
+  "function releaseAt(uint256 index) view returns (bytes32)",
   `function runtimeVariant(bytes32 runtimeVariantId) view returns (${policyRegistryRuntimeVariantTuple})`,
   "function runtimeVariantAt(bytes32 releaseId,uint256 index) view returns (bytes32)",
   "function runtimeVariantCount(bytes32 releaseId) view returns (uint256)",
@@ -245,6 +247,24 @@ export const policyRegistryV1Abi = [
   "error ZeroMetadataHash()",
 ];
 
+export const portfolioMandateV1Abi = [
+  "function factory() view returns (address)",
+  "function registry() view returns (address)",
+  "function asset() view returns (address)",
+  "function kernel() view returns (address)",
+  "function requiredReleaseId() view returns (bytes32)",
+  "function requiredPolicySetCommitment() view returns (bytes32)",
+  "function requiredEvidenceKind() view returns (uint8)",
+  "function requiredActionAdapterKind() view returns (bytes32)",
+  "function maximumFacilityLimit() view returns (uint256)",
+  "function minimumBondBps() view returns (uint16)",
+  "function maximumDrawFeeBps() view returns (uint16)",
+  "function maximumRemainingMaturityBlocks() view returns (uint64)",
+  "function evaluate(address facility,bytes32 deploymentId) view returns (uint8)",
+  "error InvalidMandate()",
+  "error ZeroAddress()",
+];
+
 export const horizon1Abis = Object.freeze({
   PolicyKernelV1: policyKernelV1Abi,
   VerifiedCreditStateV1: verifiedCreditStateV1Abi,
@@ -254,4 +274,5 @@ export const horizon1Abis = Object.freeze({
   EventHistoryPolicyV1: eventHistoryPolicyV1Abi,
   RecourseDemoUSD: recourseDemoUsdAbi,
   PolicyRegistryV1: policyRegistryV1Abi,
+  PortfolioMandateV1: portfolioMandateV1Abi,
 });

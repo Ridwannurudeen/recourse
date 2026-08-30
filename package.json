@@ -10,6 +10,8 @@
     "daemon": "node daemon/index.mjs",
     "daemon:horizon1": "node daemon/horizon1.mjs",
     "operator:discover": "node daemon/job-discovery.mjs",
+    "operator": "node daemon/operator.mjs",
+    "pilot:readiness": "node scripts/pilot-readiness.mjs",
     "test": "forge test && node --test test/*.test.mjs && npm --prefix sdk test",
     "wallets:new": "node scripts/new-wallets.mjs"
   },

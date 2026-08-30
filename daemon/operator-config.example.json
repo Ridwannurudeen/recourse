@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "execution": "read-only",
+  "pollIntervalMs": 15000,
+  "maxBackoffMs": 120000,
+  "maxSourceBlocksPerPoll": 2000,
+  "confirmations": 12,
+  "discoveryChunkSize": 2000,
+  "targetConfirmations": 6,
+  "recoveryBlocks": 12,
+  "exclusiveSigner": false,
+  "economics": {
+    "maxCommitBond": "10000000",
+    "minProofReimbursement": "25000000",
+    "minRewardToBondBps": 25000,
+    "minRevealWindowBlocks": 18,
+    "minSecondsToExpiry": 3600
+  },
+  "allowlists": {
+    "facilities": ["0xF1E51D2d648E7FeA60fE4B2C739f7591426d14FA"],
+    "policyIds": ["1"],
+    "tokens": ["0x3c6eF93E1d2C539c5EFefbBc51cc6a1E120fBf77"],
+    "sourceChains": ["3"]
+  }
+}

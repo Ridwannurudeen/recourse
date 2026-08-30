@@ -8,7 +8,9 @@ The v1 evidence stands as before. A live autonomous daemon run detected a qualif
 
 A separate roadmap build now adds the v1 SDK and simulation package, `PolicyRegistryV1`, an issuer-declaration and exact-audit model, a signerless Proof Jobs discovery and observable-metrics report, and a read-only Horizon 1 console. The committed static console is [publicly hosted](https://ridwan.gudman.xyz/recourse/horizon1.html); the SDK remains unpublished, the registry remains undeployed, and the operator remains source-only rather than an installed service. None of these foundations has been independently audited, frozen, or validated by an external integration.
 
-Across both generations and the roadmap foundations, the suite passes 231 Forge tests, 35 root Node tests, and 17 SDK tests, followed by a strict SDK declaration compile. Three stateful invariant properties each complete 256 runs and 128,000 calls with zero handler reverts while checking native and ERC-20 asset conservation, claim solvency, Horizon 1 bounds, and inactive credit availability. This remains testnet software. It has received internal adversarial review only, not an independent security audit; the demo asset is not a production stablecoin; and the demonstrated testnet history is not production credit performance.
+The local implementation for items 4–10 is now substantially built and is catalogued in [Roadmap items 4–10: implemented scope and remaining gates](ROADMAP-4-10-BUILD.md). “Built locally” does not mean deployed, audited, integrated, funded, or validated by customers; the remaining external gates are preserved below.
+
+Across both deployed generations and the local roadmap build, the suite passes 299 Forge tests, 86 root Node tests, and 26 SDK tests, followed by a strict SDK declaration compile; one Windows symlink test is skipped when the process lacks symlink privilege. Six stateful invariant properties each complete 256 runs and 128,000 calls with zero handler reverts while checking native and ERC-20 asset conservation, claim solvency, facility and default-loss bounds, inactive credit availability, and exact operator-market escrow solvency. This remains testnet software. It has received internal adversarial review only, not an independent security audit; the demo asset is not a production stablecoin; and the demonstrated testnet history is not production credit performance.
 
 The thesis is larger than an undercollateralized lending application:
 
@@ -71,9 +73,9 @@ This qualifies Attestcoin's own “lending against verified on-chain balances”
 
 **Honest dependencies:** The deployed design reserves each evidence digest to its first committer, delays reveal, makes missed-reveal bonds slashable, and recovers invalid, irrelevant, or duplicate attempts conservatively. Production reward levels still need to cover expected proof and gas costs without incentivizing manufactured breaches. The implementation reuses Attestcoin proof infrastructure rather than duplicating it.
 
-### 4. A capped real-asset pilot — scaffolding delivered; pilot not run
+### 4. A capped real-asset pilot — bounded local stack delivered; pilot not run
 
-**What shipped:** The pilot scaffolding: a permissionless ERC-20 facility factory, an ERC-20-denominated demonstration facility, public policy manifests, full configuration recoverability, lender and borrower draw pauses, and a factory creation pause. The demonstration asset is a six-decimal, fixed-supply testnet token, not a stablecoin and not a production asset.
+**What shipped locally:** `CappedPilotFactoryV1` fixes every counterparty and applies per-facility, aggregate-notional, bond, fee, maturity, delay, and count bounds; only its lender can consume capacity and its guardian can pause creation. It deploys `RecourseFacilityV3`, whose one-time permissionless default settlement applies the bond to remaining debt and returns only excess to the borrower. A fail-closed readiness evaluator, read-only-by-default operator, recovery journal, service template, and runbook cover qualification without declaring the pilot production-ready. The demonstration asset remains a fixed-supply testnet token, not a stablecoin or production asset.
 
 **What did not ship:** No pilot has been run. Recourse still has no design partner, independent audit, legal review, production asset or custody decision, or production watcher. The scaffolding deployment must not be read as evidence of customer demand or production credit performance.
 
@@ -89,9 +91,11 @@ This qualifies Attestcoin's own “lending against verified on-chain balances”
 
 ## Horizon 2 — Close the loop across chains
 
-This horizon is directionally important but not scheduled work. [Attestcoin writability is still undergoing tests and audits and is not live on testnet](https://docs.attestcoin.org/attestcoin-protocol/attestcoin-writability), so both cross-chain items below remain blocked until the required protocol surface exists and can be verified in the target environment.
+The transport-neutral contracts and local lifecycle are now implemented, but live routing remains blocked. [Attestcoin writability is still undergoing tests and audits and is not live on testnet](https://docs.attestcoin.org/attestcoin-protocol/attestcoin-writability), so neither item is a deployed cross-chain product until the required protocol surface exists and can be verified in the target environment.
 
-### 5. Cross-chain Remedy Adapters
+### 5. Cross-chain Remedy Adapters — transport-neutral local core delivered
+
+**What shipped locally:** `RemedyCoordinatorV1`, `BoundedRemedyReceiverV1`, and narrow transport and target interfaces. An intent and receiver authorization bind the exact facility policy, evidence, source chain, coordinator, destination, receiver, target, action kind, action-data hash, nonce, and expiry. Replay and reentrancy protections are local and explicit; no dispatcher address or wire format is guessed.
 
 **What it is:** Destination receivers for specific pre-authorized actions: freeze a vault, reduce a spending limit, initiate a margin call, suspend a treasury module, or release agreed escrow. Every instruction carries a policy ID, evidence commitment, nonce, deadline, and bounded action parameters.
 
@@ -103,7 +107,9 @@ This horizon is directionally important but not scheduled work. [Attestcoin writ
 
 **Honest dependencies:** Fully blocked on deployed writability, destination Inbox availability, finalized authentication semantics, delivery fees, and acknowledgement support. Each destination integration needs its own security review. Recourse can act only through explicitly authorized receivers; it cannot seize an arbitrary wallet, reverse a transfer, or force an unintegrated protocol to act.
 
-### 6. Closed-loop servicing with acknowledgements and cure
+### 6. Closed-loop servicing with acknowledgements and cure — local lifecycle delivered
+
+**What shipped locally:** Recorded, published, acknowledged, cured, expired, and failed states with bounded publish attempts, permissionless timeouts, prior-attempt acknowledgement recovery, and replacement adverse intents only after a terminal state. `ClosedLoopPolicyV1` accepts cure evidence only when it binds the acknowledged action commitment, and rejects overlapping adverse/cure configurations.
 
 **What it is:** A durable workflow that records intent, delivery, execution or pending status, acknowledgement, and cure. A failed destination handler does not silently mark the remedy complete; Recourse waits for proven delivery and execution events before advancing its policy state.
 
@@ -117,7 +123,7 @@ This horizon is directionally important but not scheduled work. [Attestcoin writ
 
 ### 7. Recourse SDK and Policy Registry — local v1 foundation delivered; external validation pending
 
-**What shipped locally:** A plain-ESM typed SDK with Horizon 1 and Policy Registry reads, exact ABI encodings, calldata-only builders, manifest and commitment hashing, conservative facility simulation, and a versioned off-chain policy-package format. `PolicyRegistryV1` records bounded issuer declarations, issuer-declared build-artifact hashes, exact constructor-bound runtime variants, metadata-only action-adapter specifications, issuer-attested deployment records, and auditor-attributed release or deployment artifacts. The existing permissionless ERC-20 facility factory remains the deployment surface.
+**What shipped locally:** A plain-ESM typed SDK with Horizon 1 and Policy Registry reads, exact ABI encodings, calldata-only builders, manifest and commitment hashing, conservative facility and portfolio-mandate simulation, and a versioned off-chain policy-package format. Block-hash-bound cursors and hard page limits make registry, audit, deployment, and facility-policy enumeration resumable without silently changing snapshots; canonical manifest decoding rejects trailing bytes. `PolicyRegistryV1` records bounded issuer declarations, issuer-declared build-artifact hashes, exact constructor-bound runtime variants, metadata-only action-adapter specifications, issuer-attested deployment records, and auditor-attributed release or deployment artifacts. The capped factory remains a separate deployment surface.
 
 The SDK's off-chain `recourse-policy-package` artifact and the registry's on-chain issuer declarations are deliberately separate schemas. Registry deployment history is issuer-attested, facility/kernel-consistent, and evaluator-runtime/config-bound; it is not factory-certified or proof that the kernel itself is a canonical build. The v1 constructor binding models the current kernel-only policy constructor, not a universal constructor language. Audit artifacts identify their publisher and exact scope and never create a registry-wide audit verdict.
 
@@ -133,7 +139,9 @@ The SDK's off-chain `recourse-policy-package` artifact and the registry's on-cha
 
 ## Horizon 3 — Become the credit coordination network
 
-### 8. Multi-chain portfolio policy
+### 8. Multi-chain portfolio policy — bounded event-policy core delivered locally
+
+**What shipped locally:** `MultiChainEventPolicyV1` evaluates up to 16 strict EVM log rules keyed by configured source-chain identifiers, maintains a saturating cumulative risk score, and applies conservative effect tiers. A transaction matching several monitored rules accumulates every match deterministically instead of becoming an enforcement bypass. `PolicyKernelV2` keeps an independent source cursor per facility, policy, and chain and requires strict batch ordering through the final source position.
 
 **What it is:** A single facility whose policy evaluates verified positions, obligations, liquidity movements, and conduct across several supported chains, then routes bounded remedies to the chains holding the relevant exposure.
 
@@ -145,9 +153,9 @@ The SDK's off-chain `recourse-policy-package` artifact and the registry's on-cha
 
 **Honest dependencies:** On CC3 Testnet, [the currently documented source environments are Ethereum Sepolia and Ethereum mainnet](https://docs.attestcoin.org/attestcoin-protocol/attestcoin-protocol-chains-environments). Add only chains that Attestcoin actually provisions and a customer needs. Bitcoin, non-EVM state, and new destination chains are dependencies, not promised deliverables.
 
-### 9. Open operator market — read-only discovery foundation delivered; market not opened
+### 9. Open operator market — local escrow market and operator delivered; market not opened
 
-**What is implemented:** A signerless Proof Jobs scanner that checks confirmed canonical history, resumes through an atomic reorg-checked cursor, pins job and policy hydration to the report block, and reports only event-observable coverage, completion, valid reveal, slash, release, and latency data. The scanner remains source-only; the accompanying [public Horizon 1 console](https://ridwan.gudman.xyz/recourse/horizon1.html) exposes registered policy commitments and open jobs without a wallet. A live read-only scan found one open job; that is protocol state, not operator-market traction.
+**What is implemented locally:** `OperatorMarketV1` supports separately priced monitoring, proof-construction, submission, and delivery quotes with operator-bond and sponsor-price escrow, verifier-bound permissionless settlement, cancellation, expiry, and pull withdrawals. Its exact escrow solvency is statefully tested. The operator scanner checks confirmed canonical history, resumes through atomic reorg-checked cursors, pins hydration to one report block, and reports only event-observable metrics. Optional execution is fail-closed on economics, exact allowlists, Kernel V2 stale-proof recovery, signer exclusivity, source-chain identity, canonical receipts, confirmation depth, and durable transaction journals. The operator terminal refuses unanchored or inconsistent reports. No service is installed or enabled.
 
 **What it is:** Competing operators would quote separately for monitoring, proof construction, transaction submission, and, where applicable, message delivery. Recourse would measure coverage, response latency, valid-proof rate, and completed jobs, while verification remains entirely on-chain.
 
@@ -157,9 +165,11 @@ The SDK's off-chain `recourse-policy-package` artifact and the registry's on-cha
 
 **What it unlocks:** Reliable facility coverage without one centralized watcher and a new source of Attestcoin transaction and write demand.
 
-**Honest dependencies:** No quote, bidding, matching, payment, reputation, profitability, or transaction-execution market has been built. Reverted invalid or irrelevant reveals emit no event, so the report does not claim a false-positive rate; partial history is explicitly incomplete. A real market still needs protection against censorship, job spam, collusion, and reward manipulation. Relaying should remain compatible with Attestcoin's own competitive fee market rather than becoming a separate Recourse network.
+**Honest dependencies:** The quote and escrow contract is local and source-only; no live operator market, matching service, customers, reputation, or profitability evidence exists. Reverted invalid or irrelevant reveals emit no event, so the report does not claim a false-positive rate; partial history is explicitly incomplete. A real market still needs protection against censorship, job spam, collusion, and reward manipulation. Relaying should remain compatible with Attestcoin's own competitive fee market rather than becoming a separate Recourse network.
 
-### 10. Programmable credit portfolios
+### 10. Programmable credit portfolios — read-only mandate delivered; capital pool deferred
+
+**What shipped locally:** `PortfolioMandateV1` checks exact factory provenance, asset, kernel, facility status, notional, bond, fee, maturity, policy commitment, registry release/deployment binding, evidence kind, and action-adapter declaration without holding funds. The portfolio observatory groups only identical chain, asset-address, and decimal identities and labels its network anchors as single-endpoint assertions. No capital vault or allocation path is implemented.
 
 **What it is:** Lenders allocate capital to pools constrained by standardized Recourse policies, such as facilities whose collateral freshness, maximum verified outflow, liability growth, and remedy adapters satisfy a declared mandate. Proven servicing history becomes an input to future allocation without becoming a simplistic universal credit score.
 

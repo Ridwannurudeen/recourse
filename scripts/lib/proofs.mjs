@@ -1,7 +1,7 @@
-import 'dotenv/config';
-import { JsonRpcProvider } from 'ethers';
-import pkg from '@gluwa/usc-sdk';
-import { installDohFallback } from './net.mjs';
+import "dotenv/config";
+import { JsonRpcProvider } from "ethers";
+import pkg from "@gluwa/usc-sdk";
+import { installDohFallback } from "./net.mjs";
 
 const { chainInfo, proofProvider } = pkg;
 installDohFallback();
@@ -11,18 +11,27 @@ export function getProvider() {
 }
 
 export function getSourceProvider(chainKey) {
-  const url = Number(chainKey) === 3 ? process.env.ETH_MAINNET_RPC_URL : process.env.SEPOLIA_RPC_URL;
+  const url =
+    Number(chainKey) === 3
+      ? process.env.ETH_MAINNET_RPC_URL
+      : process.env.SEPOLIA_RPC_URL;
   return new JsonRpcProvider(url);
 }
 
 export async function getAttestedHeight(chainKey) {
+  return Number((await getLatestAttestation(chainKey)).height);
+}
+
+export async function getLatestAttestation(chainKey) {
   const info = new chainInfo.PrecompileChainInfoProvider(getProvider());
-  const latest = await info.getLatestAttestedHeightAndHash(Number(chainKey));
-  return Number(latest.height);
+  return info.getLatestAttestedHeightAndHash(Number(chainKey));
 }
 
 function builder(chainKey) {
-  return new proofProvider.service.ProofBuilder(Number(chainKey), process.env.PROOF_BUILDER_URL);
+  return new proofProvider.service.ProofBuilder(
+    Number(chainKey),
+    process.env.PROOF_BUILDER_URL,
+  );
 }
 
 // getBatchProof returns merkleProofs as a nested map: blockHeight -> txIndex -> entry.
@@ -32,11 +41,17 @@ export async function fetchBatchProof(chainKey, hashes) {
   const result = await builder(chainKey).getBatchProof(hashes);
   if (!result.success) throw new Error(`getBatchProof failed: ${result.error}`);
   const data = result.data;
-  const heights = [], txHashes = [], txBytes = [], merkleProofs = [];
-  const outer = data.merkleProofs instanceof Map
-    ? data.merkleProofs.entries() : Object.entries(data.merkleProofs);
+  const heights = [],
+    txHashes = [],
+    txBytes = [],
+    merkleProofs = [];
+  const outer =
+    data.merkleProofs instanceof Map
+      ? data.merkleProofs.entries()
+      : Object.entries(data.merkleProofs);
   for (const [height, inner] of outer) {
-    const entries = inner instanceof Map ? inner.entries() : Object.entries(inner);
+    const entries =
+      inner instanceof Map ? inner.entries() : Object.entries(inner);
     for (const [, entry] of entries) {
       heights.push(Number(height));
       txHashes.push(entry.txHash);
@@ -56,8 +71,13 @@ export async function fetchBatchProof(chainKey, hashes) {
 export function assertExactHashMultiset(requested, returned) {
   const expected = requested.map((hash) => hash.toLowerCase()).sort();
   const actual = returned.map((hash) => hash.toLowerCase()).sort();
-  if (expected.length !== actual.length || actual.some((hash, index) => hash !== expected[index])) {
-    throw new Error(`Batch proof transaction hashes do not match the requested set: requested=${JSON.stringify(expected)} returned=${JSON.stringify(actual)}`);
+  if (
+    expected.length !== actual.length ||
+    actual.some((hash, index) => hash !== expected[index])
+  ) {
+    throw new Error(
+      `Batch proof transaction hashes do not match the requested set: requested=${JSON.stringify(expected)} returned=${JSON.stringify(actual)}`,
+    );
   }
 }
 

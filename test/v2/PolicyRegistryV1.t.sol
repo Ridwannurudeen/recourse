@@ -170,6 +170,16 @@ contract PolicyRegistryV1Test is Test {
 
         assertTrue(first != otherIssuer);
         assertTrue(first != otherVersion);
+        assertEq(registry.releaseCount(), 3);
+        assertEq(registry.releaseAt(0), first);
+        assertEq(registry.releaseAt(1), otherIssuer);
+        assertEq(registry.releaseAt(2), otherVersion);
+    }
+
+    function test_releaseCatalogStartsEmptyAndUsesNativeBoundsChecks() public {
+        assertEq(registry.releaseCount(), 0);
+        vm.expectRevert();
+        registry.releaseAt(0);
     }
 
     function test_releaseRejectsInvalidBuildRuntimeAndDuplicateEvidenceDeclarations() public {

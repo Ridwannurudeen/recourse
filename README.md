@@ -47,6 +47,8 @@ The additive [public Horizon 1 console](https://ridwan.gudman.xyz/recourse/horiz
 
 Roadmap work now also includes a typed [SDK](sdk/README.md), policy simulation and calldata builders, an issuer-attested `PolicyRegistryV1`, and a resumable read-only operator discovery and metrics tool. The committed static console is publicly hosted; the SDK remains unpublished, the registry remains undeployed, and the operator remains source-only rather than an installed service. These foundations are tested but are not independently audited, frozen, or externally integrated.
 
+The local build now covers the autonomously implementable contract and tooling scope for roadmap items 4–10: a capped pilot factory and loss-settling facility, bounded remedy coordination and receiver, closed-loop acknowledgement/cure lifecycle, block-hash-paged registry SDK, multi-chain event-risk policy, escrowed operator-service market, hardened reference operator, and read-only portfolio mandates and observatories. See [the exact build inventory and remaining gates](docs/ROADMAP-4-10-BUILD.md). None of this new scope is deployed, independently audited, externally integrated, customer-validated, or capitalized.
+
 ## Quickstart
 
 The checked-in `deployments.json` points to the already-breached live facility. To reproduce the full demo with a fresh facility, use fresh development wallets and CC3 testnet funds. Install Foundry and ensure `forge` is on `PATH` before running the unified test command.
@@ -132,14 +134,17 @@ AttestcoinAdjudicator on Creditcoin
 - `scripts/` handles deployment, facility setup, proof retrieval, and unattended submission. `web/` is the zero-build wallet application and walletless facility monitor.
 - `sdk/` exposes typed reads, simulations, exact ABI encodings, and calldata-only builders. `PolicyRegistryV1` records bounded issuer declarations, approved runtime variants, exact deployment attestations, and release- or deployment-scoped audit artifacts.
 - `daemon/job-discovery.mjs` scans confirmed Proof Jobs history without a signer, pins hydrated state to the report block, persists a reorg-checked cursor, and derives only metrics observable from contract events.
+- `contracts/v3/` contains the additive capped-pilot, remedy lifecycle, multi-chain event policy, operator market, and portfolio-mandate contracts. The remedy transport remains an interface until an authoritative live dispatcher is available.
+- `daemon/operator.mjs` is the read-only-by-default reference operator. Optional execution is gated by exact allowlists, economics, source-chain identity, Kernel V2 stale-proof recovery, confirmation depth, and crash-safe signed transaction journals.
+- `web/operator.html` and `web/portfolio.html` are walletless observatories. Operator reports require a same-origin, size-bounded, internally consistent, RPC-anchored artifact; portfolio reads are explicitly labeled single-endpoint assertions.
 
 The borrower's activation commits to an ordered hash covering both the identity and configuration of every registered covenant. Registration is limited to the pre-activation `Created` state, and each covenant rejects reconfiguration after registration, so neither the covenant set nor anything the borrower agreed to can change afterwards.
 
 ## Testing
 
-`npm test` passes 231 Forge tests, 35 root Node tests, and 17 SDK tests across both generations and the roadmap foundations, followed by a strict SDK declaration compile. The original 134 Forge tests remain green. New coverage includes registry declarations and exact audit scopes, ABI parity, reorg-anchored aggregate reads, graded multi-policy aggregation, exact-expiry behavior, ERC-20 accounting, public manifests, verified observations, source-position monotonicity, proof-job authorization, cursor continuity, block-pinned operator reports, conservative cures, and an end-to-end factory-to-proof-to-policy flow.
+`npm test` passes 299 Forge tests, 86 root Node tests, and 26 SDK tests across both deployed generations and the local roadmap build, followed by a strict SDK declaration compile. One Windows-only symlink test is skipped when the process lacks symlink privilege. The original 134 Forge tests remain green. New coverage includes exact pilot loss settlement, remedy retry/timeout/acknowledgement recovery, multi-rule transaction accumulation, strict batch source ordering, operator-market escrow, registry declarations and exact audit scopes, ABI parity, block-hash-bound pagination, reorg-anchored aggregate reads, target-first crash recovery, signed-call substitution rejection, native proof/receipt binding, bounded adaptive source scans, queue-saturation recovery, transaction finality, conservative cures, and end-to-end policy flows.
 
-Three stateful invariant properties each complete 256 runs and 128,000 calls with zero handler reverts. They cover native and ERC-20 asset conservation, claim solvency, Horizon 1 facility and draw bounds, and zero available credit outside the Active state. A separate regression test asserts that the original-generation bond can be claimed at most once.
+Six stateful invariant properties each complete 256 runs and 128,000 calls with zero handler reverts. They cover native and ERC-20 asset conservation, claim solvency, Horizon 1 and capped-pilot facility bounds, default loss distribution, inactive credit availability, and exact operator-market escrow solvency. A separate regression test asserts that the original-generation bond can be claimed at most once.
 
 ## Honest limitations
 

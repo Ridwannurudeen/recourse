@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <meta
+      name="description"
+      content="Evidence-first Recourse proof-operator telemetry from an operator-reported file whose configured deployment anchor is checked against CC3 RPC."
+    />
+    <title>Recourse · Operator terminal</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="./observatory.css" />
+    <script src="./ethers.umd.min.js"></script>
+    <script type="module" src="./operator.js"></script>
+  </head>
+  <body class="observatory-page">
+    <a class="obs-skip" href="#main">Skip to operator telemetry</a>
+    <header class="obs-header">
+      <div class="obs-shell obs-header-inner">
+        <a
+          class="obs-brand"
+          href="./index.html"
+          aria-label="Recourse facility dashboard"
+        >
+          <span class="obs-mark" aria-hidden="true">R</span>
+          <span
+            ><strong>Recourse</strong><span>Evidence operations.</span></span
+          >
+        </a>
+        <nav class="obs-nav" aria-label="Recourse applications">
+          <a href="./index.html">Facilities</a>
+          <a href="./horizon1.html">Horizon 1</a>
+          <a href="./operator.html" aria-current="page">Operators</a>
+          <a href="./portfolio.html">Portfolio</a>
+        </nav>
+      </div>
+    </header>
+    <main class="obs-shell obs-main" id="main">
+      <section class="obs-state" id="operator-state" aria-live="polite">
+        <p class="obs-eyebrow">Discovery report · schema v3</p>
+        <h1 id="operator-state-title">Checking operator-reported state</h1>
+        <p id="operator-state-copy">
+          Validating bounded report data, then matching its configured chain,
+          contract, state-block hash, and timestamp against CC3 RPC.
+        </p>
+        <button class="obs-button" id="operator-retry" type="button" hidden>
+          Retry report
+        </button>
+      </section>
+      <div id="operator-dashboard" hidden>
+        <section class="obs-intro" aria-labelledby="operator-title">
+          <div>
+            <p class="obs-eyebrow">Proof market · observed lifecycle</p>
+            <h1 id="operator-title">Work that can be traced to a block.</h1>
+            <p class="obs-intro-copy">
+              Operator-reported jobs, commitments, accepted proofs, and releases
+              from retained ProofJobs event history. The deployment anchor is
+              independently RPC-checked; event-derived totals are not rebuilt in
+              this browser.
+            </p>
+          </div>
+          <div class="obs-anchor">
+            <p class="obs-label">
+              <span class="obs-live" aria-hidden="true"></span>State anchor
+            </p>
+            <strong id="operator-block"></strong>
+            <time id="operator-generated"></time>
+          </div>
+        </section>
+        <div
+          class="obs-badges"
+          id="operator-badges"
+          aria-label="Report quality"
+        ></div>
+        <section
+          class="obs-metrics"
+          id="operator-metrics"
+          aria-label="Operator metrics"
+        ></section>
+        <section class="obs-section" aria-labelledby="jobs-title">
+          <div class="obs-section-heading">
+            <div>
+              <p class="obs-eyebrow">Proof jobs</p>
+              <h2 id="jobs-title">Current work queue</h2>
+            </div>
+            <p class="obs-section-note">
+              Amounts are raw token base units. No USD value, profitability, or
+              operator reputation is inferred.
+            </p>
+          </div>
+          <div class="obs-table-wrap">
+            <table class="obs-table">
+              <thead>
+                <tr>
+                  <th>Job</th>
+                  <th>Facility</th>
+                  <th>State</th>
+                  <th class="obs-num">Proofs</th>
+                  <th class="obs-num">Escrow remaining</th>
+                </tr>
+              </thead>
+              <tbody id="operator-jobs"></tbody>
+            </table>
+            <p class="obs-empty" id="operator-jobs-empty" hidden>
+              No jobs are present in this operator-reported file.
+            </p>
+          </div>
+        </section>
+        <section class="obs-section" aria-labelledby="operators-title">
+          <div class="obs-section-heading">
+            <div>
+              <p class="obs-eyebrow">Observed addresses</p>
+              <h2 id="operators-title">Operator activity</h2>
+            </div>
+            <p class="obs-section-note">
+              An address appears only after an event in retained history;
+              absence is not proof of inactivity outside that range.
+            </p>
+          </div>
+          <div class="obs-table-wrap">
+            <table class="obs-table">
+              <thead>
+                <tr>
+                  <th>Operator</th>
+                  <th class="obs-num">Jobs covered</th>
+                  <th class="obs-num">Commitments</th>
+                  <th class="obs-num">Accepted</th>
+                  <th class="obs-num">Slashes</th>
+                </tr>
+              </thead>
+              <tbody id="operator-addresses"></tbody>
+            </table>
+            <p class="obs-empty" id="operator-addresses-empty" hidden>
+              No operator events are present in retained history.
+            </p>
+          </div>
+        </section>
+        <section class="obs-section" aria-labelledby="limits-title">
+          <div class="obs-section-heading">
+            <div>
+              <p class="obs-eyebrow">Truth boundary</p>
+              <h2 id="limits-title">Report limitations</h2>
+            </div>
+          </div>
+          <ul class="obs-limitations" id="operator-limitations"></ul>
+        </section>
+      </div>
+    </main>
+    <footer class="obs-footer">
+      <div class="obs-shell obs-footer-inner">
+        <span>Read-only · no signer · no submission path</span
+        ><span id="operator-source"></span>
+      </div>
+    </footer>
+  </body>
+</html>

@@ -486,10 +486,13 @@ export function deriveOperatorMetrics(inputEvents) {
 export function buildDiscoveryReport({
   chainId,
   contractAddress,
+  generatedAt = new Date().toISOString(),
   fromBlock,
   toBlock,
   historyFromBlock = fromBlock,
   stateBlock = null,
+  stateBlockHash = null,
+  stateBlockTimestamp = null,
   historyComplete = false,
   eventsTruncated = false,
   confirmations,
@@ -500,7 +503,8 @@ export function buildDiscoveryReport({
 }) {
   const orderedEvents = sortAndDedupeEvents(events);
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
+    generatedAt,
     chainId: Number(chainId),
     proofJobs: getAddress(contractAddress),
     scan: {
@@ -508,6 +512,8 @@ export function buildDiscoveryReport({
       toBlock,
       historyFromBlock,
       stateBlock,
+      stateBlockHash,
+      stateBlockTimestamp,
       historyComplete,
       eventsTruncated,
       eventsFromBlock: orderedEvents[0]?.blockNumber ?? null,

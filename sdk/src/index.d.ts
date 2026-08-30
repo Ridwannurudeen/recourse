@@ -8,6 +8,52 @@ export interface ReadSnapshotOptions {
   blockTag?: BlockTag;
 }
 
+export interface ReadFacilityPolicyCatalogOptions extends ReadSnapshotOptions {
+  fromBlock?: number;
+  pageSize?: number;
+  maxPages?: number;
+  cursor?: FacilityPolicyCatalogCursor;
+}
+
+export interface ReadPolicyRegistryCatalogOptions extends ReadSnapshotOptions {
+  start?: number;
+  limit?: number;
+  cursor?: PolicyRegistryCatalogCursor;
+}
+
+export interface BlockContinuation {
+  blockNumber: number;
+  blockHash: Hex;
+}
+
+export interface PolicyRegistryCatalogCursor extends BlockContinuation {
+  nextIndex: number;
+}
+
+export interface FacilityPolicyCatalogCursor extends BlockContinuation {
+  originalFromBlock: number;
+  nextBlock: number;
+}
+
+export interface PolicyRegistryReleaseCursor extends BlockContinuation {
+  runtimeNextIndex: number;
+  deploymentNextIndex: number;
+}
+
+export interface PolicyRegistryAuditCursor extends BlockContinuation {
+  nextIndex: number;
+}
+
+export interface ReadPolicyRegistryReleaseOptions extends ReadSnapshotOptions {
+  detailLimit?: number;
+  cursor?: PolicyRegistryReleaseCursor;
+}
+
+export interface ReadPolicyRegistryAuditScopeOptions extends ReadSnapshotOptions {
+  limit?: number;
+  cursor?: PolicyRegistryAuditCursor;
+}
+
 export declare const PolicyOutcome: Readonly<{
   Eligible: 0;
   Watch: 1;
@@ -45,6 +91,22 @@ export declare const ProofJobState: Readonly<{
 export declare const AuditScope: Readonly<{
   Release: 0;
   Deployment: 1;
+}>;
+export declare const PortfolioEligibilityCode: Readonly<{
+  Eligible: 0;
+  UnknownFacility: 1;
+  WrongAsset: 2;
+  WrongKernel: 3;
+  InvalidStatus: 4;
+  FacilityLimitExceeded: 5;
+  BondBelowMinimum: 6;
+  DrawFeeExceeded: 7;
+  InvalidMaturity: 8;
+  PolicySetMismatch: 9;
+  UnknownRelease: 10;
+  InvalidDeployment: 11;
+  MissingEvidenceKind: 12;
+  MissingActionAdapter: 13;
 }>;
 
 export interface PolicyEffectInput {
@@ -140,6 +202,48 @@ export interface FacilitySimulation {
   incidentPaused: boolean;
   effectiveLimit: bigint;
   availableCredit: bigint;
+}
+
+export interface PortfolioMandateSimulationInput {
+  mandate: {
+    asset: Address;
+    kernel: Address;
+    requiredReleaseId: Hex;
+    requiredPolicySetCommitment: Hex;
+    requiredEvidenceKind: UintLike;
+    requiredActionAdapterKind: Hex;
+    maximumFacilityLimit: UintLike;
+    minimumBondBps: UintLike;
+    maximumDrawFeeBps: UintLike;
+    maximumRemainingMaturityBlocks: UintLike;
+  };
+  facility: {
+    address: Address;
+    asset: Address;
+    kernel: Address;
+    status: UintLike;
+    facilityLimit: UintLike;
+    bondRequired: UintLike;
+    initialDrawFeeBps: UintLike;
+    maturityBlock: UintLike;
+    policySetCommitment: Hex;
+  };
+  deployment: {
+    exists: boolean;
+    releaseId: Hex;
+    chainId: UintLike;
+    kernel: Address;
+    facility: Address;
+    evaluator: Address;
+    configHash: Hex;
+    manifestHash: Hex;
+  };
+  releaseExists: boolean;
+  factoryRecognized: boolean;
+  evidenceKindDeclared: boolean;
+  actionAdapters: Array<{ adapterKind: Hex }>;
+  chainId: UintLike;
+  blockNumber: UintLike;
 }
 
 export interface PolicyDeployment {
@@ -255,6 +359,7 @@ export interface PublishPolicyRegistryReleaseRequest {
 export interface PolicyRegistryReleaseRead {
   address: Address;
   blockTag: BlockTag;
+  blockHash: Hex;
   releaseId: Hex;
   release: RegistryPackageRelease;
   evidenceKinds: bigint[];
@@ -267,15 +372,62 @@ export interface PolicyRegistryReleaseRead {
     deploymentId: Hex;
     deployment: RegistryDeploymentRecord;
   }>;
+  runtimeVariantTotalCount: number;
+  deploymentTotalCount: number;
+  nextCursor: PolicyRegistryReleaseCursor | null;
 }
 
 export interface PolicyRegistryAuditScopeRead {
   address: Address;
   blockTag: BlockTag;
+  blockHash: Hex;
   scope: UintLike;
   scopeId: Hex;
   scopeHash: Hex;
+  totalCount: number;
+  start: number;
+  nextCursor: PolicyRegistryAuditCursor | null;
   artifacts: Array<{ artifactId: Hex; artifact: RegistryAuditArtifact }>;
+}
+
+export interface PolicyRegistryCatalogRead {
+  address: Address;
+  blockTag: BlockTag;
+  blockHash: Hex;
+  totalCount: number;
+  start: number;
+  nextIndex: number | null;
+  nextCursor: PolicyRegistryCatalogCursor | null;
+  truncated: boolean;
+  releases: Array<{
+    releaseId: Hex;
+    release: RegistryPackageRelease;
+  }>;
+}
+
+export interface FacilityPolicyRegistration {
+  policyId: bigint;
+  evaluator: Address;
+  configHash: Hex;
+  manifest: Hex;
+  blockNumber: number;
+  transactionIndex: number;
+  logIndex: number;
+  transactionHash: Hex;
+}
+
+export interface FacilityPolicyCatalogRead {
+  address: Address;
+  blockTag: BlockTag;
+  blockHash: Hex;
+  facility: Address;
+  fromBlock: number;
+  originalFromBlock: number;
+  scannedToBlock: number;
+  nextBlock: number | null;
+  historyComplete: boolean;
+  nextCursor: FacilityPolicyCatalogCursor | null;
+  registrations: FacilityPolicyRegistration[];
 }
 
 export interface CreateFacilityRequest {
@@ -360,6 +512,7 @@ export declare const recourseFacilityFactoryV2Abi: InterfaceAbi;
 export declare const eventHistoryPolicyV1Abi: InterfaceAbi;
 export declare const recourseDemoUsdAbi: InterfaceAbi;
 export declare const policyRegistryV1Abi: InterfaceAbi;
+export declare const portfolioMandateV1Abi: InterfaceAbi;
 export declare const horizon1Abis: Readonly<Record<string, InterfaceAbi>>;
 
 export declare function encodeKernelProof(input: KernelProofInput): Hex;
@@ -385,9 +538,19 @@ export declare function encodeEventHistoryManifest(
 export declare function hashEventHistoryManifest(
   value: EventHistoryManifest,
 ): Hex;
+export declare function decodeEventHistoryManifest(
+  manifestBytes: Hex,
+): EventHistoryManifest;
+export declare function validateEventHistoryManifestBinding(
+  manifestBytes: Hex,
+  expectedConfigHash: Hex,
+): { manifest: EventHistoryManifest; manifestHash: Hex };
 export declare function simulateFacilityPolicyState(
   input: FacilitySimulationInput,
 ): FacilitySimulation;
+export declare function simulatePortfolioMandateEligibility(
+  input: PortfolioMandateSimulationInput,
+): number;
 export declare function validatePolicyPackage(
   value: PolicyPackage,
 ): PolicyPackage;
@@ -438,6 +601,32 @@ export declare function encodePublishPolicyRegistryAuditArtifact(value: {
   artifactHash: Hex;
   artifactURI: string;
 }): Hex;
+export declare function buildPolicyRegistryCalldata(requests: {
+  publishRelease?: PublishPolicyRegistryReleaseRequest;
+  approveRuntimeVariants?: Array<{
+    releaseId: Hex;
+    implementation: Address;
+    constructorArgumentsHash: Hex;
+  }>;
+  recordDeployments?: Array<{
+    releaseId: Hex;
+    kernel: Address;
+    facility: Address;
+    policyId: UintLike;
+    runtimeVariantId: Hex;
+  }>;
+  publishAuditArtifacts?: Array<{
+    scope: UintLike;
+    scopeId: Hex;
+    artifactHash: Hex;
+    artifactURI: string;
+  }>;
+}): {
+  publishRelease?: Hex;
+  approveRuntimeVariants?: Hex[];
+  recordDeployments?: Hex[];
+  publishAuditArtifacts?: Hex[];
+};
 export declare function buildHorizon1Calldata(requests: {
   createFacility?: CreateFacilityRequest;
   configurePolicy?: {
@@ -581,8 +770,19 @@ export declare function readPolicyRegistryRelease(
   address: Address,
   runner: ContractRunner,
   releaseId: Hex,
-  options?: ReadSnapshotOptions,
+  options?: ReadPolicyRegistryReleaseOptions,
 ): Promise<PolicyRegistryReleaseRead>;
+export declare function readPolicyRegistryCatalog(
+  address: Address,
+  runner: ContractRunner,
+  options?: ReadPolicyRegistryCatalogOptions,
+): Promise<PolicyRegistryCatalogRead>;
+export declare function readFacilityPolicyCatalog(
+  address: Address,
+  runner: ContractRunner,
+  facility: Address,
+  options: ReadFacilityPolicyCatalogOptions,
+): Promise<FacilityPolicyCatalogRead>;
 export declare function readPolicyRegistryRuntimeVariant(
   address: Address,
   runner: ContractRunner,
@@ -621,5 +821,5 @@ export declare function readPolicyRegistryAuditScope(
   runner: ContractRunner,
   scope: UintLike,
   scopeId: Hex,
-  options?: ReadSnapshotOptions,
+  options?: ReadPolicyRegistryAuditScopeOptions,
 ): Promise<PolicyRegistryAuditScopeRead>;

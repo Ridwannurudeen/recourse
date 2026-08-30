@@ -1,0 +1,29 @@
+[Unit]
+Description=Recourse proof-job operator
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=recourse
+Group=recourse
+WorkingDirectory=/opt/recourse
+EnvironmentFile=/etc/recourse/operator.env
+Environment=RECOURSE_OPERATOR_CONFIG=/etc/recourse/operator.json
+Environment=RECOURSE_OPERATOR_DATA_DIRECTORY=/var/lib/recourse-operator
+ExecStart=/usr/bin/node /opt/recourse/daemon/operator.mjs
+Restart=on-failure
+RestartSec=10s
+KillSignal=SIGTERM
+TimeoutStopSec=90s
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/recourse-operator
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

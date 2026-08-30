@@ -105,6 +105,8 @@ interface IPolicyRegistryV1 {
         returns (bytes32);
 
     function packageRelease(bytes32 releaseId) external view returns (PackageRelease memory);
+    function releaseCount() external view returns (uint256);
+    function releaseAt(uint256 index) external view returns (bytes32);
     function runtimeVariant(bytes32 runtimeVariantId) external view returns (RuntimeVariant memory);
     function runtimeVariantCount(bytes32 releaseId) external view returns (uint256);
     function runtimeVariantAt(bytes32 releaseId, uint256 index) external view returns (bytes32);

@@ -14,7 +14,11 @@ import {
   summarizeDistribution,
   updateMetricCheckpoint,
 } from "../daemon/job-discovery-core.mjs";
-import { PROOF_JOBS_ABI, discoverProofJobs } from "../daemon/job-discovery.mjs";
+import {
+  PROOF_JOBS_ABI,
+  discoverProofJobs,
+  writeDiscoveryReport,
+} from "../daemon/job-discovery.mjs";
 
 const HASH = (byte) => `0x${byte.repeat(32)}`;
 const JOBS = getAddress("0x0000000000000000000000000000000000000100");
@@ -127,6 +131,10 @@ test("empty reports use explicit null rates instead of invented performance", ()
     denominator: 0,
     value: null,
   });
+  assert.equal(report.schemaVersion, 3);
+  assert.match(report.generatedAt, /^\d{4}-\d{2}-\d{2}T/);
+  assert.equal(report.scan.stateBlockHash, null);
+  assert.equal(report.scan.stateBlockTimestamp, null);
   assert.equal(report.metrics.commitLatencySeconds.average, null);
   assert.equal(report.scan.eventsTruncated, true);
   assert.match(report.limitations[0], /reverted/i);
@@ -399,7 +407,10 @@ test("discovery scans only the confirmed range, hydrates state, and resumes atom
       { blockTag: 138 },
     ]);
     const cursor = JSON.parse(await readFile(cursorPath, "utf8"));
-    assert.equal(cursor.version, 2);
+    assert.equal(first.schemaVersion, 3);
+    assert.equal(first.scan.stateBlockHash, HASH("fe"));
+    assert.equal(first.scan.stateBlockTimestamp, 1_380);
+    assert.equal(cursor.version, 3);
     assert.equal(cursor.chainId, 102031);
     assert.equal(cursor.contractAddress, JOBS);
     assert.equal(cursor.historyFromBlock, 100);
@@ -407,6 +418,7 @@ test("discovery scans only the confirmed range, hydrates state, and resumes atom
     assert.equal(cursor.nextBlock, 139);
     assert.equal(cursor.lastScannedBlock, 138);
     assert.equal(cursor.lastScannedBlockHash, HASH("fe"));
+    assert.equal(cursor.lastScannedBlockTimestamp, 1_380);
     assert.equal(cursor.confirmations, 12);
     assert.equal(cursor.eventsTruncated, false);
     assert.deepEqual(cursor.events, first.events);
@@ -436,6 +448,8 @@ test("discovery scans only the confirmed range, hydrates state, and resumes atom
     assert.equal(idle.scan.fromBlock, 139);
     assert.equal(idle.scan.toBlock, 138);
     assert.equal(idle.scan.stateBlock, 138);
+    assert.equal(idle.scan.stateBlockHash, HASH("fe"));
+    assert.equal(idle.scan.stateBlockTimestamp, 1_380);
     assert.equal(getJobCalls.length, callsBeforeIdle);
     assert.equal(policyOfCalls.length, policyCallsAfterFirst);
     assert.equal(configurationOfCalls.length, configurationCallsAfterFirst);
@@ -576,6 +590,38 @@ test("discovery scans only the confirmed range, hydrates state, and resumes atom
       }),
       /must match discovery cursor next block/,
     );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("failed report serialization never replaces the last good discovery artifact", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "recourse-discovery-output-"));
+  const outputPath = join(directory, "report.json");
+  const good = buildDiscoveryReport({
+    chainId: 102031,
+    contractAddress: JOBS,
+    generatedAt: "2026-08-30T00:00:00.000Z",
+    fromBlock: 100,
+    toBlock: 110,
+    stateBlock: 110,
+    stateBlockHash: HASH("ab"),
+    stateBlockTimestamp: 1_000,
+    historyComplete: true,
+    confirmations: 12,
+    events: [],
+    jobs: [],
+    policies: [],
+  });
+  try {
+    writeDiscoveryReport(outputPath, good);
+    const impossible = {};
+    impossible.self = impossible;
+    assert.throws(
+      () => writeDiscoveryReport(outputPath, impossible),
+      /circular/i,
+    );
+    assert.deepEqual(JSON.parse(await readFile(outputPath, "utf8")), good);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

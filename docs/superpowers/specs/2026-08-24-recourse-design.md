@@ -1,6 +1,6 @@
 # Recourse — Design Specification (v2, post-audit)
 
-**Date:** 2026-08-24 (v2 same day, after Codex audit round: 18 findings incorporated)
+**Date:** 2026-08-24 (v2 same day, after security audit round: 18 findings incorporated)
 **Event:** BUIDL CTC 2026 Fall (DoraHacks), deadline 2026-09-06 23:59 ET
 **Track:** DeFi
 **Tagline:** Credit with consequences.
@@ -282,7 +282,7 @@ run.
   additive single-proof evaluators).
 - **Aug 29–30:** covenants 2–3 + dashboard. **Aug 30: CONTRACT FREEZE.**
 - **Aug 31–Sept 2:** defects, docs, README, integration summary, measured-gas
-  ceilings, rehearsals; Codex code audit round.
+  ceilings, rehearsals; code audit round.
 - **Sept 3–4:** demo video + deck (PDF).
 - **Sept 5:** owner review; submission only with explicit owner approval.
 
