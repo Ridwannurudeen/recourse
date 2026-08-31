@@ -12,7 +12,10 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { evaluatePilotReadiness } from "../scripts/lib/pilot-readiness.mjs";
+import {
+  evaluatePilotReadiness,
+  inspectDeployableRepository,
+} from "../scripts/lib/pilot-readiness.mjs";
 
 const ROLES = ["lender", "borrower", "security", "legal", "operations"];
 const GIT_COMMIT = execFileSync("git", ["rev-parse", "HEAD"], {
@@ -189,6 +192,66 @@ test("audit readiness binds the exact HEAD and a clean deployable scope", async 
         .reasons.join(" "),
       /deployable scope must be clean/,
     );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("deployable inspection includes Foundry dependency pins", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "recourse-pilot-git-scope-"));
+  const pinnedFiles = new Map([
+    ["foundry.lock", "pinned Foundry dependencies\n"],
+    [".gitmodules", "# pinned submodule metadata\n"],
+    [join("lib", "forge-std", "version.txt"), "v1.16.2\n"],
+  ]);
+  try {
+    await mkdir(join(directory, "contracts"));
+    await mkdir(join(directory, "lib", "forge-std"), { recursive: true });
+    await writeFile(
+      join(directory, "contracts", "Scope.sol"),
+      "contract Scope {}\n",
+      "utf8",
+    );
+    await writeFile(
+      join(directory, "foundry.toml"),
+      "[profile.default]\n",
+      "utf8",
+    );
+    for (const [path, contents] of pinnedFiles) {
+      await writeFile(join(directory, path), contents, "utf8");
+    }
+    execFileSync("git", ["init", "--quiet"], { cwd: directory });
+    execFileSync("git", ["-c", "core.autocrlf=false", "add", "."], {
+      cwd: directory,
+    });
+    execFileSync(
+      "git",
+      [
+        "-c",
+        "user.name=Recourse Test",
+        "-c",
+        "user.email=recourse-test@example.invalid",
+        "commit",
+        "--quiet",
+        "-m",
+        "baseline",
+      ],
+      { cwd: directory },
+    );
+
+    assert.equal(
+      inspectDeployableRepository(directory).deployableScopeClean,
+      true,
+    );
+    for (const [path, contents] of pinnedFiles) {
+      await writeFile(join(directory, path), `${contents}changed\n`, "utf8");
+      assert.equal(
+        inspectDeployableRepository(directory).deployableScopeClean,
+        false,
+        `${path} must be part of the audited repository scope`,
+      );
+      await writeFile(join(directory, path), contents, "utf8");
+    }
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

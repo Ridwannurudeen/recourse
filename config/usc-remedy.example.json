@@ -96,11 +96,11 @@
   "artifacts": {
     "UscRemedyTransportV1": {
       "path": "out/UscRemedyTransportV1.sol/UscRemedyTransportV1.json",
-      "keccak256": "0xeac22a5a831ec9ba3c2bc44c0e65ec0c0daf4485258240b836e5d6cc62afb4df"
+      "keccak256": "0x5f4e1bd5a95e9eb39bed2bf3109ddd0b70642ae4b359c520585832fb19ffadb4"
     },
     "RemedyCoordinatorV1": {
       "path": "out/RemedyCoordinatorV1.sol/RemedyCoordinatorV1.json",
-      "keccak256": "0xbb5c732c198e11bed0dd8ed7a38268e3e3d55a7f95ce9a5fa7bf00ac9850c9d7"
+      "keccak256": "0xc843211195de4d850428d9a07836d4b6b07776f021fa354d84815d581c079758"
     },
     "BoundedRemedyReceiverV1": {
       "path": "out/BoundedRemedyReceiverV1.sol/BoundedRemedyReceiverV1.json",
@@ -108,7 +108,7 @@
     },
     "UscRemedyDispatcherV1": {
       "path": "out/UscRemedyDispatcherV1.sol/UscRemedyDispatcherV1.json",
-      "keccak256": "0x9826539d24a77e9754fa8d9d82a45dec2851bc6c897db5b03f0f1ef3f1c1abf8"
+      "keccak256": "0xfc19c581bfd72180c350f2040214fa36c949e16293f8497aa80a0e0442993e9f"
     },
     "Inbox020": {
       "path": "REPLACE_WITH_EXACT_COMPILED_USC_0_2_0_INBOX_ARTIFACT_PATH",

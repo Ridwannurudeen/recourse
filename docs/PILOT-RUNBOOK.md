@@ -11,10 +11,12 @@ relative to the readiness file, and each `digest` is the artifact's SHA-256 hash
 with a `0x` prefix. The independent audit must identify the exact 40-hex Git
 commit it covers. That commit must equal `HEAD`, and the deployable contracts,
 daemon, scripts, SDK, web, operations templates, package manifests, and Foundry
-configuration must be clean. Lender, borrower, security, legal, and operations
-approvals are all distinct mandatory roles. Evidence paths are realpath-confined
-regular files; symlinks, directories, missing files, and digest mismatches fail
-closed.
+configuration, lockfile, `.gitmodules`, and `lib/forge-std` submodule must be
+clean. Lender, borrower, security, legal, and operations approvals are all
+distinct mandatory roles. Evidence paths are realpath-confined regular files;
+symlinks, directories, missing files, and digest mismatches fail closed. The
+independent report contents and acceptance requirements are defined in
+`docs/SECURITY-AUDIT-BRIEF.md`.
 
 Run the gate with:
 

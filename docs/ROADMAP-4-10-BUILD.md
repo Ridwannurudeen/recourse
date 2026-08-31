@@ -120,9 +120,10 @@ The repository defines a transport-neutral remedy boundary:
 Replay protection is scoped to the full intent domain. The receiver consumes an
 authorization before the external target call and rolls the state back if the
 call fails. Fresh adverse evidence always starts a fresh execution domain. Only
-the lender can explicitly replace the latest failed or expired intent from the
-same adverse episode; that replacement preserves the predecessor, adverse
-evidence, route, action commitment, and stable execution ID. The receiver stores
+the lender-authorized policy evaluator can explicitly replace the latest failed
+or expired intent from the same adverse episode; that replacement preserves the
+predecessor, adverse evidence, route, action commitment, and stable execution ID.
+The receiver stores
 the first nonzero execution result and returns it for an exact replacement
 without calling the target twice. On both first execution and reuse it emits one
 canonical confirmation binding the target, current intent, stable execution ID,
@@ -216,8 +217,7 @@ supports it. The implementation proves event history, not balances, storage,
 prices, ownership, or complete portfolio value. The activation and operator
 tooling recognize only the currently documented CC3 mappings: source key 1 is
 Ethereum Sepolia chain ID 11155111 and source key 3 is Ethereum mainnet chain ID
-
-1. Unknown keys and mismatched RPC identities fail closed.
+`1`. Unknown keys and mismatched RPC identities fail closed.
 
 ## 9. Open operator market
 

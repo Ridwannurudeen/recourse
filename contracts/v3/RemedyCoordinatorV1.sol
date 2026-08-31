@@ -248,6 +248,13 @@ contract RemedyCoordinatorV1 is IRemedyCoordinatorV1, ReentrancyGuard {
             intent.status = IntentStatus.Expired;
         } else if (intent.status == IntentStatus.Published) {
             if (block.timestamp >= intent.expiry) {
+                bytes32 acknowledgedMessage = _bestEffortAcknowledgedMessage(intentId, intent.publishAttempts);
+                if (acknowledgedMessage != bytes32(0)) {
+                    intent.messageId = acknowledgedMessage;
+                    intent.status = IntentStatus.Acknowledged;
+                    emit IntentAcknowledged(intentId, acknowledgedMessage);
+                    return;
+                }
                 intent.status = IntentStatus.Expired;
             } else {
                 if (_acknowledgedMessage(intentId, intent.publishAttempts) != bytes32(0)) {
@@ -306,6 +313,22 @@ contract RemedyCoordinatorV1 is IRemedyCoordinatorV1, ReentrancyGuard {
         for (uint8 i; i < attemptCount; ++i) {
             messageId = intentMessages[intentId][i];
             if (transport.isAcknowledged(messageId)) return messageId;
+        }
+        return bytes32(0);
+    }
+
+    function _bestEffortAcknowledgedMessage(bytes32 intentId, uint8 attemptCount)
+        private
+        view
+        returns (bytes32 messageId)
+    {
+        for (uint8 i; i < attemptCount; ++i) {
+            messageId = intentMessages[intentId][i];
+            try transport.isAcknowledged(messageId) returns (bool acknowledged) {
+                if (acknowledged) return messageId;
+            } catch {
+                messageId = bytes32(0);
+            }
         }
         return bytes32(0);
     }

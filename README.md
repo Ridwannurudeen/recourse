@@ -45,7 +45,7 @@ The new demonstration facility is [`0xF1E51D2d648E7FeA60fE4B2C739f7591426d14FA`]
 
 The additive [public Horizon 1 console](https://ridwan.gudman.xyz/recourse/horizon1.html), served from [`web/horizon1.html`](web/horizon1.html), reads the live factory, facility, kernel, credit state, and proof jobs at one pinned CC3 block. It shows registered policies separately from accepted policy effects and never requests a wallet or submits a transaction.
 
-Roadmap work now also includes a typed [SDK](sdk/README.md), policy simulation and calldata builders, an issuer-attested `PolicyRegistryV1`, and a resumable operator discovery and metrics tool. The committed static console is publicly hosted; the SDK remains unpublished, the recorded V3 registry deployment is empty, and the Horizon 1 operator is installed only as a healthy read-only service. V3 execution is not installed or enabled. These foundations are tested but are not independently audited, frozen, or externally integrated.
+Roadmap work now also includes a typed [SDK](sdk/README.md), policy simulation and calldata builders, an issuer-attested `PolicyRegistryV1`, and a resumable operator discovery and metrics tool. The committed static console is publicly hosted; the SDK remains unpublished, the recorded V3 registry deployment is empty, and the Horizon 1 operator is installed only as a healthy read-only service. V3 execution is not installed or enabled. These foundations are tested but are not independently audited, frozen, or externally integrated. See [the external security audit handoff](docs/SECURITY-AUDIT-BRIEF.md) for the exact review scope and evidence requirements.
 
 The repository now covers the buildable contract and tooling scope for roadmap items 4–10: a capped pilot factory and loss-settling facility, offline-first deployment and activation tooling, bounded remedy coordination, a pinned USC 0.2 transport and dispatcher, closed-loop acknowledgement/cure lifecycle, block-hash-paged registry SDK, multi-chain event-risk policy, escrowed operator-service market, hardened reference operator, and a fixed-vintage portfolio pool with exact allocation and loss accounting. See [the exact build inventory and remaining gates](docs/ROADMAP-4-10-BUILD.md). The inactive V3 core recorded in `deployments-v3.json` has zero facilities, policies, registry claims, or asset transfers, but it predates the current source-ordering interface and policy-set commitment. The activation tooling rejects that bytecode; the complete V3 core must be freshly redeployed from the reviewed current commit before activation. The USC route and portfolio pool are undeployed. None of the roadmap build is independently audited, externally integrated, customer-validated, or capitalized.
 
@@ -64,11 +64,12 @@ commands and renewal procedure.
 
 ## Quickstart
 
-The checked-in `deployments.json` points to the already-breached live facility. To reproduce the full demo with a fresh facility, use fresh development wallets and CC3 testnet funds. Install Foundry 1.7.1 and ensure `forge` is on `PATH` before running the unified test command. The deployment and activation configurations pin the raw artifacts emitted by the forced build, and the Node suite rejects stale pins.
+The checked-in `deployments.json` points to the already-breached live facility. To reproduce the full demo with a fresh facility, use fresh development wallets and CC3 testnet funds. The release baseline uses Node.js 24.15.0, npm 11.12.1, and Foundry 1.7.1; ensure `forge` is on `PATH` before running the unified test command. The deployment and activation configurations pin the raw artifacts emitted by the forced build, and the Node suite rejects stale pins.
 
 ```bash
 git submodule update --init --recursive
-npm install
+npm ci
+npm --prefix sdk ci
 forge build --force
 npm test
 npm run wallets:new
@@ -155,7 +156,7 @@ The borrower's activation commits to an ordered hash covering both the identity 
 
 ## Testing
 
-`npm test` passes 347 Forge tests, 175 root Node tests, and 36 SDK tests across both deployed generations and the local roadmap build, followed by a strict SDK declaration compile. One Windows-only symlink test is skipped when the process lacks symlink privilege, for 176 root Node tests in total. The original 134 Forge tests remain green. New coverage includes exact pilot loss settlement, remedy retry/timeout/acknowledgement recovery, multi-rule transaction accumulation, per-policy source ordering and the later-weak/earlier-severe front-running regression, operator-market escrow, registry declarations and exact audit scopes, ABI parity, block-hash-bound pagination, reorg-anchored aggregate reads, target-first crash recovery, signed-call substitution rejection, native proof/receipt binding, bounded adaptive source scans, queue-saturation recovery, transaction finality, conservative cures, and end-to-end policy flows.
+`npm test` passes 348 Forge tests, 176 root Node tests, and 36 SDK tests across both deployed generations and the local roadmap build, followed by a strict SDK declaration compile. One Windows-only symlink test is skipped when the process lacks symlink privilege, for 177 root Node tests in total. The original 134 Forge tests remain green. New coverage includes exact pilot loss settlement, remedy retry/timeout/acknowledgement recovery, multi-rule transaction accumulation, per-policy source ordering and the later-weak/earlier-severe front-running regression, operator-market escrow, registry declarations and exact audit scopes, ABI parity, block-hash-bound pagination, reorg-anchored aggregate reads, target-first crash recovery, signed-call substitution rejection, native proof/receipt binding, bounded adaptive source scans, queue-saturation recovery, transaction finality, conservative cures, and end-to-end policy flows.
 
 Eight stateful invariant properties each complete 256 runs and 128,000 calls with zero handler reverts. They cover native and ERC-20 asset conservation, claim solvency, Horizon 1 and capped-pilot facility bounds, default loss distribution, inactive credit availability, portfolio recovery and loss bounds, and exact operator-market escrow solvency. A separate regression test asserts that the original-generation bond can be claimed at most once.
 

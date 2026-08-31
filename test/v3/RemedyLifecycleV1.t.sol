@@ -242,6 +242,22 @@ contract RemedyLifecycleV1Test is Test {
         assertEq(uint256(coordinator.intentStatus(intentId)), uint256(IRemedyCoordinatorV1.IntentStatus.Expired));
     }
 
+    function test_availableAcknowledgementWinsAtPublishedExpiry() public {
+        IRemedyCoordinatorV1.IntentRequest memory request = _request();
+        request.expiry = uint64(block.timestamp + 10);
+        bytes32 intentId = coordinator.recordIntent(request);
+        coordinator.publishIntent(intentId, ACTION_DATA);
+        bytes32 messageId = transport.lastMessageId();
+        transport.setAcknowledged(messageId, true);
+
+        vm.warp(request.expiry);
+        vm.prank(address(0xBAD));
+        coordinator.timeoutIntent(intentId);
+
+        assertEq(uint256(coordinator.intentStatus(intentId)), uint256(IRemedyCoordinatorV1.IntentStatus.Acknowledged));
+        assertEq(coordinator.intentOf(intentId).messageId, messageId);
+    }
+
     function test_publishedExpiryDoesNotDependOnAcknowledgementAdapterAvailability() public {
         IRemedyCoordinatorV1.IntentRequest memory request = _request();
         request.expiry = uint64(block.timestamp + 10);
