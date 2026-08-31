@@ -26,11 +26,13 @@ contract OperatorMarketV1 is ReentrancyGuard {
 
     struct Quote {
         address operator;
+        address intendedSponsor;
         address sponsor;
         ServiceKind serviceKind;
         QuoteStatus status;
         uint64 quoteExpiry;
         uint64 serviceDuration;
+        uint64 acceptedAt;
         uint64 deliveryDeadline;
         uint256 price;
         uint256 operatorBond;
@@ -41,6 +43,7 @@ contract OperatorMarketV1 is ReentrancyGuard {
     error InvalidAmount();
     error InvalidDigest();
     error InvalidExpiry();
+    error NoRuntimeCode();
     error NotOperator();
     error NotSponsor();
     error ServiceNotVerified();
@@ -55,6 +58,7 @@ contract OperatorMarketV1 is ReentrancyGuard {
         uint256 indexed quoteId,
         address indexed operator,
         ServiceKind indexed serviceKind,
+        address intendedSponsor,
         bytes32 requirementsDigest,
         uint256 price,
         uint256 operatorBond,
@@ -83,6 +87,7 @@ contract OperatorMarketV1 is ReentrancyGuard {
         if (address(token_) == address(0) || address(verifier_) == address(0)) {
             revert ZeroAddress();
         }
+        if (address(token_).code.length == 0 || address(verifier_).code.length == 0) revert NoRuntimeCode();
         if (minimumOperatorBond_ == 0) revert InvalidAmount();
         if (maximumQuoteDuration_ == 0 || maximumServiceDuration_ == 0) revert InvalidExpiry();
         token = token_;
@@ -94,12 +99,14 @@ contract OperatorMarketV1 is ReentrancyGuard {
 
     function postQuote(
         ServiceKind serviceKind,
+        address intendedSponsor,
         bytes32 requirementsDigest,
         uint256 price,
         uint256 operatorBond,
         uint64 quoteExpiry,
         uint64 serviceDuration
     ) external nonReentrant returns (uint256 quoteId) {
+        if (intendedSponsor == msg.sender) revert NotSponsor();
         if (requirementsDigest == bytes32(0)) revert InvalidDigest();
         if (price == 0 || operatorBond < minimumOperatorBond) revert InvalidAmount();
         if (quoteExpiry <= block.timestamp || uint256(quoteExpiry) > block.timestamp + maximumQuoteDuration) {
@@ -113,11 +120,13 @@ contract OperatorMarketV1 is ReentrancyGuard {
         quotes.push(
             Quote({
                 operator: msg.sender,
+                intendedSponsor: intendedSponsor,
                 sponsor: address(0),
                 serviceKind: serviceKind,
                 status: QuoteStatus.Open,
                 quoteExpiry: quoteExpiry,
                 serviceDuration: serviceDuration,
+                acceptedAt: 0,
                 deliveryDeadline: 0,
                 price: price,
                 operatorBond: operatorBond,
@@ -126,7 +135,15 @@ contract OperatorMarketV1 is ReentrancyGuard {
             })
         );
         emit QuotePosted(
-            quoteId, msg.sender, serviceKind, requirementsDigest, price, operatorBond, quoteExpiry, serviceDuration
+            quoteId,
+            msg.sender,
+            serviceKind,
+            intendedSponsor,
+            requirementsDigest,
+            price,
+            operatorBond,
+            quoteExpiry,
+            serviceDuration
         );
     }
 
@@ -134,12 +151,16 @@ contract OperatorMarketV1 is ReentrancyGuard {
         Quote storage quote = quotes[quoteId];
         _requireStatus(quote, QuoteStatus.Open);
         if (block.timestamp >= quote.quoteExpiry) revert InvalidExpiry();
-        if (msg.sender == quote.operator) revert NotSponsor();
+        if (
+            msg.sender == quote.operator || (quote.intendedSponsor != address(0) && msg.sender != quote.intendedSponsor)
+        ) revert NotSponsor();
         if (block.timestamp > type(uint64).max - quote.serviceDuration) revert InvalidExpiry();
         _pull(msg.sender, quote.price);
+        uint64 acceptedAt = uint64(block.timestamp);
         quote.sponsor = msg.sender;
         quote.status = QuoteStatus.Accepted;
-        quote.deliveryDeadline = uint64(block.timestamp) + quote.serviceDuration;
+        quote.acceptedAt = acceptedAt;
+        quote.deliveryDeadline = acceptedAt + quote.serviceDuration;
         agreementId = agreementIdOf(quoteId, msg.sender);
         emit QuoteAccepted(quoteId, msg.sender);
     }
@@ -150,7 +171,17 @@ contract OperatorMarketV1 is ReentrancyGuard {
         if (block.timestamp >= quote.deliveryDeadline) revert InvalidExpiry();
         if (deliveryDigest == bytes32(0)) revert InvalidDigest();
         bytes32 agreementId = agreementIdOf(quoteId, quote.sponsor);
-        if (!verifier.verifyService(agreementId, quote.operator, quote.requirementsDigest, deliveryDigest, evidence)) {
+        if (!verifier.verifyService(
+                agreementId,
+                uint8(quote.serviceKind),
+                quote.operator,
+                quote.sponsor,
+                quote.acceptedAt,
+                quote.deliveryDeadline,
+                quote.requirementsDigest,
+                deliveryDigest,
+                evidence
+            )) {
             revert ServiceNotVerified();
         }
 
@@ -209,13 +240,16 @@ contract OperatorMarketV1 is ReentrancyGuard {
                 block.chainid,
                 quoteId,
                 quote.operator,
+                quote.intendedSponsor,
                 sponsor,
                 quote.serviceKind,
                 quote.requirementsDigest,
                 quote.price,
                 quote.operatorBond,
                 quote.quoteExpiry,
-                quote.serviceDuration
+                quote.serviceDuration,
+                quote.acceptedAt,
+                quote.deliveryDeadline
             )
         );
     }

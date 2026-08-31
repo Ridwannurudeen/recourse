@@ -120,11 +120,13 @@ test("V3 enumerable reads are bounded and continue only on the anchored block ha
   const facilities = [ADDRESS("521"), ADDRESS("522"), ADDRESS("523")];
   const quotes = facilities.map((operator, index) => ({
     operator,
+    intendedSponsor: index === 0 ? facilities[1] : ZeroAddress,
     sponsor: ZeroAddress,
     serviceKind: index,
     status: 0,
     quoteExpiry: 2_000,
     serviceDuration: 100,
+    acceptedAt: 0,
     deliveryDeadline: 0,
     price: 1_000,
     operatorBond: 500,
@@ -162,6 +164,8 @@ test("V3 enumerable reads are bounded and continue only on the anchored block ha
     claimableAccounts: [facilities[0]],
   });
   assert.equal(firstMarket.quotes.length, 2);
+  assert.equal(firstMarket.quotes[0].quote.intendedSponsor, facilities[1]);
+  assert.equal(firstMarket.quotes[0].quote.acceptedAt, 0n);
   assert.deepEqual(firstMarket.nextCursor, {
     blockNumber: 777,
     blockHash: HASH("aa"),

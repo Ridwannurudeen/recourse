@@ -17,7 +17,11 @@ contract OperatorInvariantToken is ERC20 {
 }
 
 contract OperatorInvariantVerifier is IOperatorServiceVerifierV1 {
-    function verifyService(bytes32, address, bytes32, bytes32, bytes calldata) external pure returns (bool) {
+    function verifyService(bytes32, uint8, address, address, uint64, uint64, bytes32, bytes32, bytes calldata)
+        external
+        pure
+        returns (bool)
+    {
         return true;
     }
 }
@@ -54,8 +58,10 @@ contract OperatorMarketV1Handler {
         uint64 serviceDuration = SafeCast.toUint64(1 + (seed >> 64) % 7 days);
         OperatorMarketV1.ServiceKind serviceKind = _serviceKind(seed >> 96);
         bytes32 requirementsDigest = keccak256(abi.encode(seed, quoteCount));
+        address intendedSponsor = ((seed >> 104) & 1) == 0 ? address(0) : actors[(seed >> 112) % actors.length];
+        if (intendedSponsor == operator) intendedSponsor = actors[((seed >> 112) + 1) % actors.length];
         vm.prank(operator);
-        market.postQuote(serviceKind, requirementsDigest, price, bond, expiry, serviceDuration);
+        market.postQuote(serviceKind, intendedSponsor, requirementsDigest, price, bond, expiry, serviceDuration);
     }
 
     function accept(uint256 seed) external {
@@ -64,7 +70,8 @@ contract OperatorMarketV1Handler {
         uint256 quoteId = seed % count;
         OperatorMarketV1.Quote memory quote = market.quoteAt(quoteId);
         if (quote.status != OperatorMarketV1.QuoteStatus.Open || block.timestamp >= quote.quoteExpiry) return;
-        address sponsor = actors[(seed >> 16) % actors.length];
+        address sponsor = quote.intendedSponsor;
+        if (sponsor == address(0)) sponsor = actors[(seed >> 16) % actors.length];
         if (sponsor == quote.operator) sponsor = actors[((seed >> 16) + 1) % actors.length];
         vm.prank(sponsor);
         market.acceptQuote(quoteId);
@@ -110,6 +117,13 @@ contract OperatorMarketV1Handler {
         market.withdraw();
     }
 
+    function donate(uint256 seed) external {
+        address donor = actors[seed % actors.length];
+        uint256 amount = 1 + (seed >> 16) % 1_000;
+        vm.prank(donor);
+        token.transfer(address(market), amount);
+    }
+
     function actorAt(uint256 index) external view returns (address) {
         return actors[index];
     }
@@ -139,7 +153,7 @@ contract OperatorMarketV1InvariantTest is Test {
         targetContract(address(handler));
     }
 
-    function invariant_marketBalanceExactlyCoversEscrowAndClaims() public view {
+    function invariant_marketBalanceCoversEscrowAndClaims() public view {
         uint256 obligations;
         uint256 quoteCount = market.quoteCount();
         for (uint256 i; i < quoteCount; ++i) {
@@ -153,12 +167,23 @@ contract OperatorMarketV1InvariantTest is Test {
         for (uint256 i; i < actorCount; ++i) {
             obligations += market.claimable(handler.actorAt(i));
         }
-        assertEq(token.balanceOf(address(market)), obligations);
+        assertGe(token.balanceOf(address(market)), obligations);
     }
 
     function test_handlerCanCreateEscrowedQuote() public {
         handler.post(1);
         assertEq(market.quoteCount(), 1);
         assertEq(token.balanceOf(address(market)), market.quoteAt(0).operatorBond);
+    }
+
+    function test_unsolicitedDonationIsHarmlessSurplus() public {
+        handler.donate(1 << 16);
+        handler.post(1);
+        uint256 bond = market.quoteAt(0).operatorBond;
+        assertEq(token.balanceOf(address(market)), bond + 2);
+
+        handler.cancel(0);
+        handler.withdraw(1);
+        assertEq(token.balanceOf(address(market)), 2);
     }
 }

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { AbiCoder, Interface, getAddress, id, keccak256 } from "ethers";
 
@@ -116,6 +117,37 @@ test("V3 ABI fragments expose the compiled public surfaces", () => {
   assert.equal(market.getFunction("quoteAt").name, "quoteAt");
   assert.equal(SourceOrdering.StrictlyIncreasing, 0);
   assert.equal(SourceOrdering.UniqueOnly, 1);
+});
+
+test("OperatorMarketV1 SDK ABI matches the compiled artifact", () => {
+  const artifact = JSON.parse(
+    readFileSync(
+      new URL(
+        "../../out/OperatorMarketV1.sol/OperatorMarketV1.json",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
+  const compiled = new Interface(artifact.abi);
+  const sdk = new Interface(operatorMarketV1Abi);
+
+  assert.equal(
+    sdk.getFunction("postQuote").selector,
+    compiled.getFunction("postQuote").selector,
+  );
+  assert.equal(
+    sdk.getEvent("QuotePosted").topicHash,
+    compiled.getEvent("QuotePosted").topicHash,
+  );
+  assert.deepEqual(
+    sdk
+      .getFunction("quoteAt")
+      .outputs[0].components.map(({ name, type }) => ({ name, type })),
+    compiled
+      .getFunction("quoteAt")
+      .outputs[0].components.map(({ name, type }) => ({ name, type })),
+  );
 });
 
 test("multi-chain configuration encoding is canonical and simulation accumulates every matched rule", () => {
@@ -285,12 +317,15 @@ test("operator agreement IDs and V3 builders round-trip exact calldata without a
   const marketAddress = ADDRESS("401");
   const quote = {
     operator: ADDRESS("402"),
+    intendedSponsor: ADDRESS("403"),
     serviceKind: OperatorServiceKind.Submission,
     requirementsDigest: HASH("41"),
     price: 1_000n,
     operatorBond: 500n,
     quoteExpiry: 2_000,
     serviceDuration: 300,
+    acceptedAt: 1_900,
+    deliveryDeadline: 2_200,
   };
   const agreementId = computeOperatorAgreementId({
     market: marketAddress,
@@ -307,10 +342,13 @@ test("operator agreement IDs and V3 builders round-trip exact calldata without a
         "uint256",
         "address",
         "address",
+        "address",
         "uint8",
         "bytes32",
         "uint256",
         "uint256",
+        "uint64",
+        "uint64",
         "uint64",
         "uint64",
       ],
@@ -319,6 +357,7 @@ test("operator agreement IDs and V3 builders round-trip exact calldata without a
         102031,
         7,
         quote.operator,
+        quote.intendedSponsor,
         ADDRESS("403"),
         quote.serviceKind,
         quote.requirementsDigest,
@@ -326,10 +365,23 @@ test("operator agreement IDs and V3 builders round-trip exact calldata without a
         quote.operatorBond,
         quote.quoteExpiry,
         quote.serviceDuration,
+        quote.acceptedAt,
+        quote.deliveryDeadline,
       ],
     ),
   );
   assert.equal(agreementId, expected);
+  assert.throws(
+    () =>
+      computeOperatorAgreementId({
+        market: marketAddress,
+        chainId: 102031,
+        quoteId: 7,
+        sponsor: ADDRESS("403"),
+        quote: { ...quote, deliveryDeadline: 2_201 },
+      }),
+    /deliveryDeadline/,
+  );
 
   const calls = buildV3Calldata({
     createPilotFacility: {
@@ -369,6 +421,12 @@ test("operator agreement IDs and V3 builders round-trip exact calldata without a
       data: calls.postOperatorQuote,
     }).args.serviceKind,
     2n,
+  );
+  assert.equal(
+    new Interface(operatorMarketV1Abi).parseTransaction({
+      data: calls.postOperatorQuote,
+    }).args.intendedSponsor,
+    ADDRESS("403"),
   );
   assert.equal(
     new Interface(operatorMarketV1Abi).parseTransaction({

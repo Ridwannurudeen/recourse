@@ -7,15 +7,17 @@
   "type": "module",
   "scripts": {
     "balances": "node scripts/balances.mjs",
+    "build:usc-contracts-020": "forge build node_modules/@gluwa/usc-contracts/contracts/write-ability/Inbox.sol --force --out out-usc-contracts-020 --cache-path cache-usc-contracts-020 --remappings @openzeppelin/contracts/=node_modules/@gluwa/usc-contracts/node_modules/@openzeppelin/contracts/",
     "daemon": "node daemon/index.mjs",
     "daemon:horizon1": "node daemon/horizon1.mjs",
     "activate:v3": "node scripts/activate-v3-pilot.mjs",
     "deploy:usc-remedy": "node scripts/deploy-usc-remedy.mjs",
     "deploy:v3": "node scripts/deploy-v3.mjs",
+    "deploy:v3-extension": "node scripts/deploy-v3-extension.mjs",
     "operator:discover": "node daemon/job-discovery.mjs",
     "operator": "node daemon/operator.mjs",
     "pilot:readiness": "node scripts/pilot-readiness.mjs",
-    "test": "forge test && node --test test/*.test.mjs && npm --prefix sdk test",
+    "test": "npm run build:usc-contracts-020 && forge test && node --test test/*.test.mjs && npm --prefix sdk test",
     "wallets:new": "node scripts/new-wallets.mjs"
   },
   "dependencies": {

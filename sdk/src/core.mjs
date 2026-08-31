@@ -1604,6 +1604,9 @@ function operatorQuoteRequest(value) {
   }
   return {
     serviceKind: Number(integer(value.serviceKind, "serviceKind", 3n)),
+    intendedSponsor: address(value.intendedSponsor, "intendedSponsor", {
+      nonzero: false,
+    }),
     requirementsDigest: nonzeroBytes32(
       value.requirementsDigest,
       "requirementsDigest",
@@ -1631,6 +1634,18 @@ export function computeOperatorAgreementId({
   quote,
 }) {
   const normalized = operatorQuoteRequest(quote);
+  const acceptedAt = integer(quote.acceptedAt, "quote.acceptedAt", MAX_UINT64);
+  const deliveryDeadline = positiveInteger(
+    quote.deliveryDeadline,
+    "quote.deliveryDeadline",
+    MAX_UINT64,
+  );
+  if (
+    acceptedAt > MAX_UINT64 - normalized.serviceDuration ||
+    deliveryDeadline !== acceptedAt + normalized.serviceDuration
+  ) {
+    throw new RangeError("Invalid quote.deliveryDeadline");
+  }
   return keccak256(
     coder.encode(
       [
@@ -1639,10 +1654,13 @@ export function computeOperatorAgreementId({
         "uint256",
         "address",
         "address",
+        "address",
         "uint8",
         "bytes32",
         "uint256",
         "uint256",
+        "uint64",
+        "uint64",
         "uint64",
         "uint64",
       ],
@@ -1651,6 +1669,7 @@ export function computeOperatorAgreementId({
         positiveInteger(chainId, "chainId", MAX_UINT256),
         integer(quoteId, "quoteId", MAX_UINT256),
         address(quote.operator, "quote.operator"),
+        normalized.intendedSponsor,
         address(sponsor, "sponsor"),
         normalized.serviceKind,
         normalized.requirementsDigest,
@@ -1658,6 +1677,8 @@ export function computeOperatorAgreementId({
         normalized.operatorBond,
         normalized.quoteExpiry,
         normalized.serviceDuration,
+        acceptedAt,
+        deliveryDeadline,
       ],
     ),
   );
@@ -1756,6 +1777,7 @@ export function encodePostOperatorQuote(value) {
   const quote = operatorQuoteRequest(value);
   return operatorMarketInterface.encodeFunctionData("postQuote", [
     quote.serviceKind,
+    quote.intendedSponsor,
     quote.requirementsDigest,
     quote.price,
     quote.operatorBond,

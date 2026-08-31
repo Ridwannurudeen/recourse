@@ -1024,6 +1024,21 @@ test("offline USC plan precomputes both dependency cycles and deploys the dedica
   assert.match(first.planCommitment, /^0x[0-9a-f]{64}$/);
 });
 
+test("USC deployment documentation preserves the nonce-bound source deployment order", async () => {
+  const [roadmap, transportGuide] = await Promise.all([
+    readFile("docs/ROADMAP-4-10-BUILD.md", "utf8"),
+    readFile("docs/USC-REMEDY-TRANSPORT.md", "utf8"),
+  ]);
+  assert.match(
+    roadmap,
+    /source transport and coordinator, then the destination receiver/,
+  );
+  assert.match(
+    transportGuide,
+    /source transport,\s+source coordinator, destination receiver/,
+  );
+});
+
 test("artifact loading pins hashes and exact route constructors", async () => {
   const directory = await mkdtemp(join(tmpdir(), "recourse-usc-artifacts-"));
   const rawConfig = input();

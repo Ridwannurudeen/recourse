@@ -139,7 +139,7 @@ and a destination failure rolls the dispatcher mark back so the Inbox can retry.
 
 `npm run deploy:usc-remedy` is offline by default. It validates the pinned USC
 artifacts and constructor shapes and precomputes five nonce-bound creations: the
-source coordinator and transport, then the destination receiver, dispatcher,
+source transport and coordinator, then the destination receiver, dispatcher,
 and dedicated Inbox. The Inbox is created last and constructor-bound to the
 already deployed Recourse dispatcher; the tool never replaces a shared Inbox
 dispatcher. Its guarded live path requires exact chain, bytecode, owner,
@@ -222,17 +222,21 @@ Ethereum Sepolia chain ID 11155111 and source key 3 is Ethereum mainnet chain ID
 ## 9. Open operator market
 
 `OperatorMarketV1` supports four independently priced services: monitoring,
-proof construction, submission, and delivery. An operator escrows a bond when
-posting a quote; a sponsor escrows the price on acceptance. Settlement is
-permissionless but succeeds only when the configured verifier validates the
-agreement-bound delivery evidence. Cancellation, expiry, refunds, and pull-based
-withdrawals preserve exact escrow solvency.
+proof construction, submission, and delivery. Quotes may be public or restricted
+to one intended sponsor, and an operator cannot sponsor its own quote. An
+operator escrows a bond when posting; the accepted sponsor escrows the price.
+Acceptance records the exact service kind, sponsor, time, deadline, requirements,
+and terms. Settlement is permissionless but succeeds only when the configured
+verifier validates that complete agreement context together with the delivery
+and evidence. Cancellation, expiry, refunds, and pull-based withdrawals keep all
+obligations fully collateralized; unsolicited token transfers may create surplus
+but cannot reduce that coverage.
 
 The operator daemon is a reference service implementation, not evidence of an
 open market. A Horizon 1 instance is installed and healthy in read-only mode;
-the V3 executable configuration and signer are not installed. There are no live
-market quotes, paid operators, customers, reputation system, or profitability
-claims.
+the V3 executable configuration and signer are not installed. There is no
+independently qualified production service verifier, live market quote, paid
+operator, customer, reputation system, or profitability claim.
 
 ## 10. Programmable credit portfolios
 
@@ -259,6 +263,29 @@ The pool and its observatory are source-only. It is not deployed, capitalized,
 audited, evergreen, or evidence of lender demand. Shares lock after activation;
 valuation inputs, custody, legal structure, and real servicing history remain
 external gates before capital use.
+
+## Separate V3 extension deployment workflow
+
+`npm run deploy:v3-extension` handles exactly three independent generations:
+`v3-closed-loop-v1`, `v3-operator-market-v1`, and `v3-portfolio-core-v1`.
+The caller must supply `--config`; the checked-in examples are deliberately
+unauthorized until every prerequisite manifest, role, nonce, fee, runtime, and
+economic field is replaced with reviewed evidence. Closed loop binds exact fresh
+V3-core and USC-remedy manifests. The market binds an independently qualified
+service-verifier manifest and the token runtime. Portfolio core binds a fresh
+V3-core manifest, a pinned asset runtime, and the required registry release,
+evidence kind, and action-adapter declaration before deployment.
+
+The default mode is deterministic and offline. `--live-check --write-plan`
+creates a 30-minute approval candidate binding the full qualification snapshot,
+prerequisite hashes, ordered nonce plan, constructor data, and capped fees.
+Broadcast requires that exact file through `--approved-plan`, rechecks its
+canonical anchor before each first send, and persists each raw signed transaction
+before broadcast. Recovery permits only the same raw bytes. Final qualification
+checks canonical transactions, deployed runtime around immutables, constructor
+bindings, and empty initial state—including a zero asset balance at the pool—
+before writing a manifest. No checked-in placeholder authorizes signing,
+broadcast, or deployment.
 
 ## Deployment order and trust boundaries
 

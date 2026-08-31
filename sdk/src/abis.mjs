@@ -30,7 +30,7 @@ export const multiChainRuleTuple =
   "tuple(uint64 sourceChain,address emitter,bytes32 eventSignature,uint64 startSourceBlock,uint64 endSourceBlock,uint8 topicCount,uint8 subjectTopicIndex,uint16 dataLength,uint16 observedValueOffset,uint8 observationKind,uint32 riskWeight)";
 export const multiChainConfigurationTuple = `tuple(address subject,uint64 freshnessPeriod,uint32 watchThreshold,uint32 restrictedThreshold,uint32 marginThreshold,uint32 breachThreshold,${policyEffectTuple} watchEffect,${policyEffectTuple} restrictedEffect,${policyEffectTuple} marginEffect,${policyEffectTuple} breachEffect,${multiChainRuleTuple}[] rules)`;
 export const operatorQuoteTuple =
-  "tuple(address operator,address sponsor,uint8 serviceKind,uint8 status,uint64 quoteExpiry,uint64 serviceDuration,uint64 deliveryDeadline,uint256 price,uint256 operatorBond,bytes32 requirementsDigest,bytes32 deliveryDigest)";
+  "tuple(address operator,address intendedSponsor,address sponsor,uint8 serviceKind,uint8 status,uint64 quoteExpiry,uint64 serviceDuration,uint64 acceptedAt,uint64 deliveryDeadline,uint256 price,uint256 operatorBond,bytes32 requirementsDigest,bytes32 deliveryDigest)";
 export const portfolioPoolAllocationTuple =
   "tuple(bytes32 deploymentId,uint256 principal,uint256 recovered,uint256 realizedLoss,bool registered,bool settled)";
 
@@ -477,7 +477,7 @@ export const operatorMarketV1Abi = [
   `function quoteAt(uint256 quoteId) view returns (${operatorQuoteTuple})`,
   "function quoteCount() view returns (uint256)",
   "function claimable(address account) view returns (uint256 amount)",
-  "function postQuote(uint8 serviceKind,bytes32 requirementsDigest,uint256 price,uint256 operatorBond,uint64 quoteExpiry,uint64 serviceDuration) returns (uint256 quoteId)",
+  "function postQuote(uint8 serviceKind,address intendedSponsor,bytes32 requirementsDigest,uint256 price,uint256 operatorBond,uint64 quoteExpiry,uint64 serviceDuration) returns (uint256 quoteId)",
   "function acceptQuote(uint256 quoteId) returns (bytes32 agreementId)",
   "function settle(uint256 quoteId,bytes32 deliveryDigest,bytes evidence)",
   "function cancelQuote(uint256 quoteId)",
@@ -487,7 +487,7 @@ export const operatorMarketV1Abi = [
   "event QuoteAccepted(uint256 indexed quoteId,address indexed sponsor)",
   "event QuoteCancelled(uint256 indexed quoteId)",
   "event QuoteExpired(uint256 indexed quoteId,address indexed sponsor)",
-  "event QuotePosted(uint256 indexed quoteId,address indexed operator,uint8 indexed serviceKind,bytes32 requirementsDigest,uint256 price,uint256 operatorBond,uint64 quoteExpiry,uint64 serviceDuration)",
+  "event QuotePosted(uint256 indexed quoteId,address indexed operator,uint8 indexed serviceKind,address intendedSponsor,bytes32 requirementsDigest,uint256 price,uint256 operatorBond,uint64 quoteExpiry,uint64 serviceDuration)",
   "event ServiceSettled(uint256 indexed quoteId,bytes32 indexed agreementId,bytes32 indexed deliveryDigest)",
   "event Withdrawn(address indexed account,uint256 amount)",
 ];

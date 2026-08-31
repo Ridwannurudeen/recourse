@@ -43,7 +43,7 @@
   "artifacts": {
     "PolicyKernelV2": {
       "path": "out/PolicyKernelV2.sol/PolicyKernelV2.json",
-      "keccak256": "0x001fe18f0af914d4dff98e6943ff08de05032d4c5412b4b3408573fe3e88b0ca"
+      "keccak256": "0x442c379c26e2c6e7034ea5d4e821c0a555348c1e5c917d4ba471a0e7c8fe7b37"
     },
     "PolicyRegistryV1": {
       "path": "out/PolicyRegistryV1.sol/PolicyRegistryV1.json",

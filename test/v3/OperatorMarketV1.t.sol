@@ -3,6 +3,7 @@ pragma solidity ^0.8.30;
 
 import {Test} from "forge-std/Test.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {OperatorMarketV1} from "../../contracts/v3/OperatorMarketV1.sol";
 import {IOperatorServiceVerifierV1} from "../../contracts/v3/interfaces/IOperatorServiceVerifierV1.sol";
@@ -36,6 +37,7 @@ contract ReentrantMarketToken is ERC20 {
     function postQuote(bytes32 requirements, uint256 price, uint256 bond) external {
         quoteId = market.postQuote(
             OperatorMarketV1.ServiceKind.ProofConstruction,
+            sponsor,
             requirements,
             price,
             bond,
@@ -60,7 +62,11 @@ contract ReentrantMarketToken is ERC20 {
 contract MarketVerifier is IOperatorServiceVerifierV1 {
     bool public result = true;
     bytes32 public expectedAgreement;
+    uint8 public expectedServiceKind;
     address public expectedOperator;
+    address public expectedSponsor;
+    uint64 public expectedAcceptedAt;
+    uint64 public expectedDeliveryDeadline;
     bytes32 public expectedRequirements;
     bytes32 public expectedDelivery;
     bytes32 public expectedEvidenceHash;
@@ -76,13 +82,21 @@ contract MarketVerifier is IOperatorServiceVerifierV1 {
 
     function setExpected(
         bytes32 agreement,
+        uint8 serviceKind,
         address operator,
+        address sponsor,
+        uint64 acceptedAt,
+        uint64 deliveryDeadline,
         bytes32 requirements,
         bytes32 delivery,
         bytes calldata evidence
     ) external {
         expectedAgreement = agreement;
+        expectedServiceKind = serviceKind;
         expectedOperator = operator;
+        expectedSponsor = sponsor;
+        expectedAcceptedAt = acceptedAt;
+        expectedDeliveryDeadline = deliveryDeadline;
         expectedRequirements = requirements;
         expectedDelivery = delivery;
         expectedEvidenceHash = keccak256(evidence);
@@ -95,7 +109,11 @@ contract MarketVerifier is IOperatorServiceVerifierV1 {
 
     function verifyService(
         bytes32 agreementId,
+        uint8 serviceKind,
         address operator,
+        address sponsor,
+        uint64 acceptedAt,
+        uint64 deliveryDeadline,
         bytes32 requirementsDigest,
         bytes32 deliveryDigest,
         bytes calldata evidence
@@ -108,9 +126,10 @@ contract MarketVerifier is IOperatorServiceVerifierV1 {
                 callbackErrorHash = keccak256(reason);
             }
         }
-        return result && agreementId == expectedAgreement && operator == expectedOperator
-            && requirementsDigest == expectedRequirements && deliveryDigest == expectedDelivery
-            && keccak256(evidence) == expectedEvidenceHash;
+        return result && agreementId == expectedAgreement && serviceKind == expectedServiceKind
+            && operator == expectedOperator && sponsor == expectedSponsor && acceptedAt == expectedAcceptedAt
+            && deliveryDeadline == expectedDeliveryDeadline && requirementsDigest == expectedRequirements
+            && deliveryDigest == expectedDelivery && keccak256(evidence) == expectedEvidenceHash;
     }
 }
 
@@ -134,9 +153,12 @@ contract OperatorMarketV1Test is Test {
         market = new OperatorMarketV1(token, verifier, BOND, 7 days, 7 days);
         token.mint(OPERATOR, 1_000);
         token.mint(SPONSOR, 1_000);
+        token.mint(STRANGER, 1_000);
         vm.prank(OPERATOR);
         token.approve(address(market), type(uint256).max);
         vm.prank(SPONSOR);
+        token.approve(address(market), type(uint256).max);
+        vm.prank(STRANGER);
         token.approve(address(market), type(uint256).max);
     }
 
@@ -144,7 +166,8 @@ contract OperatorMarketV1Test is Test {
         uint256 quoteId = _post();
         vm.prank(SPONSOR);
         bytes32 agreementId = market.acceptQuote(quoteId);
-        verifier.setExpected(agreementId, OPERATOR, REQUIREMENTS, DELIVERY, EVIDENCE);
+        assertEq(agreementId, market.agreementIdOf(quoteId, SPONSOR));
+        _expectVerified(quoteId);
 
         vm.prank(OPERATOR);
         market.settle(quoteId, DELIVERY, EVIDENCE);
@@ -169,8 +192,7 @@ contract OperatorMarketV1Test is Test {
 
     function test_thirdPartyCanSettleVerifiedServiceButPaymentCannotBeRedirected() public {
         uint256 quoteId = _accepted();
-        bytes32 agreement = market.agreementIdOf(quoteId, SPONSOR);
-        verifier.setExpected(agreement, OPERATOR, REQUIREMENTS, DELIVERY, EVIDENCE);
+        _expectVerified(quoteId);
 
         vm.prank(STRANGER);
         market.settle(quoteId, DELIVERY, EVIDENCE);
@@ -181,8 +203,7 @@ contract OperatorMarketV1Test is Test {
 
     function test_exactObjectiveDeliveryAndEvidenceMustMatchAdapter() public {
         uint256 quoteId = _accepted();
-        bytes32 agreement = market.agreementIdOf(quoteId, SPONSOR);
-        verifier.setExpected(agreement, OPERATOR, REQUIREMENTS, DELIVERY, EVIDENCE);
+        _expectVerified(quoteId);
 
         vm.expectRevert(OperatorMarketV1.ServiceNotVerified.selector);
         vm.prank(OPERATOR);
@@ -194,14 +215,12 @@ contract OperatorMarketV1Test is Test {
 
     function test_sameDeliveryDigestCanBeVerifiedForDistinctAgreements() public {
         uint256 first = _accepted();
-        bytes32 firstAgreement = market.agreementIdOf(first, SPONSOR);
-        verifier.setExpected(firstAgreement, OPERATOR, REQUIREMENTS, DELIVERY, EVIDENCE);
+        _expectVerified(first);
         vm.prank(OPERATOR);
         market.settle(first, DELIVERY, EVIDENCE);
 
         uint256 second = _accepted();
-        bytes32 secondAgreement = market.agreementIdOf(second, SPONSOR);
-        verifier.setExpected(secondAgreement, OPERATOR, REQUIREMENTS, DELIVERY, EVIDENCE);
+        _expectVerified(second);
         vm.prank(OPERATOR);
         market.settle(second, DELIVERY, EVIDENCE);
         assertEq(market.claimable(OPERATOR), 2 * (PRICE + BOND));
@@ -244,13 +263,37 @@ contract OperatorMarketV1Test is Test {
         vm.expectRevert(OperatorMarketV1.InvalidDigest.selector);
         vm.prank(OPERATOR);
         market.postQuote(
-            OperatorMarketV1.ServiceKind.Monitoring, bytes32(0), PRICE, BOND, uint64(block.timestamp + 1), 1 days
+            OperatorMarketV1.ServiceKind.Monitoring,
+            SPONSOR,
+            bytes32(0),
+            PRICE,
+            BOND,
+            uint64(block.timestamp + 1),
+            1 days
         );
 
         vm.expectRevert(OperatorMarketV1.InvalidAmount.selector);
         vm.prank(OPERATOR);
         market.postQuote(
-            OperatorMarketV1.ServiceKind.Delivery, REQUIREMENTS, PRICE, BOND - 1, uint64(block.timestamp + 1), 1 days
+            OperatorMarketV1.ServiceKind.Delivery,
+            SPONSOR,
+            REQUIREMENTS,
+            PRICE,
+            BOND - 1,
+            uint64(block.timestamp + 1),
+            1 days
+        );
+
+        vm.expectRevert(OperatorMarketV1.NotSponsor.selector);
+        vm.prank(OPERATOR);
+        market.postQuote(
+            OperatorMarketV1.ServiceKind.Delivery,
+            OPERATOR,
+            REQUIREMENTS,
+            PRICE,
+            BOND,
+            uint64(block.timestamp + 1),
+            1 days
         );
 
         uint256 quoteId = _post();
@@ -261,8 +304,7 @@ contract OperatorMarketV1Test is Test {
 
     function test_verifierCallbackCannotReenterSettlement() public {
         uint256 quoteId = _accepted();
-        bytes32 agreement = market.agreementIdOf(quoteId, SPONSOR);
-        verifier.setExpected(agreement, OPERATOR, REQUIREMENTS, DELIVERY, EVIDENCE);
+        _expectVerified(quoteId);
         verifier.setCallback(market, quoteId);
 
         vm.prank(OPERATOR);
@@ -271,6 +313,65 @@ contract OperatorMarketV1Test is Test {
         assertFalse(verifier.callbackSucceeded());
         assertNotEq(verifier.callbackErrorHash(), bytes32(0));
         assertEq(market.claimable(OPERATOR), PRICE + BOND);
+    }
+
+    function test_intendedSponsorPreventsAcceptanceGriefingButPublicQuoteRemainsOpen() public {
+        uint256 targetedQuote = _post();
+        vm.expectRevert(OperatorMarketV1.NotSponsor.selector);
+        vm.prank(STRANGER);
+        market.acceptQuote(targetedQuote);
+
+        OperatorMarketV1.Quote memory targeted = market.quoteAt(targetedQuote);
+        assertEq(targeted.sponsor, address(0));
+        assertEq(uint256(targeted.status), uint256(OperatorMarketV1.QuoteStatus.Open));
+        assertEq(token.balanceOf(STRANGER), 1_000);
+
+        uint256 publicQuote = _postFor(address(0));
+        vm.prank(STRANGER);
+        market.acceptQuote(publicQuote);
+        OperatorMarketV1.Quote memory accepted = market.quoteAt(publicQuote);
+        assertEq(accepted.intendedSponsor, address(0));
+        assertEq(accepted.sponsor, STRANGER);
+    }
+
+    function test_agreementIdBindsTargetSponsorAndAcceptedWindow() public {
+        uint256 quoteId = _post();
+        vm.warp(block.timestamp + 10);
+        vm.prank(SPONSOR);
+        bytes32 agreementId = market.acceptQuote(quoteId);
+        OperatorMarketV1.Quote memory quote = market.quoteAt(quoteId);
+
+        assertEq(quote.acceptedAt, block.timestamp);
+        assertEq(quote.deliveryDeadline, block.timestamp + quote.serviceDuration);
+        assertEq(
+            agreementId,
+            keccak256(
+                abi.encode(
+                    address(market),
+                    block.chainid,
+                    quoteId,
+                    OPERATOR,
+                    SPONSOR,
+                    SPONSOR,
+                    OperatorMarketV1.ServiceKind.ProofConstruction,
+                    REQUIREMENTS,
+                    PRICE,
+                    BOND,
+                    quote.quoteExpiry,
+                    quote.serviceDuration,
+                    quote.acceptedAt,
+                    quote.deliveryDeadline
+                )
+            )
+        );
+    }
+
+    function test_constructorRejectsCollaboratorsWithoutRuntimeCode() public {
+        vm.expectRevert(OperatorMarketV1.NoRuntimeCode.selector);
+        new OperatorMarketV1(IERC20(STRANGER), verifier, BOND, 7 days, 7 days);
+
+        vm.expectRevert(OperatorMarketV1.NoRuntimeCode.selector);
+        new OperatorMarketV1(token, IOperatorServiceVerifierV1(STRANGER), BOND, 7 days, 7 days);
     }
 
     function test_paymentTokenCannotReenterCancellationDuringAcceptance() public {
@@ -303,6 +404,7 @@ contract OperatorMarketV1Test is Test {
         market.acceptQuote(quoteId);
 
         OperatorMarketV1.Quote memory accepted = market.quoteAt(quoteId);
+        assertEq(accepted.acceptedAt, block.timestamp);
         assertEq(accepted.deliveryDeadline, block.timestamp + 1 days);
         vm.warp(posted.quoteExpiry);
         vm.expectRevert(OperatorMarketV1.InvalidExpiry.selector);
@@ -313,10 +415,67 @@ contract OperatorMarketV1Test is Test {
         assertEq(market.claimable(SPONSOR), PRICE + BOND);
     }
 
+    function test_quoteExpiryIsExclusiveAcceptanceBoundary() public {
+        uint256 beforeBoundary = _post();
+        uint256 atBoundary = _post();
+        OperatorMarketV1.Quote memory posted = market.quoteAt(atBoundary);
+
+        vm.warp(posted.quoteExpiry - 1);
+        vm.prank(SPONSOR);
+        market.acceptQuote(beforeBoundary);
+        assertEq(uint256(market.quoteAt(beforeBoundary).status), uint256(OperatorMarketV1.QuoteStatus.Accepted));
+
+        vm.warp(posted.quoteExpiry);
+        vm.expectRevert(OperatorMarketV1.InvalidExpiry.selector);
+        vm.prank(SPONSOR);
+        market.acceptQuote(atBoundary);
+        assertEq(uint256(market.quoteAt(atBoundary).status), uint256(OperatorMarketV1.QuoteStatus.Open));
+    }
+
+    function test_deliveryDeadlineIsExclusiveSettlementBoundary() public {
+        uint256 beforeBoundary = _accepted();
+        uint256 atBoundary = _accepted();
+        OperatorMarketV1.Quote memory quote = market.quoteAt(atBoundary);
+        assertEq(market.quoteAt(beforeBoundary).deliveryDeadline, quote.deliveryDeadline);
+
+        _expectVerified(beforeBoundary);
+        vm.warp(quote.deliveryDeadline - 1);
+        market.settle(beforeBoundary, DELIVERY, EVIDENCE);
+        assertEq(uint256(market.quoteAt(beforeBoundary).status), uint256(OperatorMarketV1.QuoteStatus.Settled));
+
+        _expectVerified(atBoundary);
+        vm.warp(quote.deliveryDeadline);
+        vm.expectRevert(OperatorMarketV1.InvalidExpiry.selector);
+        market.settle(atBoundary, DELIVERY, EVIDENCE);
+        assertEq(uint256(market.quoteAt(atBoundary).status), uint256(OperatorMarketV1.QuoteStatus.Accepted));
+    }
+
+    function test_quoteIndexedEntryPointsRejectOutOfRangeIds() public {
+        uint256 missingQuoteId = market.quoteCount();
+
+        vm.expectRevert();
+        market.acceptQuote(missingQuoteId);
+        vm.expectRevert();
+        market.settle(missingQuoteId, DELIVERY, EVIDENCE);
+        vm.expectRevert();
+        market.cancelQuote(missingQuoteId);
+        vm.expectRevert();
+        market.expireQuote(missingQuoteId);
+        vm.expectRevert();
+        market.quoteAt(missingQuoteId);
+        vm.expectRevert();
+        market.agreementIdOf(missingQuoteId, SPONSOR);
+    }
+
     function _post() private returns (uint256) {
+        return _postFor(SPONSOR);
+    }
+
+    function _postFor(address intendedSponsor) private returns (uint256) {
         vm.prank(OPERATOR);
         return market.postQuote(
             OperatorMarketV1.ServiceKind.ProofConstruction,
+            intendedSponsor,
             REQUIREMENTS,
             PRICE,
             BOND,
@@ -329,5 +488,20 @@ contract OperatorMarketV1Test is Test {
         quoteId = _post();
         vm.prank(SPONSOR);
         market.acceptQuote(quoteId);
+    }
+
+    function _expectVerified(uint256 quoteId) private {
+        OperatorMarketV1.Quote memory quote = market.quoteAt(quoteId);
+        verifier.setExpected(
+            market.agreementIdOf(quoteId, quote.sponsor),
+            uint8(quote.serviceKind),
+            quote.operator,
+            quote.sponsor,
+            quote.acceptedAt,
+            quote.deliveryDeadline,
+            quote.requirementsDigest,
+            DELIVERY,
+            EVIDENCE
+        );
     }
 }

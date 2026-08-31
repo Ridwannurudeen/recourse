@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "generation": "v3-closed-loop-v1",
+  "chainId": 102031,
+  "deployer": "REPLACE_WITH_EXTENSION_DEPLOYER_ADDRESS",
+  "rpcUrlEnvironment": "REPLACE_WITH_CC3_RPC_URL_ENVIRONMENT",
+  "privateKeyEnvironment": "REPLACE_WITH_EXTENSION_DEPLOYER_PRIVATE_KEY_ENVIRONMENT",
+  "expectedStartingNonce": "REPLACE_WITH_EXPECTED_STARTING_NONCE",
+  "prerequisites": {
+    "core": {
+      "path": "REPLACE_WITH_QUALIFIED_V3_CORE_MANIFEST_PATH",
+      "sha256": "REPLACE_WITH_QUALIFIED_V3_CORE_MANIFEST_SHA256"
+    },
+    "remedy": {
+      "path": "REPLACE_WITH_QUALIFIED_USC_REMEDY_MANIFEST_PATH",
+      "sha256": "REPLACE_WITH_QUALIFIED_USC_REMEDY_MANIFEST_SHA256"
+    }
+  },
+  "artifacts": {
+    "ClosedLoopPolicyV1": {
+      "path": "out/ClosedLoopPolicyV1.sol/ClosedLoopPolicyV1.json",
+      "keccak256": "0x0252dae25541e3863c650accf5589e948d920c1639a179dd1cce223c9cff0ebd"
+    }
+  },
+  "transactionPolicy": {
+    "targetConfirmations": 6,
+    "maximumReceiptPolls": 24,
+    "feePolicy": {
+      "transactionType": "eip1559",
+      "maximumGasLimit": "REPLACE_WITH_REVIEWED_MAXIMUM_GAS_LIMIT",
+      "maximumFeePerGas": "REPLACE_WITH_REVIEWED_MAXIMUM_FEE_PER_GAS",
+      "maximumPriorityFeePerGas": "REPLACE_WITH_REVIEWED_MAXIMUM_PRIORITY_FEE_PER_GAS",
+      "maximumTotalFeeWei": "REPLACE_WITH_REVIEWED_MAXIMUM_TOTAL_FEE_WEI"
+    }
+  },
+  "requirements": {
+    "minimumNativeWei": "REPLACE_WITH_REVIEWED_MINIMUM_DEPLOYER_NATIVE_WEI"
+  },
+  "closedLoop": {
+    "context": "REPLACE_WITH_CORE_POLICY_KERNEL_ADDRESS",
+    "coordinator": "REPLACE_WITH_USC_REMEDY_COORDINATOR_ADDRESS"
+  }
+}

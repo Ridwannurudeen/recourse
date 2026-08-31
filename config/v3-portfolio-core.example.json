@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 1,
+  "generation": "v3-portfolio-core-v1",
+  "chainId": 102031,
+  "deployer": "REPLACE_WITH_EXTENSION_DEPLOYER_ADDRESS",
+  "rpcUrlEnvironment": "REPLACE_WITH_CC3_RPC_URL_ENVIRONMENT",
+  "privateKeyEnvironment": "REPLACE_WITH_EXTENSION_DEPLOYER_PRIVATE_KEY_ENVIRONMENT",
+  "expectedStartingNonce": "REPLACE_WITH_EXPECTED_STARTING_NONCE",
+  "prerequisites": {
+    "core": {
+      "path": "REPLACE_WITH_QUALIFIED_V3_CORE_MANIFEST_PATH",
+      "sha256": "REPLACE_WITH_QUALIFIED_V3_CORE_MANIFEST_SHA256"
+    }
+  },
+  "artifacts": {
+    "PortfolioPoolV1": {
+      "path": "out/PortfolioPoolV1.sol/PortfolioPoolV1.json",
+      "keccak256": "0x1ed3e001344072f0b237935422a15cf42ac36ca437eedc544251b37f512730db"
+    },
+    "CappedPilotFactoryV1": {
+      "path": "out/CappedPilotFactoryV1.sol/CappedPilotFactoryV1.json",
+      "keccak256": "0x8655ebfd1e9d2e75d9499c35818ff4155f15b08a1e2bcbdab99f81260e4afc75"
+    },
+    "PortfolioMandateV1": {
+      "path": "out/PortfolioMandateV1.sol/PortfolioMandateV1.json",
+      "keccak256": "0xcaf77a97ff4de228069c8077480bddbd2dedeb81740f29623cf333ff4c1d29dd"
+    }
+  },
+  "transactionPolicy": {
+    "targetConfirmations": 6,
+    "maximumReceiptPolls": 24,
+    "feePolicy": {
+      "transactionType": "eip1559",
+      "maximumGasLimit": "REPLACE_WITH_REVIEWED_MAXIMUM_GAS_LIMIT",
+      "maximumFeePerGas": "REPLACE_WITH_REVIEWED_MAXIMUM_FEE_PER_GAS",
+      "maximumPriorityFeePerGas": "REPLACE_WITH_REVIEWED_MAXIMUM_PRIORITY_FEE_PER_GAS",
+      "maximumTotalFeeWei": "REPLACE_WITH_REVIEWED_MAXIMUM_TOTAL_FEE_WEI"
+    }
+  },
+  "requirements": {
+    "minimumNativeWei": "REPLACE_WITH_REVIEWED_MINIMUM_DEPLOYER_NATIVE_WEI"
+  },
+  "asset": {
+    "address": "REPLACE_WITH_CORE_MANIFEST_ASSET_ADDRESS",
+    "decimals": 6,
+    "runtimeCodeKeccak256": "REPLACE_WITH_PINNED_PORTFOLIO_ASSET_RUNTIME_CODE_KECCAK256"
+  },
+  "roles": {
+    "manager": "REPLACE_WITH_EXTENSION_DEPLOYER_ADDRESS",
+    "borrower": "REPLACE_WITH_PORTFOLIO_BORROWER_ADDRESS",
+    "guardian": "REPLACE_WITH_PORTFOLIO_GUARDIAN_ADDRESS"
+  },
+  "portfolio": {
+    "pool": {
+      "maximumPoolAssets": "REPLACE_WITH_REVIEWED_MAXIMUM_POOL_ASSETS",
+      "maximumServiceBudget": "REPLACE_WITH_REVIEWED_MAXIMUM_SERVICE_BUDGET",
+      "maximumServiceJobDuration": 86400,
+      "maximumFacilityCount": 3,
+      "fundingDeadline": "REPLACE_WITH_REVIEWED_FUNDING_DEADLINE",
+      "recoveryDelayBlocks": 100
+    },
+    "factory": {
+      "maximumFacilityLimit": "REPLACE_WITH_REVIEWED_MAXIMUM_FACILITY_LIMIT",
+      "maximumTotalLimit": "REPLACE_WITH_REVIEWED_MAXIMUM_TOTAL_LIMIT",
+      "minimumBondBps": 2000,
+      "maximumDrawFeeBps": 400,
+      "maximumMaturityBlocks": 100000,
+      "maximumDrawDelayBlocks": 50,
+      "maximumFacilityCount": 3
+    },
+    "mandate": {
+      "requiredReleaseId": "REPLACE_WITH_REQUIRED_POLICY_RELEASE_ID",
+      "requiredPolicySetCommitment": "REPLACE_WITH_REQUIRED_POLICY_SET_COMMITMENT",
+      "requiredEvidenceKind": 1,
+      "requiredActionAdapterKind": "REPLACE_WITH_REQUIRED_ACTION_ADAPTER_KIND",
+      "maximumFacilityLimit": "REPLACE_WITH_REVIEWED_MANDATE_MAXIMUM_FACILITY_LIMIT",
+      "minimumBondBps": 2000,
+      "maximumDrawFeeBps": 400,
+      "maximumRemainingMaturityBlocks": 90000
+    },
+    "safety": {
+      "minimumFundingWindowSeconds": 86400
+    }
+  }
+}

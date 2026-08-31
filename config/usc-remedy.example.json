@@ -96,11 +96,11 @@
   "artifacts": {
     "UscRemedyTransportV1": {
       "path": "out/UscRemedyTransportV1.sol/UscRemedyTransportV1.json",
-      "keccak256": "0x5f4e1bd5a95e9eb39bed2bf3109ddd0b70642ae4b359c520585832fb19ffadb4"
+      "keccak256": "0x1586772e28233a6b1af80bbd923bdf6c238dbfec094ec46e5364c05e1618f191"
     },
     "RemedyCoordinatorV1": {
       "path": "out/RemedyCoordinatorV1.sol/RemedyCoordinatorV1.json",
-      "keccak256": "0xc843211195de4d850428d9a07836d4b6b07776f021fa354d84815d581c079758"
+      "keccak256": "0x3ef9ba3a4f37a50413974d97eae01dd2e7592abc9b5ebbaefc83541cb35e62d2"
     },
     "BoundedRemedyReceiverV1": {
       "path": "out/BoundedRemedyReceiverV1.sol/BoundedRemedyReceiverV1.json",
@@ -108,11 +108,11 @@
     },
     "UscRemedyDispatcherV1": {
       "path": "out/UscRemedyDispatcherV1.sol/UscRemedyDispatcherV1.json",
-      "keccak256": "0xfc19c581bfd72180c350f2040214fa36c949e16293f8497aa80a0e0442993e9f"
+      "keccak256": "0xdc821da6516f8114f570ad6098c3783d559fa6eeaa5b7ebb28802e3b13a9f416"
     },
     "Inbox020": {
-      "path": "REPLACE_WITH_EXACT_COMPILED_USC_0_2_0_INBOX_ARTIFACT_PATH",
-      "keccak256": "REPLACE_WITH_REVIEWED_INBOX_0_2_0_ARTIFACT_HASH"
+      "path": "out-usc-contracts-020/Inbox.sol/Inbox.json",
+      "keccak256": "0xf6a07c05bb139ec459d4b23be2c24e061f7fbe17fe255f13aecb82611d67ce57"
     }
   },
   "transactionPolicy": {

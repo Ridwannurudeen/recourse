@@ -383,6 +383,7 @@ export interface DefaultLossSettlementInput {
 
 export interface OperatorQuoteInput {
   serviceKind: UintLike;
+  intendedSponsor: Address;
   requirementsDigest: Hex;
   price: UintLike;
   operatorBond: UintLike;
@@ -392,15 +393,19 @@ export interface OperatorQuoteInput {
 
 export interface OperatorAgreementQuoteInput extends OperatorQuoteInput {
   operator: Address;
+  acceptedAt: UintLike;
+  deliveryDeadline: UintLike;
 }
 
 export interface OperatorQuote {
   operator: Address;
+  intendedSponsor: Address;
   sponsor: Address;
   serviceKind: bigint;
   status: bigint;
   quoteExpiry: bigint;
   serviceDuration: bigint;
+  acceptedAt: bigint;
   deliveryDeadline: bigint;
   price: bigint;
   operatorBond: bigint;

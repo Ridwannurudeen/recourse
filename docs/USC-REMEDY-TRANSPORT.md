@@ -25,11 +25,13 @@ A successful delivery is protected by replay guards in both the dispatcher and b
 
 ## Offline planning, deployment order, and recovery
 
-`config/usc-remedy.example.json` contains deliberate placeholders and cannot authorize a deployment.
-Copy it to a private working location and replace every route, bytecode, owner, validator, registry,
-attestor, nonce, fee, and artifact field with independently reviewed evidence. The planner pins USC
-contracts version `0.2.0` and computes five nonce-bound creations in this order: source coordinator,
-source transport, destination receiver, destination dispatcher, and the dedicated destination Inbox.
+`config/usc-remedy.example.json` contains deliberate route placeholders and cannot authorize a deployment.
+Run `npm run build:usc-contracts-020` to compile the pinned package's exact Inbox source against its
+own pinned OpenZeppelin dependency, then copy the example to a private working location and replace
+every route, bytecode, owner, validator, registry, attestor, nonce, and fee field with independently
+reviewed evidence. The planner pins USC contracts version `0.2.0` and computes five nonce-bound
+creations in this order: source transport,
+source coordinator, destination receiver, destination dispatcher, and the dedicated destination Inbox.
 The Inbox is deployed last with its constructor bound to the predicted dispatcher. The tool never
 calls `setMessageDispatcher` and never replaces a shared Inbox dispatcher.
 

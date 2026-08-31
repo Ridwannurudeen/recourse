@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "generation": "v3-operator-market-v1",
+  "chainId": 102031,
+  "deployer": "REPLACE_WITH_EXTENSION_DEPLOYER_ADDRESS",
+  "rpcUrlEnvironment": "REPLACE_WITH_CC3_RPC_URL_ENVIRONMENT",
+  "privateKeyEnvironment": "REPLACE_WITH_EXTENSION_DEPLOYER_PRIVATE_KEY_ENVIRONMENT",
+  "expectedStartingNonce": "REPLACE_WITH_EXPECTED_STARTING_NONCE",
+  "prerequisites": {
+    "verifier": {
+      "path": "REPLACE_WITH_QUALIFIED_OPERATOR_VERIFIER_MANIFEST_PATH",
+      "sha256": "REPLACE_WITH_QUALIFIED_OPERATOR_VERIFIER_MANIFEST_SHA256"
+    }
+  },
+  "artifacts": {
+    "OperatorMarketV1": {
+      "path": "out/OperatorMarketV1.sol/OperatorMarketV1.json",
+      "keccak256": "0x11291107bbc2e49979d30831e796cd93bcfa77c31d681b79bb44ad2aa2e730bc"
+    }
+  },
+  "transactionPolicy": {
+    "targetConfirmations": 6,
+    "maximumReceiptPolls": 24,
+    "feePolicy": {
+      "transactionType": "eip1559",
+      "maximumGasLimit": "REPLACE_WITH_REVIEWED_MAXIMUM_GAS_LIMIT",
+      "maximumFeePerGas": "REPLACE_WITH_REVIEWED_MAXIMUM_FEE_PER_GAS",
+      "maximumPriorityFeePerGas": "REPLACE_WITH_REVIEWED_MAXIMUM_PRIORITY_FEE_PER_GAS",
+      "maximumTotalFeeWei": "REPLACE_WITH_REVIEWED_MAXIMUM_TOTAL_FEE_WEI"
+    }
+  },
+  "requirements": {
+    "minimumNativeWei": "REPLACE_WITH_REVIEWED_MINIMUM_DEPLOYER_NATIVE_WEI"
+  },
+  "asset": {
+    "address": "REPLACE_WITH_REVIEWED_OPERATOR_MARKET_TOKEN_ADDRESS",
+    "decimals": 6,
+    "runtimeCodeKeccak256": "REPLACE_WITH_PINNED_OPERATOR_MARKET_TOKEN_RUNTIME_CODE_KECCAK256"
+  },
+  "operatorMarket": {
+    "token": "REPLACE_WITH_REVIEWED_OPERATOR_MARKET_TOKEN_ADDRESS",
+    "verifier": "REPLACE_WITH_QUALIFIED_OPERATOR_VERIFIER_ADDRESS",
+    "minimumOperatorBond": "REPLACE_WITH_REVIEWED_MINIMUM_OPERATOR_BOND",
+    "maximumQuoteDuration": 86400,
+    "maximumServiceDuration": 172800
+  }
+}

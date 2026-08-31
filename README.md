@@ -62,6 +62,15 @@ verifies exact runtime around immutables for all six artifacts, including
 operator handoff](ops/README.md#fresh-v3-core-manifest-handoff) for the exact
 commands and renewal procedure.
 
+Closed-loop policy, operator-market, and portfolio-core deployments use the
+separate `npm run deploy:v3-extension` workflow. Its three checked-in example
+configurations pin the reviewed local artifacts but deliberately leave route,
+verifier, role, economics, nonce, fee, and prerequisite-manifest evidence
+unauthorized. Each generation is planned independently from exact prerequisite
+manifest hashes; live planning is signerless, approval expires after 30 minutes,
+and raw signed transactions are journaled before broadcast. No extension has
+been deployed. See [the extension handoff](ops/README.md#separate-v3-extension-manifests).
+
 ## Quickstart
 
 The checked-in `deployments.json` points to the already-breached live facility. To reproduce the full demo with a fresh facility, use fresh development wallets and CC3 testnet funds. The release baseline uses Node.js 24.15.0, npm 11.12.1, and Foundry 1.7.1; ensure `forge` is on `PATH` before running the unified test command. The deployment and activation configurations pin the raw artifacts emitted by the forced build, and the Node suite rejects stale pins.
@@ -156,9 +165,9 @@ The borrower's activation commits to an ordered hash covering both the identity 
 
 ## Testing
 
-`npm test` passes 348 Forge tests, 176 root Node tests, and 36 SDK tests across both deployed generations and the local roadmap build, followed by a strict SDK declaration compile. One Windows-only symlink test is skipped when the process lacks symlink privilege, for 177 root Node tests in total. The original 134 Forge tests remain green. New coverage includes exact pilot loss settlement, remedy retry/timeout/acknowledgement recovery, multi-rule transaction accumulation, per-policy source ordering and the later-weak/earlier-severe front-running regression, operator-market escrow, registry declarations and exact audit scopes, ABI parity, block-hash-bound pagination, reorg-anchored aggregate reads, target-first crash recovery, signed-call substitution rejection, native proof/receipt binding, bounded adaptive source scans, queue-saturation recovery, transaction finality, conservative cures, and end-to-end policy flows.
+`npm test` passes 355 Forge tests, 198 root Node tests, and 37 SDK tests across both deployed generations and the local roadmap build, followed by a strict SDK declaration compile. One Windows-only symlink test is skipped when the process lacks symlink privilege, for 199 root Node tests in total. The original 134 Forge tests remain green. New coverage includes exact pilot loss settlement, remedy retry/timeout/acknowledgement recovery, multi-rule transaction accumulation, per-policy source ordering and the later-weak/earlier-severe front-running regression, sponsor-bound operator-market escrow, registry declarations and exact audit scopes, ABI parity, block-hash-bound pagination, reorg-anchored aggregate reads, target-first crash recovery, signed-call substitution rejection, native proof/receipt binding, bounded adaptive source scans, queue-saturation recovery, transaction finality, conservative cures, extension deployment approval and journal recovery, and end-to-end policy flows.
 
-Eight stateful invariant properties each complete 256 runs and 128,000 calls with zero handler reverts. They cover native and ERC-20 asset conservation, claim solvency, Horizon 1 and capped-pilot facility bounds, default loss distribution, inactive credit availability, portfolio recovery and loss bounds, and exact operator-market escrow solvency. A separate regression test asserts that the original-generation bond can be claimed at most once.
+Eight stateful invariant properties each complete 256 runs and 128,000 calls with zero handler reverts. They cover native and ERC-20 asset conservation, claim solvency, Horizon 1 and capped-pilot facility bounds, default loss distribution, inactive credit availability, portfolio recovery and loss bounds, and fully collateralized operator-market obligations even when unsolicited token transfers create surplus. A separate regression test asserts that the original-generation bond can be claimed at most once.
 
 ## Honest limitations
 

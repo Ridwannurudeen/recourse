@@ -11,6 +11,8 @@ node_modules/
 # Foundry
 cache/
 out/
+cache-usc-contracts-020/
+out-usc-contracts-020/
 broadcast/
 
 # Misc
@@ -28,3 +30,10 @@ daemon/operator-data/
 *.usc-deployment-journal.json
 *.usc-deployment-lock
 *.usc-deployment-tmp
+*.v3-deployment-journal.json
+*.v3-deployment-journal.json.tmp
+*.v3-extension-journal.json
+*.v3-extension-journal.json.tmp
+*.json.lock
+*.json.stale.*.lock
+*.json.tmp

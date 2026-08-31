@@ -53,10 +53,12 @@ source lives under `contracts/v2/`.
 The contract review should include the code that turns reviewed source into a
 deployment or executable operator configuration:
 
-- `config/v3-cc3.json`, `config/v3-pilot-cc3.json`, and
-  `config/usc-remedy.example.json`;
+- `config/v3-cc3.json`, `config/v3-pilot-cc3.json`,
+  `config/usc-remedy.example.json`, and the three `config/v3-*.example.json`
+  extension configurations;
 - `scripts/deploy-v3.mjs`, `scripts/activate-v3-pilot.mjs`,
-  `scripts/deploy-usc-remedy.mjs`, and their modules under `scripts/lib/`;
+  `scripts/deploy-usc-remedy.mjs`, `scripts/deploy-v3-extension.mjs`, and their
+  modules under `scripts/lib/`;
 - `scripts/pilot-readiness.mjs` and `scripts/lib/pilot-readiness.mjs`;
 - `daemon/operator.mjs`, `daemon/v3.mjs`, their runners and core modules, and
   both operator configuration examples;
@@ -99,10 +101,12 @@ Third-party implementations under `node_modules/`, including OpenZeppelin and
 USC contracts, are not first-party source, but their exact imported code,
 constructor and ABI assumptions, and Recourse integration remain in review
 scope. The vendored `web/ethers.umd.min.js` distribution is treated the same
-way. The dedicated USC `Inbox020` artifact is still an explicit placeholder in
-the checked-in example, so no Inbox implementation or live USC route is part of
-this release candidate. Supplying that artifact or route creates a new review
-scope and commit.
+way. The dedicated USC `Inbox020` artifact is reproducibly compiled from the
+pinned `@gluwa/usc-contracts` 0.2.0 source with that package's exact nested
+OpenZeppelin dependency by `npm run build:usc-contracts-020`. The checked-in
+route fields remain explicit placeholders, so no live USC route is part of this
+release candidate. Supplying route evidence creates a new review scope and
+commit.
 
 ## Privileged roles and trust boundaries
 
@@ -144,12 +148,17 @@ At minimum, test and reason about:
   at numeric bounds;
 - portfolio mandate substitution, post-check state changes, deadline edges,
   incomplete allocations, and post-finalization servicing;
+- public versus intended-sponsor market quotes, self-sponsorship, exact
+  acceptance and service-deadline boundaries, verifier-context substitution,
+  and unsolicited token surplus;
 - transaction substitution, signer or nonce drift, fee escalation, partial
   execution, approval expiry, journal corruption, concurrent processes, and
   crash recovery;
 - mismatches among reviewed source, compiler output, pinned artifacts, planned
   creations, deployed runtime around immutables, activation manifests, and
-  operator configuration.
+  operator configuration;
+- rooted-path prerequisite escapes, wrong portfolio asset runtime, and assets
+  pre-sent to predicted portfolio-pool addresses.
 
 An internal review found and remediated an expiry-boundary race in
 `RemedyCoordinatorV1`: an observable acknowledgement now wins atomically when a
@@ -159,6 +168,13 @@ adapter does not block permissionless expiry. Re-test both branches through
 `test_publishedExpiryDoesNotDependOnAcknowledgementAdapterAvailability`. This
 internal remediation is not an independent audit result.
 
+The extension deployment review also found and remediated approval-window
+mutability: approval now commits the complete issued-at and expiry envelope in
+addition to the plan, qualification, prerequisites, and fees. Re-test shifted
+approval windows and canonical-anchor changes through the focused extension
+deployment suite. This remains internal review evidence, not an independent
+audit result.
+
 ## Reproduction
 
 Use a fresh checkout of the exact review revision:
@@ -167,6 +183,7 @@ Use a fresh checkout of the exact review revision:
 git submodule update --init --recursive
 npm ci
 npm --prefix sdk ci
+npm run build:usc-contracts-020
 forge build --force
 npm test
 forge lint contracts/v3 contracts/v2 --severity high med
@@ -177,8 +194,8 @@ npm --prefix sdk run pack:check
 git diff --check
 ```
 
-The release baseline is 348 Forge tests, 177 root Node tests (176 passes and one
-Windows symlink-permission skip), and 36 SDK tests followed by strict declaration
+The release baseline is 355 Forge tests, 199 root Node tests (198 passes and one
+Windows symlink-permission skip), and 37 SDK tests followed by strict declaration
 type-checking. Each of eight invariant properties completes 256 runs totaling
 128,000 calls, with zero handler reverts. A different count, unexpected skip,
 stale artifact pin, dirty submodule, or warning promoted to the selected

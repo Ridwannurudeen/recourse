@@ -94,8 +94,12 @@ test("summarizeQualifyingTransfers sums every log matching the covenant predicat
 
 test("checked-in deployment configurations pin every compiled local artifact", () => {
   const configurations = [
+    "config/v3-cc3.json",
     "config/v3-pilot-cc3.json",
     "config/usc-remedy.example.json",
+    "config/v3-closed-loop.example.json",
+    "config/v3-operator-market.example.json",
+    "config/v3-portfolio-core.example.json",
   ];
 
   for (const configPath of configurations) {
@@ -109,4 +113,66 @@ test("checked-in deployment configurations pin every compiled local artifact", (
       );
     }
   }
+});
+
+test("the V3 extension deployment CLI is exposed through the package scripts", () => {
+  const packageJson = JSON.parse(readFileSync("package.json", "utf8"));
+  assert.equal(
+    packageJson.scripts["deploy:v3-extension"],
+    "node scripts/deploy-v3-extension.mjs",
+  );
+});
+
+test("deployment recovery files containing signed intent remain ignored", () => {
+  const rules = new Set(
+    readFileSync(".gitignore", "utf8")
+      .split(/\r?\n/)
+      .map((line) => line.trim()),
+  );
+  for (const rule of [
+    "*.v3-deployment-journal.json",
+    "*.v3-deployment-journal.json.tmp",
+    "*.v3-extension-journal.json",
+    "*.v3-extension-journal.json.tmp",
+    "*.json.lock",
+    "*.json.stale.*.lock",
+    "*.json.tmp",
+  ]) {
+    assert.ok(
+      rules.has(rule),
+      `missing deployment recovery ignore rule ${rule}`,
+    );
+  }
+});
+
+test("the USC Inbox artifact is compiled from the dependency's exact OpenZeppelin tree", () => {
+  const packageJson = JSON.parse(readFileSync("package.json", "utf8"));
+  assert.equal(
+    packageJson.scripts["build:usc-contracts-020"],
+    "forge build node_modules/@gluwa/usc-contracts/contracts/write-ability/Inbox.sol --force --out out-usc-contracts-020 --cache-path cache-usc-contracts-020 --remappings @openzeppelin/contracts/=node_modules/@gluwa/usc-contracts/node_modules/@openzeppelin/contracts/",
+  );
+
+  const config = JSON.parse(
+    readFileSync("config/usc-remedy.example.json", "utf8"),
+  );
+  const artifactReference = config.artifacts.Inbox020;
+  assert.equal(
+    artifactReference.path,
+    "out-usc-contracts-020/Inbox.sol/Inbox.json",
+  );
+  const rawArtifact = readFileSync(artifactReference.path);
+  assert.equal(keccak256(rawArtifact), artifactReference.keccak256);
+
+  const artifact = JSON.parse(rawArtifact);
+  const sources = Object.keys(artifact.metadata.sources);
+  assert.ok(
+    sources.includes(
+      "node_modules/@gluwa/usc-contracts/node_modules/@openzeppelin/contracts/access/Ownable.sol",
+    ),
+  );
+  assert.ok(
+    sources.includes(
+      "node_modules/@gluwa/usc-contracts/node_modules/@openzeppelin/contracts/utils/Pausable.sol",
+    ),
+  );
 });

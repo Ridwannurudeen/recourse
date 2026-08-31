@@ -30,8 +30,9 @@ keys, bearer tokens, account credentials, or provider secrets in it.
 
 ## Fresh V3 core-manifest handoff
 
-Freeze deployment artifacts with Forge 1.7.1 and `forge build --force` before
-reviewing either activation configuration. The checked-in V3 and USC
+Freeze deployment artifacts with Forge 1.7.1 by running `forge build --force`
+and `npm run build:usc-contracts-020` before reviewing either activation
+configuration. The checked-in V3 and USC
 configurations pin the exact raw artifact files, and the root Node suite rejects
 every stale non-placeholder pin. Any source or toolchain change requires a fresh
 forced build, review, and hash update before approval.
@@ -134,6 +135,68 @@ resulting file and fee ceilings receive explicit human approval, use them again
 with `--live-check --broadcast --approved-plan`. Do not activate against the
 checked-in historical manifest, and do not substitute a manifest after the plan
 has been reviewed.
+
+## Separate V3 extension manifests
+
+Deploy closed loop, the operator market, and portfolio core separately from the
+fresh six-contract V3 core. Each generation gets its own reviewed config,
+approval file, manifest filename, and recovery journal. Start from exactly one
+of `config/v3-closed-loop.example.json`,
+`config/v3-operator-market.example.json`, or
+`config/v3-portfolio-core.example.json`; none is authorized as checked in.
+
+Replace every placeholder with reviewed evidence, including exact prerequisite
+manifest paths and lowercase SHA-256 digests. Closed loop requires both the
+fresh V3-core manifest and a qualified USC-remedy manifest. The market requires
+an independently qualified service-verifier manifest and pinned token runtime.
+Portfolio core requires the fresh V3-core manifest plus approved manager,
+borrower, guardian, registry-release, evidence-kind, adapter-kind, deadline,
+limit, fee, and pinned asset-runtime decisions. Its predicted pool address must
+also have a zero asset balance before deployment. Do not invent any of these
+values or pre-fund a predicted address.
+
+Use a new manifest filename and preserve it through every mode:
+
+```sh
+# Offline validation and deterministic planning; no RPC or signer.
+npm run deploy:v3-extension -- \
+  --config /secure/path/reviewed-extension.json \
+  --manifest deployments-v3-extension-current.json
+
+# Signerless qualification and a new 30-minute approval candidate.
+npm run deploy:v3-extension -- \
+  --config /secure/path/reviewed-extension.json \
+  --manifest deployments-v3-extension-current.json \
+  --live-check \
+  --write-plan /secure/path/v3-extension-plan.json
+
+# Only after separate human approval of that exact file.
+npm run deploy:v3-extension -- \
+  --config /secure/path/reviewed-extension.json \
+  --manifest deployments-v3-extension-current.json \
+  --live-check \
+  --broadcast \
+  --approved-plan /secure/path/v3-extension-plan.json
+```
+
+The approved envelope binds its full issue/expiry window, live qualification,
+prerequisite hashes, ordered nonces, constructor data, and total fee ceiling.
+The command checks the canonical approval anchor before each first broadcast and
+writes the exact raw signed transaction to the manifest-specific journal before
+sending it. Do not edit or delete the journal during recovery; only the same raw
+bytes may be rebroadcast. After completion, requalify without a signer:
+
+```sh
+npm run deploy:v3-extension -- \
+  --config /secure/path/reviewed-extension.json \
+  --manifest deployments-v3-extension-current.json \
+  --live-check \
+  --qualify-deployed
+```
+
+Keep separate filenames for all three generations. A manifest for one
+generation cannot satisfy another generation's prerequisite or authorization
+boundary.
 
 ## Provision a read-only release
 
