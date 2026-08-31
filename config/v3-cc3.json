@@ -39,5 +39,41 @@
       }
     ],
     "assetAllowances": []
+  },
+  "artifacts": {
+    "PolicyKernelV2": {
+      "path": "out/PolicyKernelV2.sol/PolicyKernelV2.json",
+      "keccak256": "0x001fe18f0af914d4dff98e6943ff08de05032d4c5412b4b3408573fe3e88b0ca"
+    },
+    "PolicyRegistryV1": {
+      "path": "out/PolicyRegistryV1.sol/PolicyRegistryV1.json",
+      "keccak256": "0x5cf494ba4127abd88ab50af9eccbb43aa9eb839a084feee2720e4ff9c0773a41"
+    },
+    "CappedPilotFactoryV1": {
+      "path": "out/CappedPilotFactoryV1.sol/CappedPilotFactoryV1.json",
+      "keccak256": "0x8655ebfd1e9d2e75d9499c35818ff4155f15b08a1e2bcbdab99f81260e4afc75"
+    },
+    "MultiChainEventPolicyV1": {
+      "path": "out/MultiChainEventPolicyV1.sol/MultiChainEventPolicyV1.json",
+      "keccak256": "0x1609f5e73516ca031cf086285699bfd72ef1e452d1ff1cf35cb7022e352cc93a"
+    },
+    "ProofJobsV1": {
+      "path": "out/ProofJobsV1.sol/ProofJobsV1.json",
+      "keccak256": "0x09ded491b1fb8a7c57ec0cebb2c74663430b7980c6e7b13c9da6cbd50a133ae0"
+    },
+    "VerifiedCreditStateV1": {
+      "path": "out/VerifiedCreditStateV1.sol/VerifiedCreditStateV1.json",
+      "keccak256": "0xec161386e39a0f640cb2652397751fd3466c48bf09cc85ce264e4ed7604cb7e2"
+    }
+  },
+  "transactionPolicy": {
+    "targetConfirmations": 6,
+    "maximumReceiptPolls": 24,
+    "feePolicy": {
+      "transactionType": "eip1559",
+      "maximumGasLimit": "6000000",
+      "maximumFeePerGas": "100000000000",
+      "maximumPriorityFeePerGas": "5000000000"
+    }
   }
 }

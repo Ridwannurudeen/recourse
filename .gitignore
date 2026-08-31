@@ -22,3 +22,9 @@ daemon/horizon1-state.json.*.tmp
 daemon/job-discovery-cursor.json
 daemon/job-discovery-cursor.json.*.tmp
 daemon/operator-data/
+*.activation-journal.json
+*.activation-lock
+*.activation-tmp
+*.usc-deployment-journal.json
+*.usc-deployment-lock
+*.usc-deployment-tmp

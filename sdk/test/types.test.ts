@@ -1,10 +1,16 @@
 import type { BlockTag } from "ethers";
 import type {
+  CappedPilotFactorySimulationInput,
   CreditObservation,
+  DefaultLossSettlementInput,
   EventHistoryManifest,
   FacilityRead,
   FacilitySimulationInput,
   FacilityPolicyCatalogCursor,
+  MultiChainConfiguration,
+  MultiChainConfigurationInput,
+  OperatorQuote,
+  OperatorQuoteInput,
   PolicyRegistryAuditCursor,
   PolicyRegistryAuditScopeRead,
   PolicyRegistryCatalogCursor,
@@ -13,6 +19,10 @@ import type {
   PolicyRegistryCatalogRead,
   PolicyEffect,
   PortfolioMandateSimulationInput,
+  PortfolioPoolAllocationSimulationInput,
+  PortfolioPoolCursor,
+  PortfolioPoolDistributionSimulationInput,
+  PortfolioPoolRead,
   ProofCommitment,
   ProofJob,
   PublishPolicyRegistryReleaseRequest,
@@ -21,18 +31,34 @@ import type {
   RegistryDeploymentRecord,
   RegistryPackageRelease,
   RegistryRuntimeVariant,
+  buildV3Calldata,
+  buildPortfolioPoolCalldata,
   buildPolicyRegistryCalldata,
+  computeOperatorAgreementId,
   decodeEventHistoryManifest,
   readFacilityPolicyCatalog,
   readCreditState,
   readFacilityFactory,
+  readCappedPilotFactory,
+  readMultiChainPolicy,
+  readOperatorMarket,
+  readPolicyKernelV2,
   readPolicyRegistration,
+  readPolicyRegistrationV2,
   readPolicyRegistryAuditArtifact,
   readPolicyRegistryCatalog,
   readPolicyRegistryDeployment,
   readPolicyRegistryRuntimeVariant,
   readProofJob,
+  readPortfolioMandate,
+  readPortfolioPool,
+  simulateCappedPilotFacilityCreation,
+  simulateDefaultLossSettlement,
+  simulateMultiChainRisk,
   simulatePortfolioMandateEligibility,
+  simulatePortfolioPoolAllocation,
+  simulatePortfolioPoolDistribution,
+  validateMultiChainConfiguration,
 } from "@recourse/sdk";
 
 declare const facility: FacilityRead;
@@ -201,3 +227,110 @@ void typedManifest;
 void registryCalls;
 void publishedReleaseCall;
 void inferredRegistryCatalog;
+
+declare const multiChainInput: MultiChainConfigurationInput;
+declare const pilotInput: CappedPilotFactorySimulationInput;
+declare const defaultLossInput: DefaultLossSettlementInput;
+declare const operatorQuoteInput: OperatorQuoteInput;
+type NormalizedMultiChain = ReturnType<typeof validateMultiChainConfiguration>;
+declare const normalizedMultiChain: NormalizedMultiChain;
+const typedMultiChain: MultiChainConfiguration = normalizedMultiChain;
+type MultiChainSimulation = ReturnType<typeof simulateMultiChainRisk>;
+declare const multiChainSimulation: MultiChainSimulation;
+const multiChainScore: bigint = multiChainSimulation.newScore;
+type PilotSimulation = ReturnType<typeof simulateCappedPilotFacilityCreation>;
+declare const pilotSimulation: PilotSimulation;
+const pilotCode: number = pilotSimulation.code;
+type DefaultLossSimulation = ReturnType<typeof simulateDefaultLossSettlement>;
+declare const defaultLossSimulation: DefaultLossSimulation;
+const lenderRecovery: bigint = defaultLossSimulation.lenderRecovery;
+type AgreementId = ReturnType<typeof computeOperatorAgreementId>;
+declare const agreementId: AgreementId;
+type V3Calls = ReturnType<typeof buildV3Calldata>;
+declare const v3Calls: V3Calls;
+const pilotCall: string | undefined = v3Calls.createPilotFacility;
+type CappedPilotFactoryRead = Awaited<
+  ReturnType<typeof readCappedPilotFactory>
+>;
+type PolicyKernelV2Read = Awaited<ReturnType<typeof readPolicyKernelV2>>;
+type PolicyRegistrationV2Read = Awaited<
+  ReturnType<typeof readPolicyRegistrationV2>
+>;
+type MultiChainPolicyRead = Awaited<ReturnType<typeof readMultiChainPolicy>>;
+type OperatorMarketRead = Awaited<ReturnType<typeof readOperatorMarket>>;
+type PortfolioMandateRead = Awaited<ReturnType<typeof readPortfolioMandate>>;
+declare const cappedPilotFactoryRead: CappedPilotFactoryRead;
+declare const policyKernelV2Read: PolicyKernelV2Read;
+declare const policyRegistrationV2Read: PolicyRegistrationV2Read;
+declare const multiChainPolicyRead: MultiChainPolicyRead;
+declare const operatorMarketRead: OperatorMarketRead;
+declare const portfolioMandateRead: PortfolioMandateRead;
+const marketQuote: OperatorQuote | undefined =
+  operatorMarketRead.quotes[0]?.quote;
+const factoryContinuationBlock: number | undefined =
+  cappedPilotFactoryRead.nextCursor?.blockNumber;
+const kernelProofJobs: string = policyKernelV2Read.proofJobs;
+const registeredSourceChain: bigint | undefined =
+  policyRegistrationV2Read.sourcePositions[0]?.chainKey;
+const registeredSourceOrdering: bigint =
+  policyRegistrationV2Read.sourceOrdering;
+const configuredMultiChain: MultiChainConfiguration | undefined =
+  multiChainPolicyRead.configuration;
+const multiChainSourceOrdering: bigint = multiChainPolicyRead.sourceOrdering;
+const mandateEligibility: bigint | undefined =
+  portfolioMandateRead.eligibilityCode;
+
+void operatorQuoteInput;
+void pilotInput;
+void defaultLossInput;
+void normalizedMultiChain;
+void typedMultiChain;
+void multiChainScore;
+void pilotCode;
+void lenderRecovery;
+void agreementId;
+void pilotCall;
+void marketQuote;
+void factoryContinuationBlock;
+void kernelProofJobs;
+void registeredSourceChain;
+void registeredSourceOrdering;
+void configuredMultiChain;
+void multiChainSourceOrdering;
+void mandateEligibility;
+
+declare const poolAllocationInput: PortfolioPoolAllocationSimulationInput;
+declare const poolDistributionInput: PortfolioPoolDistributionSimulationInput;
+type PoolAllocationSimulation = ReturnType<
+  typeof simulatePortfolioPoolAllocation
+>;
+type PoolDistributionSimulation = ReturnType<
+  typeof simulatePortfolioPoolDistribution
+>;
+declare const poolAllocationSimulation: PoolAllocationSimulation;
+declare const poolDistributionSimulation: PoolDistributionSimulation;
+const poolAllocationCode: number = poolAllocationSimulation.code;
+const poolDistributedAmount: bigint = poolDistributionSimulation.amount;
+type PortfolioPoolCalls = ReturnType<typeof buildPortfolioPoolCalldata>;
+declare const portfolioPoolCalls: PortfolioPoolCalls;
+const poolAllocationCall: string | undefined = portfolioPoolCalls.allocate;
+const poolPublishRemedyCall: string | undefined =
+  portfolioPoolCalls.publishRemedyIntent;
+const poolReplaceRemedyCall: string | undefined =
+  portfolioPoolCalls.replaceRemedyIntent;
+type InferredPortfolioPoolRead = Awaited<ReturnType<typeof readPortfolioPool>>;
+declare const inferredPortfolioPoolRead: InferredPortfolioPoolRead;
+const portfolioPoolRead: PortfolioPoolRead = inferredPortfolioPoolRead;
+const poolCursor: PortfolioPoolCursor | null = portfolioPoolRead.nextCursor;
+const realizedLoss: bigint =
+  portfolioPoolRead.candidates[0].allocation.realizedLoss;
+
+void poolAllocationInput;
+void poolDistributionInput;
+void poolAllocationCode;
+void poolDistributedAmount;
+void poolAllocationCall;
+void poolPublishRemedyCall;
+void poolReplaceRemedyCall;
+void poolCursor;
+void realizedLoss;

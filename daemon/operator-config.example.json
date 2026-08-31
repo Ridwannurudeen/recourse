@@ -16,6 +16,15 @@
     "minRevealWindowBlocks": 18,
     "minSecondsToExpiry": 3600
   },
+  "transactionPolicy": {
+    "feePolicy": {
+      "transactionType": "eip1559",
+      "maximumGasLimit": "3000000",
+      "maximumNativeFee": "300000000000000000",
+      "maximumFeePerGas": "100000000000",
+      "maximumPriorityFeePerGas": "5000000000"
+    }
+  },
   "allowlists": {
     "facilities": ["0xF1E51D2d648E7FeA60fE4B2C739f7591426d14FA"],
     "policyIds": ["1"],

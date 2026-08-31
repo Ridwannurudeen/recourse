@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <meta
+      name="description"
+      content="Block-anchored historical deployment, activation, and external-gate truth for the Recourse V3 core on Creditcoin CC3 testnet."
+    />
+    <title>Recourse · V3 observatory</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="./observatory.css" />
+    <script src="./ethers.umd.min.js"></script>
+    <script type="module" src="./v3.js"></script>
+  </head>
+  <body class="observatory-page">
+    <a class="obs-skip" href="#main">Skip to V3 deployment truth</a>
+    <header class="obs-header">
+      <div class="obs-shell obs-header-inner">
+        <a
+          class="obs-brand"
+          href="./index.html"
+          aria-label="Recourse facility dashboard"
+        >
+          <span class="obs-mark" aria-hidden="true">R</span>
+          <span><strong>Recourse</strong><span>V3 truth terminal.</span></span>
+        </a>
+        <nav class="obs-nav" aria-label="Recourse applications">
+          <a href="./index.html">Facilities</a>
+          <a href="./horizon1.html">Horizon 1</a>
+          <a href="./v3.html" aria-current="page">V3</a>
+          <a href="./operator.html">Operators</a>
+          <a href="./portfolio.html">Portfolio</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="obs-shell obs-main" id="main">
+      <section class="obs-state" id="v3-state" aria-live="polite">
+        <p class="obs-eyebrow">CC3 testnet · block-anchored reads</p>
+        <h1 id="v3-state-title">Checking V3 deployment truth</h1>
+        <p id="v3-state-copy">
+          Pinning core code, wiring, factory inventory, registry releases, and
+          proof-job counts to one CC3 block.
+        </p>
+        <button class="obs-button" id="v3-retry" type="button" hidden>
+          Retry RPC
+        </button>
+      </section>
+
+      <div id="v3-dashboard" hidden>
+        <section class="obs-intro obs-v3-intro" aria-labelledby="v3-title">
+          <div>
+            <p class="obs-eyebrow">
+              Historical V3 core · deployment versus compatibility
+            </p>
+            <h1 id="v3-title">
+              Historical core found. The hardened pilot is not live.
+            </h1>
+            <p class="obs-intro-copy">
+              These addresses belong to the inactive deployment recorded in
+              deployments-v3.json. They predate the hardened source-ordering
+              interface, so the current build requires a fresh deployment. This
+              terminal reports the historical on-chain state without treating it
+              as current-build compatibility.
+            </p>
+          </div>
+          <div class="obs-anchor">
+            <p class="obs-label">
+              <span class="obs-live" aria-hidden="true"></span>State anchor
+            </p>
+            <strong id="v3-block"></strong>
+            <time id="v3-block-time"></time>
+          </div>
+        </section>
+
+        <div
+          class="obs-badges"
+          id="v3-badges"
+          aria-label="V3 read quality"
+        ></div>
+
+        <section class="obs-truth-stage" aria-labelledby="truth-stage-title">
+          <div class="obs-truth-heading">
+            <div>
+              <p class="obs-eyebrow">Activation ledger</p>
+              <h2 id="truth-stage-title">Five states, one honest boundary.</h2>
+            </div>
+            <p>
+              Deployed is not configured. Configured is not activated.
+              Source-only is not live. External-gated is not complete.
+            </p>
+          </div>
+          <div class="obs-truth-rail" id="v3-truth-rail"></div>
+        </section>
+
+        <section
+          class="obs-metrics"
+          id="v3-metrics"
+          aria-label="V3 counts"
+        ></section>
+
+        <section class="obs-section" aria-labelledby="v3-core-title">
+          <div class="obs-section-heading">
+            <div>
+              <p class="obs-eyebrow">Runtime code evidence</p>
+              <h2 id="v3-core-title">Historical core addresses</h2>
+            </div>
+            <p class="obs-section-note">
+              Code presence and kernel-to-proof-jobs wiring are checked at the
+              displayed block. They do not establish compatibility with the
+              current artifacts or imply an audit.
+            </p>
+          </div>
+          <div class="obs-table-wrap">
+            <table class="obs-table">
+              <thead>
+                <tr>
+                  <th>Contract</th>
+                  <th>Address</th>
+                  <th>Evidence</th>
+                </tr>
+              </thead>
+              <tbody id="v3-contracts"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="obs-section" aria-labelledby="v3-pilot-title">
+          <div class="obs-section-heading">
+            <div>
+              <p class="obs-eyebrow">Capped factory · complete inventory</p>
+              <h2 id="v3-pilot-title">Pilot lifecycle</h2>
+            </div>
+            <p class="obs-section-note" id="v3-capacity-note"></p>
+          </div>
+          <div class="obs-table-wrap">
+            <table class="obs-table">
+              <thead>
+                <tr>
+                  <th>Facility</th>
+                  <th>Status</th>
+                  <th class="obs-num">Policies</th>
+                  <th class="obs-num">V3 configs</th>
+                  <th>Truth</th>
+                </tr>
+              </thead>
+              <tbody id="v3-facilities"></tbody>
+            </table>
+            <p class="obs-empty" id="v3-facilities-empty" hidden>
+              No live pilot exists: the historical capped factory contains no
+              facilities at this anchored block.
+            </p>
+          </div>
+        </section>
+
+        <section class="obs-section" aria-labelledby="v3-local-title">
+          <div class="obs-section-heading">
+            <div>
+              <p class="obs-eyebrow">Repository capability</p>
+              <h2 id="v3-local-title">Built locally, not deployed</h2>
+            </div>
+            <p class="obs-section-note">
+              Source-level contracts are labeled source-only until a verified
+              deployment manifest and runtime code establish otherwise.
+            </p>
+          </div>
+          <div class="obs-capability-grid" id="v3-capabilities"></div>
+        </section>
+
+        <section class="obs-section" aria-labelledby="v3-gates-title">
+          <div class="obs-section-heading">
+            <div>
+              <p class="obs-eyebrow">Off-chain dependencies</p>
+              <h2 id="v3-gates-title">External-gated work</h2>
+            </div>
+            <p class="obs-section-note">
+              These gates cannot be completed by repository code or inferred
+              from contract deployment.
+            </p>
+          </div>
+          <ul class="obs-gate-grid" id="v3-external-gates"></ul>
+        </section>
+
+        <section class="obs-truth-boundary" aria-labelledby="v3-boundary-title">
+          <p class="obs-eyebrow">Truth boundary</p>
+          <h2 id="v3-boundary-title">
+            No market, reputation, or capital claim without evidence.
+          </h2>
+          <div>
+            <p>
+              Operator quotes, agreements, settlements, and address history are
+              shown only after enumerable on-chain records exist. No activity
+              means no reputation score is invented.
+            </p>
+            <p>
+              A mandate or pool contract in source does not establish deposited
+              capital, TVL, yield, allocations, recoveries, or a live portfolio.
+              Those claims require a deployed address and anchored state.
+            </p>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <footer class="obs-footer">
+      <div class="obs-shell obs-footer-inner">
+        <span>Read-only · no wallet · no transaction path</span>
+        <span>CC3 testnet · chain ID 102031</span>
+      </div>
+    </footer>
+  </body>
+</html>

@@ -10,8 +10,10 @@ import {
   assertEthereumMainnetProvider,
   assertExecutionKernelCapability,
   executeQueuedCandidates,
+  executionStatePath,
   isOperatorMainModule,
   prefilterExecutionCandidates,
+  recoverExistingExecutionJournals,
   runOperatorCycle,
   runOperatorService,
   scanJobEvidence,
@@ -26,18 +28,37 @@ const OTHER = ADDRESS("a11");
 const TRANSACTION_HASH = `0x${"11".repeat(32)}`;
 const BLOCK_HASH = `0x${"22".repeat(32)}`;
 const SIGNATURE = id("Observed(address,uint256)");
+const FEE_POLICY = {
+  transactionType: "legacy",
+  maximumGasLimit: "200000",
+  maximumGasPrice: "2",
+  maximumNativeFee: "400000",
+};
 
 test("operator entrypoint recognizes an immutable module reached through the current symlink", () => {
-  const releasePath = resolve(join(tmpdir(), "recourse-release", "daemon", "operator.mjs"));
-  const currentPath = resolve(join(tmpdir(), "recourse-current", "daemon", "operator.mjs"));
-  const canonicalize = (path) => (resolve(path) === currentPath ? releasePath : resolve(path));
+  const releasePath = resolve(
+    join(tmpdir(), "recourse-release", "daemon", "operator.mjs"),
+  );
+  const currentPath = resolve(
+    join(tmpdir(), "recourse-current", "daemon", "operator.mjs"),
+  );
+  const canonicalize = (path) =>
+    resolve(path) === currentPath ? releasePath : resolve(path);
 
   assert.equal(
-    isOperatorMainModule(pathToFileURL(releasePath).href, currentPath, canonicalize),
+    isOperatorMainModule(
+      pathToFileURL(releasePath).href,
+      currentPath,
+      canonicalize,
+    ),
     true,
   );
   assert.equal(
-    isOperatorMainModule(pathToFileURL(releasePath).href, join(tmpdir(), "other.mjs"), canonicalize),
+    isOperatorMainModule(
+      pathToFileURL(releasePath).href,
+      join(tmpdir(), "other.mjs"),
+      canonicalize,
+    ),
     false,
   );
 });
@@ -175,6 +196,132 @@ test("job scanning persists exact qualified evidence and rejects a changed sourc
       JSON.parse(await readFile(statePath, "utf8")),
       first.state,
     );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("multi-rule scanning keeps one chain cursor and hydrates a matching transaction once", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "recourse-operator-rules-"));
+  const statePath = join(directory, "job-source-3.json");
+  let receiptReads = 0;
+  const secondSignature = id("Flagged(address,uint256)");
+  const provider = sourceProvider();
+  provider.getLogs = async ({ topics }) => [
+    {
+      transactionHash: TRANSACTION_HASH,
+      blockHash: BLOCK_HASH,
+      blockNumber: 100,
+      topics,
+    },
+  ];
+  provider.getTransactionReceipt = async () => {
+    receiptReads += 1;
+    return {
+      hash: TRANSACTION_HASH,
+      status: 1,
+      blockNumber: 100,
+      blockHash: BLOCK_HASH,
+      index: 4,
+      logs: [
+        {
+          address: TOKEN,
+          topics: [SIGNATURE, topicAddress(SUBJECT)],
+          data: `0x${word(42)}`,
+        },
+        {
+          address: TOKEN,
+          topics: [secondSignature, topicAddress(SUBJECT)],
+          data: `0x${word(7)}`,
+        },
+      ],
+    };
+  };
+  try {
+    const result = await scanJobEvidence({
+      sourceProvider: provider,
+      job: JOB,
+      policy: {
+        ...POLICY,
+        configurations: [
+          { ...POLICY.configuration, ruleIndex: 0 },
+          {
+            ...POLICY.configuration,
+            eventSignature: secondSignature,
+            ruleIndex: 1,
+          },
+        ],
+      },
+      statePath,
+      attestedHeight: 100,
+      maxSourceBlocks: 50,
+    });
+    assert.equal(receiptReads, 1);
+    assert.equal(result.state.schemaVersion, 2);
+    assert.equal(result.state.sourceChain, "3");
+    assert.equal(result.state.nextSourceBlock, 101);
+    assert.equal(result.added.length, 1);
+    assert.deepEqual(result.added[0].matchedRuleIndexes, [0, 1]);
+    assert.deepEqual(
+      result.added[0].ruleMatches.map(({ ruleIndex, observedValue }) => ({
+        ruleIndex,
+        observedValue,
+      })),
+      [
+        { ruleIndex: 0, observedValue: "42" },
+        { ruleIndex: 1, observedValue: "7" },
+      ],
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("multi-rule scanning accepts a shared RPC filter when only the exact data-length rule qualifies", async () => {
+  const directory = await mkdtemp(
+    join(tmpdir(), "recourse-operator-shared-filter-"),
+  );
+  const statePath = join(directory, "job-source-3.json");
+  let receiptReads = 0;
+  const provider = sourceProvider();
+  provider.getTransactionReceipt = async () => {
+    receiptReads += 1;
+    return {
+      hash: TRANSACTION_HASH,
+      status: 1,
+      blockNumber: 100,
+      blockHash: BLOCK_HASH,
+      index: 4,
+      logs: [
+        {
+          address: TOKEN,
+          topics: [SIGNATURE, topicAddress(SUBJECT)],
+          data: `0x${word(42)}`,
+        },
+      ],
+    };
+  };
+  try {
+    const result = await scanJobEvidence({
+      sourceProvider: provider,
+      job: JOB,
+      policy: {
+        ...POLICY,
+        configurations: [
+          { ...POLICY.configuration, ruleIndex: 0 },
+          { ...POLICY.configuration, dataLength: 64, ruleIndex: 1 },
+        ],
+      },
+      statePath,
+      attestedHeight: 100,
+      maxSourceBlocks: 50,
+    });
+    assert.equal(receiptReads, 1);
+    assert.equal(result.added.length, 1);
+    assert.deepEqual(result.added[0].matchedRuleIndexes, [0]);
+    assert.deepEqual(result.added[0].ruleMatches, [
+      { ruleIndex: 0, observedValue: "42", matchingLogs: 1 },
+    ]);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -446,6 +593,7 @@ test("startup reconciles target journals before unavailable source discovery", a
           maxCommitBond: 10n,
           minProofReimbursement: 20n,
           minRewardToBondBps: 20_000,
+          feePolicy: FEE_POLICY,
           exclusiveSigner: true,
         },
         signal: { aborted: false },
@@ -492,6 +640,7 @@ test("execution prefilter removes processed and stale candidates before signing"
   let processedReads = 0;
   await prefilterExecutionCandidates({
     kernel: {
+      sourceOrderingOf: async () => 0n,
       latestSourcePosition: async () => ({
         recorded: true,
         blockHeight: 100n,
@@ -514,6 +663,134 @@ test("execution prefilter removes processed and stale candidates before signing"
     state.skippedCandidates.map(({ reason }) => reason),
     ["already-processed", "stale-source-position"],
   );
+});
+
+test("UniqueOnly retains an earlier unprocessed candidate while strict ordering rejects it", async () => {
+  const earlier = {
+    transactionHash: TRANSACTION_HASH,
+    blockNumber: 100,
+    transactionIndex: 1,
+  };
+  for (const [ordering, expectedCount, expectedReason] of [
+    [0n, 0, "stale-source-position"],
+    [1n, 1, undefined],
+  ]) {
+    let orderingReads = 0;
+    let latestReads = 0;
+    const sourceOrderingCache = new Map();
+    const state = { candidates: [earlier], skippedCandidates: [] };
+    await prefilterExecutionCandidates({
+      kernel: {
+        sourceOrderingOf: async (facility, policyId) => {
+          orderingReads += 1;
+          assert.equal(facility, JOB.facility);
+          assert.equal(policyId, JOB.policyId);
+          return ordering;
+        },
+        latestSourcePosition: async () => {
+          latestReads += 1;
+          return {
+            recorded: true,
+            blockHeight: 100n,
+            transactionIndex: 2n,
+          };
+        },
+        isProcessed: async () => false,
+      },
+      state,
+      job: JOB,
+      sourceChain: 3,
+      sourceOrderingCache,
+    });
+    assert.equal(orderingReads, 1);
+    assert.equal(latestReads, ordering === 0n ? 1 : 0);
+    assert.equal(state.candidates.length, expectedCount);
+    assert.equal(state.skippedCandidates[0]?.reason, expectedReason);
+    if (ordering === 1n) {
+      const secondChainState = {
+        candidates: [{ ...earlier, transactionHash: `0x${"66".repeat(32)}` }],
+        skippedCandidates: [],
+      };
+      await prefilterExecutionCandidates({
+        kernel: {
+          sourceOrderingOf: async () => {
+            orderingReads += 1;
+            return ordering;
+          },
+          latestSourcePosition: async () => {
+            latestReads += 1;
+            throw new Error("UniqueOnly must not read a stale-position cursor");
+          },
+          isProcessed: async () => false,
+        },
+        state: secondChainState,
+        job: JOB,
+        sourceChain: 1,
+        sourceOrderingCache,
+      });
+      assert.equal(orderingReads, 1);
+      assert.equal(latestReads, 0);
+      assert.equal(secondChainState.candidates.length, 1);
+    }
+  }
+});
+
+test("startup resumes terminal journals until claim settlement is durably complete", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "recourse-claim-recovery-"));
+  const statePath = join(
+    directory,
+    `102031-7-${TRANSACTION_HASH.slice(2)}.json`,
+  );
+  const calls = [];
+  try {
+    await writeFile(
+      statePath,
+      `${JSON.stringify({
+        version: 2,
+        phase: "revealed",
+        chainId: 102031,
+        jobId: "7",
+        sourceTransactionHash: TRANSACTION_HASH,
+        claimSettlementComplete: false,
+      })}\n`,
+      "utf8",
+    );
+    await recoverExistingExecutionJournals({
+      jobsDirectory: directory,
+      chainId: 102031,
+      deploymentPath: "deployments-horizon1.json",
+      signal: { aborted: false },
+      executeJob: async ({ recoveryOnly }) => {
+        calls.push(recoveryOnly);
+      },
+      executionPolicy: {},
+    });
+    assert.deepEqual(calls, [true]);
+
+    await writeFile(
+      statePath,
+      `${JSON.stringify({
+        version: 2,
+        phase: "revealed",
+        chainId: 102031,
+        jobId: "7",
+        sourceTransactionHash: TRANSACTION_HASH,
+        claimSettlementComplete: true,
+      })}\n`,
+      "utf8",
+    );
+    await recoverExistingExecutionJournals({
+      jobsDirectory: directory,
+      chainId: 102031,
+      deploymentPath: "deployments-horizon1.json",
+      signal: { aborted: false },
+      executeJob: async () => calls.push("unexpected"),
+      executionPolicy: {},
+    });
+    assert.deepEqual(calls, [true]);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("multiple evidence executions use transaction-bound journals and restart the unfinished candidate", async () => {
@@ -575,6 +852,61 @@ test("multiple evidence executions use transaction-bound journals and restart th
       TRANSACTION_HASH,
       secondHash,
     ]);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("V3 execution journals are unique by source chain and pass that binding to execution", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "recourse-operator-sources-"));
+  const pathOne = executionStatePath(
+    directory,
+    102031,
+    "7",
+    TRANSACTION_HASH,
+    1,
+  );
+  const pathThree = executionStatePath(
+    directory,
+    102031,
+    "7",
+    TRANSACTION_HASH,
+    3,
+  );
+  assert.notEqual(pathOne, pathThree);
+  assert.match(pathOne, /102031-7-source-1-/);
+  assert.match(pathThree, /102031-7-source-3-/);
+
+  const seen = [];
+  try {
+    for (const sourceChain of [1, 3]) {
+      await executeQueuedCandidates({
+        state: {
+          sourceChain: String(sourceChain),
+          candidates: [
+            {
+              sourceChain: String(sourceChain),
+              transactionHash: TRANSACTION_HASH,
+            },
+          ],
+          completedTransactionHashes: [],
+          incidents: [],
+        },
+        statePath: join(directory, `queue-${sourceChain}.json`),
+        chainId: 102031,
+        sourceChain,
+        jobId: "7",
+        jobsDirectory: directory,
+        deploymentPath: "activation-v3.json",
+        signal: { aborted: false },
+        executeJob: async (input) => seen.push(input),
+      });
+    }
+    assert.deepEqual(
+      seen.map(({ sourceChain }) => sourceChain),
+      [1, 3],
+    );
+    assert.notEqual(seen[0].statePath, seen[1].statePath);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

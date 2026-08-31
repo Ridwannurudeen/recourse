@@ -6,15 +6,50 @@ import { installDohFallback } from "./net.mjs";
 const { chainInfo, proofProvider } = pkg;
 installDohFallback();
 
+const SOURCE_NETWORKS = Object.freeze({
+  1: Object.freeze({
+    chainKey: 1,
+    evmChainId: 11155111,
+    rpcUrlEnvironment: "SEPOLIA_RPC_URL",
+  }),
+  3: Object.freeze({
+    chainKey: 3,
+    evmChainId: 1,
+    rpcUrlEnvironment: "ETH_MAINNET_RPC_URL",
+  }),
+});
+
+export function getSourceNetwork(chainKey) {
+  const numeric = Number(chainKey);
+  if (!Number.isSafeInteger(numeric) || !SOURCE_NETWORKS[numeric]) {
+    throw new Error(`Unsupported CC3 source chain key ${String(chainKey)}`);
+  }
+  return { ...SOURCE_NETWORKS[numeric] };
+}
+
 export function getProvider() {
   return new JsonRpcProvider(process.env.CREDITCOIN_RPC_URL);
 }
 
-export function getSourceProvider(chainKey) {
-  const url =
-    Number(chainKey) === 3
-      ? process.env.ETH_MAINNET_RPC_URL
-      : process.env.SEPOLIA_RPC_URL;
+export function getSourceProvider(chainKey, environment = process.env) {
+  const network = getSourceNetwork(chainKey);
+  const url = environment[network.rpcUrlEnvironment];
+  if (typeof url !== "string" || url.length === 0) {
+    throw new Error(
+      `${network.rpcUrlEnvironment} is required for source chain key ${network.chainKey}`,
+    );
+  }
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error(`Invalid RPC URL for source chain key ${network.chainKey}`);
+  }
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+    throw new Error(
+      `Invalid RPC URL protocol for source chain key ${network.chainKey}`,
+    );
+  }
   return new JsonRpcProvider(url);
 }
 
@@ -23,13 +58,15 @@ export async function getAttestedHeight(chainKey) {
 }
 
 export async function getLatestAttestation(chainKey) {
+  const network = getSourceNetwork(chainKey);
   const info = new chainInfo.PrecompileChainInfoProvider(getProvider());
-  return info.getLatestAttestedHeightAndHash(Number(chainKey));
+  return info.getLatestAttestedHeightAndHash(network.chainKey);
 }
 
 function builder(chainKey) {
+  const network = getSourceNetwork(chainKey);
   return new proofProvider.service.ProofBuilder(
-    Number(chainKey),
+    network.chainKey,
     process.env.PROOF_BUILDER_URL,
   );
 }

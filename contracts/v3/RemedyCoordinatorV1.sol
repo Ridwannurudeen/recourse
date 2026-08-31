@@ -21,6 +21,8 @@ contract RemedyCoordinatorV1 is IRemedyCoordinatorV1, ReentrancyGuard {
         address facility;
         uint256 policyId;
         bytes32 adverseEvidenceDigest;
+        bytes32 predecessorIntentId;
+        bytes32 executionId;
         bytes32 cureEvidenceDigest;
         uint64 destinationChain;
         address receiver;
@@ -63,8 +65,10 @@ contract RemedyCoordinatorV1 is IRemedyCoordinatorV1, ReentrancyGuard {
         address indexed facility,
         uint256 indexed policyId,
         bytes32 adverseEvidenceDigest,
+        bytes32 executionId,
         bytes32 actionDataHash
     );
+    event IntentReplaced(bytes32 indexed predecessorIntentId, bytes32 indexed intentId, bytes32 indexed executionId);
     event PolicyAuthorized(address indexed facility, uint256 indexed policyId, address indexed policy);
     event IntentTerminated(bytes32 indexed intentId, IntentStatus indexed status);
 
@@ -72,6 +76,7 @@ contract RemedyCoordinatorV1 is IRemedyCoordinatorV1, ReentrancyGuard {
     IRemedyTransportV1 public immutable transport;
 
     mapping(address facility => mapping(uint256 policyId => address policy)) public authorizedPolicy;
+    mapping(address facility => mapping(uint256 policyId => bytes32 intentId)) public latestPolicyIntent;
     mapping(address facility => mapping(uint256 policyId => mapping(bytes32 adverseEvidenceDigest => bool used))) public
         adverseEvidenceUsed;
     mapping(bytes32 intentId => Intent intent) private intents;
@@ -108,11 +113,23 @@ contract RemedyCoordinatorV1 is IRemedyCoordinatorV1, ReentrancyGuard {
 
         intentId = keccak256(abi.encode(address(this), block.chainid, request, msg.sender));
         if (intents[intentId].status != IntentStatus.None) revert InvalidIntent();
+        bytes32 previousIntentId = latestPolicyIntent[request.facility][request.policyId];
+        if (previousIntentId != bytes32(0)) {
+            Intent storage previous = intents[previousIntentId];
+            if (
+                previous.status != IntentStatus.Cured && previous.status != IntentStatus.Failed
+                    && previous.status != IntentStatus.Expired
+            ) {
+                revert IntentStillLive();
+            }
+        }
         adverseEvidenceUsed[request.facility][request.policyId][request.adverseEvidenceDigest] = true;
         intents[intentId] = Intent({
             facility: request.facility,
             policyId: request.policyId,
             adverseEvidenceDigest: request.adverseEvidenceDigest,
+            predecessorIntentId: bytes32(0),
+            executionId: intentId,
             cureEvidenceDigest: bytes32(0),
             destinationChain: request.destinationChain,
             receiver: request.receiver,
@@ -125,9 +142,56 @@ contract RemedyCoordinatorV1 is IRemedyCoordinatorV1, ReentrancyGuard {
             status: IntentStatus.Recorded,
             messageId: bytes32(0)
         });
+        latestPolicyIntent[request.facility][request.policyId] = intentId;
         emit IntentRecorded(
-            intentId, request.facility, request.policyId, request.adverseEvidenceDigest, request.actionDataHash
+            intentId,
+            request.facility,
+            request.policyId,
+            request.adverseEvidenceDigest,
+            intentId,
+            request.actionDataHash
         );
+    }
+
+    function recordReplacement(bytes32 predecessorIntentId, uint64 expiry) external returns (bytes32 intentId) {
+        Intent storage predecessor = intents[predecessorIntentId];
+        if (msg.sender != authorizedPolicy[predecessor.facility][predecessor.policyId]) revert NotPolicy();
+        if (
+            latestPolicyIntent[predecessor.facility][predecessor.policyId] != predecessorIntentId
+                || (predecessor.status != IntentStatus.Failed && predecessor.status != IntentStatus.Expired)
+                || expiry <= block.timestamp
+        ) revert InvalidIntent();
+
+        intentId = keccak256(abi.encode(address(this), block.chainid, predecessorIntentId, expiry, msg.sender));
+        if (intents[intentId].status != IntentStatus.None) revert InvalidIntent();
+        intents[intentId] = Intent({
+            facility: predecessor.facility,
+            policyId: predecessor.policyId,
+            adverseEvidenceDigest: predecessor.adverseEvidenceDigest,
+            predecessorIntentId: predecessorIntentId,
+            executionId: predecessor.executionId,
+            cureEvidenceDigest: bytes32(0),
+            destinationChain: predecessor.destinationChain,
+            receiver: predecessor.receiver,
+            target: predecessor.target,
+            actionKind: predecessor.actionKind,
+            actionDataHash: predecessor.actionDataHash,
+            expiry: expiry,
+            lastPublishedAt: 0,
+            publishAttempts: 0,
+            status: IntentStatus.Recorded,
+            messageId: bytes32(0)
+        });
+        latestPolicyIntent[predecessor.facility][predecessor.policyId] = intentId;
+        emit IntentRecorded(
+            intentId,
+            predecessor.facility,
+            predecessor.policyId,
+            predecessor.adverseEvidenceDigest,
+            predecessor.executionId,
+            predecessor.actionDataHash
+        );
+        emit IntentReplaced(predecessorIntentId, intentId, predecessor.executionId);
     }
 
     function publishIntent(bytes32 intentId, bytes calldata actionData)
@@ -151,7 +215,8 @@ contract RemedyCoordinatorV1 is IRemedyCoordinatorV1, ReentrancyGuard {
         }
         if (block.timestamp >= intent.expiry) revert InvalidIntent();
         if (keccak256(actionData) != intent.actionDataHash) revert InvalidPayload();
-        bytes memory payload = abi.encode(intentId, intent.target, intent.actionKind, actionData, intent.expiry);
+        bytes memory payload =
+            abi.encode(intentId, intent.executionId, intent.target, intent.actionKind, actionData, intent.expiry);
         messageId = transport.publish(intentId, intent.destinationChain, intent.receiver, payload, intent.expiry);
         if (messageId == bytes32(0)) revert InvalidMessageId();
         uint8 attempt = intent.publishAttempts;
@@ -218,6 +283,10 @@ contract RemedyCoordinatorV1 is IRemedyCoordinatorV1, ReentrancyGuard {
 
     function intentActionDataHash(bytes32 intentId) external view returns (bytes32) {
         return intents[intentId].actionDataHash;
+    }
+
+    function intentExecutionId(bytes32 intentId) external view returns (bytes32) {
+        return intents[intentId].executionId;
     }
 
     function intentOf(bytes32 intentId) external view returns (Intent memory) {

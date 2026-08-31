@@ -33,7 +33,11 @@ contract RecourseFacilityV3 is RecourseFacilityV2 {
     {}
 
     function settleDefaultLoss() external nonReentrant {
-        if (status != FacilityStatus.Defaulted) revert WrongState(FacilityStatus.Defaulted, status);
+        if (msg.sender != lender) revert NotLender();
+        if (status != FacilityStatus.Defaulted) {
+            if (status != FacilityStatus.Terminated) revert WrongState(FacilityStatus.Defaulted, status);
+            if (block.number <= maturityBlock) revert DrawNotReady(uint256(maturityBlock) + 1);
+        }
         uint256 bond = bondPosted;
         if (bond == 0) revert ZeroAmount();
 

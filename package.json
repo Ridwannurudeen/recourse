@@ -9,6 +9,8 @@
     "balances": "node scripts/balances.mjs",
     "daemon": "node daemon/index.mjs",
     "daemon:horizon1": "node daemon/horizon1.mjs",
+    "activate:v3": "node scripts/activate-v3-pilot.mjs",
+    "deploy:usc-remedy": "node scripts/deploy-usc-remedy.mjs",
     "deploy:v3": "node scripts/deploy-v3.mjs",
     "operator:discover": "node daemon/job-discovery.mjs",
     "operator": "node daemon/operator.mjs",
@@ -17,7 +19,7 @@
     "wallets:new": "node scripts/new-wallets.mjs"
   },
   "dependencies": {
-    "@gluwa/usc-contracts": "^0.2.0",
+    "@gluwa/usc-contracts": "0.2.0",
     "@gluwa/usc-sdk": "^0.18.0",
     "@openzeppelin/contracts": "^5.4.0",
     "dotenv": "^17.0.0",

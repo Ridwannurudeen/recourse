@@ -45,18 +45,31 @@ The new demonstration facility is [`0xF1E51D2d648E7FeA60fE4B2C739f7591426d14FA`]
 
 The additive [public Horizon 1 console](https://ridwan.gudman.xyz/recourse/horizon1.html), served from [`web/horizon1.html`](web/horizon1.html), reads the live factory, facility, kernel, credit state, and proof jobs at one pinned CC3 block. It shows registered policies separately from accepted policy effects and never requests a wallet or submits a transaction.
 
-Roadmap work now also includes a typed [SDK](sdk/README.md), policy simulation and calldata builders, an issuer-attested `PolicyRegistryV1`, and a resumable read-only operator discovery and metrics tool. The committed static console is publicly hosted; the SDK remains unpublished, the registry remains undeployed, and the operator remains source-only rather than an installed service. These foundations are tested but are not independently audited, frozen, or externally integrated.
+Roadmap work now also includes a typed [SDK](sdk/README.md), policy simulation and calldata builders, an issuer-attested `PolicyRegistryV1`, and a resumable operator discovery and metrics tool. The committed static console is publicly hosted; the SDK remains unpublished, the recorded V3 registry deployment is empty, and the Horizon 1 operator is installed only as a healthy read-only service. V3 execution is not installed or enabled. These foundations are tested but are not independently audited, frozen, or externally integrated.
 
-The local build now covers the autonomously implementable contract and tooling scope for roadmap items 4–10: a capped pilot factory and loss-settling facility, bounded remedy coordination and receiver, closed-loop acknowledgement/cure lifecycle, block-hash-paged registry SDK, multi-chain event-risk policy, escrowed operator-service market, hardened reference operator, and read-only portfolio mandates and observatories. See [the exact build inventory and remaining gates](docs/ROADMAP-4-10-BUILD.md). None of this new scope is deployed, independently audited, externally integrated, customer-validated, or capitalized.
+The repository now covers the buildable contract and tooling scope for roadmap items 4–10: a capped pilot factory and loss-settling facility, offline-first deployment and activation tooling, bounded remedy coordination, a pinned USC 0.2 transport and dispatcher, closed-loop acknowledgement/cure lifecycle, block-hash-paged registry SDK, multi-chain event-risk policy, escrowed operator-service market, hardened reference operator, and a fixed-vintage portfolio pool with exact allocation and loss accounting. See [the exact build inventory and remaining gates](docs/ROADMAP-4-10-BUILD.md). The inactive V3 core recorded in `deployments-v3.json` has zero facilities, policies, registry claims, or asset transfers, but it predates the current source-ordering interface and policy-set commitment. The activation tooling rejects that bytecode; the complete V3 core must be freshly redeployed from the reviewed current commit before activation. The USC route and portfolio pool are undeployed. None of the roadmap build is independently audited, externally integrated, customer-validated, or capitalized.
+
+Fresh V3 deployment is offline by default. A signerless `--live-check` precedes
+`--write-plan`; an accountable human must separately approve that exact plan,
+and `--broadcast` requires its `--approved-plan` path before a signer is loaded.
+The chain-time plan expires after 30 minutes and binds a clean exact source
+commit, capped fees, six pinned artifacts, and six transactions: five creations
+plus `setProofJobs`. A durable manifest-specific deployment journal persists each
+raw signed transaction before broadcast, permits only same-byte recovery, and
+requires confirmation-depth and canonical-chain checks. Final qualification
+verifies exact runtime around immutables for all six artifacts, including
+`VerifiedCreditStateV1`, before writing an evidence-complete manifest. See [the
+operator handoff](ops/README.md#fresh-v3-core-manifest-handoff) for the exact
+commands and renewal procedure.
 
 ## Quickstart
 
-The checked-in `deployments.json` points to the already-breached live facility. To reproduce the full demo with a fresh facility, use fresh development wallets and CC3 testnet funds. Install Foundry and ensure `forge` is on `PATH` before running the unified test command.
+The checked-in `deployments.json` points to the already-breached live facility. To reproduce the full demo with a fresh facility, use fresh development wallets and CC3 testnet funds. Install Foundry 1.7.1 and ensure `forge` is on `PATH` before running the unified test command. The deployment and activation configurations pin the raw artifacts emitted by the forced build, and the Node suite rejects stale pins.
 
 ```bash
 git submodule update --init --recursive
 npm install
-forge build
+forge build --force
 npm test
 npm run wallets:new
 ```
@@ -134,7 +147,7 @@ AttestcoinAdjudicator on Creditcoin
 - `scripts/` handles deployment, facility setup, proof retrieval, and unattended submission. `web/` is the zero-build wallet application and walletless facility monitor.
 - `sdk/` exposes typed reads, simulations, exact ABI encodings, and calldata-only builders. `PolicyRegistryV1` records bounded issuer declarations, approved runtime variants, exact deployment attestations, and release- or deployment-scoped audit artifacts.
 - `daemon/job-discovery.mjs` scans confirmed Proof Jobs history without a signer, pins hydrated state to the report block, persists a reorg-checked cursor, and derives only metrics observable from contract events.
-- `contracts/v3/` contains the additive capped-pilot, remedy lifecycle, multi-chain event policy, operator market, and portfolio-mandate contracts. The remedy transport remains an interface until an authoritative live dispatcher is available.
+- `contracts/v3/` contains the additive capped-pilot, remedy lifecycle, pinned USC adapter, multi-chain event policy, operator market, portfolio mandate, and fixed-vintage pool contracts. The USC adapter is source-only until an authoritative live Outbox route, source acknowledgement-validator trust, and destination validator state can be verified for a dedicated Recourse Inbox.
 - `daemon/operator.mjs` is the read-only-by-default reference operator. Optional execution is gated by exact allowlists, economics, source-chain identity, Kernel V2 stale-proof recovery, confirmation depth, and crash-safe signed transaction journals.
 - `web/operator.html` and `web/portfolio.html` are walletless observatories. Operator reports require a same-origin, size-bounded, internally consistent, RPC-anchored artifact; portfolio reads are explicitly labeled single-endpoint assertions.
 
@@ -142,9 +155,9 @@ The borrower's activation commits to an ordered hash covering both the identity 
 
 ## Testing
 
-`npm test` passes 299 Forge tests, 86 root Node tests, and 26 SDK tests across both deployed generations and the local roadmap build, followed by a strict SDK declaration compile. One Windows-only symlink test is skipped when the process lacks symlink privilege. The original 134 Forge tests remain green. New coverage includes exact pilot loss settlement, remedy retry/timeout/acknowledgement recovery, multi-rule transaction accumulation, strict batch source ordering, operator-market escrow, registry declarations and exact audit scopes, ABI parity, block-hash-bound pagination, reorg-anchored aggregate reads, target-first crash recovery, signed-call substitution rejection, native proof/receipt binding, bounded adaptive source scans, queue-saturation recovery, transaction finality, conservative cures, and end-to-end policy flows.
+`npm test` passes 347 Forge tests, 175 root Node tests, and 36 SDK tests across both deployed generations and the local roadmap build, followed by a strict SDK declaration compile. One Windows-only symlink test is skipped when the process lacks symlink privilege, for 176 root Node tests in total. The original 134 Forge tests remain green. New coverage includes exact pilot loss settlement, remedy retry/timeout/acknowledgement recovery, multi-rule transaction accumulation, per-policy source ordering and the later-weak/earlier-severe front-running regression, operator-market escrow, registry declarations and exact audit scopes, ABI parity, block-hash-bound pagination, reorg-anchored aggregate reads, target-first crash recovery, signed-call substitution rejection, native proof/receipt binding, bounded adaptive source scans, queue-saturation recovery, transaction finality, conservative cures, and end-to-end policy flows.
 
-Six stateful invariant properties each complete 256 runs and 128,000 calls with zero handler reverts. They cover native and ERC-20 asset conservation, claim solvency, Horizon 1 and capped-pilot facility bounds, default loss distribution, inactive credit availability, and exact operator-market escrow solvency. A separate regression test asserts that the original-generation bond can be claimed at most once.
+Eight stateful invariant properties each complete 256 runs and 128,000 calls with zero handler reverts. They cover native and ERC-20 asset conservation, claim solvency, Horizon 1 and capped-pilot facility bounds, default loss distribution, inactive credit availability, portfolio recovery and loss bounds, and exact operator-market escrow solvency. A separate regression test asserts that the original-generation bond can be claimed at most once.
 
 ## Honest limitations
 
@@ -163,9 +176,9 @@ Six stateful invariant properties each complete 256 runs and 128,000 calls with 
 
 Recourse's trajectory is not “more covenants.” It is a cross-chain credit policy layer that turns verified external reality into continuously serviced credit state and bounded consequences, then, when the underlying protocol support exists, closes that loop wherever the exposure lives.
 
-- **Horizon 1 — Items 1–3 delivered; item 4 scaffolding delivered.** The Policy Kernel, event-derived Verified Credit State, permissionless Proof Jobs, ERC-20 facility factory, public manifests, and incident controls are live on testnet. The resumable reference operator is implemented and tested but is not installed as a service. The six-decimal demo asset is a fixed-supply testnet token, not a stablecoin. No pilot has been run: a design partner, independent audit, legal review, and production asset and custody decisions remain explicit gates.
-- **Horizon 2 — Closed-loop cross-chain servicing.** Items 5 and 6—pre-authorized remedy adapters plus acknowledgement and cure workflows—remain blocked until Attestcoin writability is live in the target environment. Item 7 now has a local v1 SDK, simulation, package, and registry foundation; deployment, an independent audit, interface freezing, and two external integrations remain gates.
-- **Horizon 3 — Credit coordination network.** Item 9 now has a local read-only discovery and observable-metrics foundation, not an open operator market. Multi-chain customer policy, paid competition, and programmable portfolios still depend on provisioned chains, demand, economics, and real servicing history.
+- **Horizon 1 — Items 1–3 delivered; item 4 bounded stack delivered locally.** The original Horizon 1 contracts are live, and its reference operator is installed as a healthy read-only service. The inactive six-contract V3 deployment has zero activation state but is superseded by the hardened current bytecode and cannot be activated. A fresh full-core deployment and qualification are required, and V3 execution is not installed. No pilot has run: a design partner, independent audit, legal review, and production asset and custody decisions remain explicit gates.
+- **Horizon 2 — Local closed-loop stack delivered; live routing blocked.** Items 5 and 6 include a transport-neutral lifecycle plus a pinned USC 0.2 single-route adapter, deterministic deployment qualification, and acknowledgement handling. They remain undeployed and unusable as a live cross-chain product until an official route and external Inbox configuration are available and independently verified. Item 7 includes the unpublished typed SDK and a historical empty registry deployment; the current ABI requires the fresh V3 core described above. Independent audit, interface freezing, and two external integrations remain gates.
+- **Horizon 3 — Local coordination stack delivered; live market and capital remain gated.** Item 8 supports the two source keys currently documented for CC3, item 9 includes an escrow market and fail-closed executable operator while only the Horizon 1 read-only service is installed, and item 10 includes a source-only fixed-vintage capital pool. No operator market, portfolio allocation, or customer policy is live; each still depends on audit, demand, economics, supported routes, and real servicing history.
 
 See the [full three-horizon roadmap](docs/ROADMAP.md) for the ten-item plan, investment milestones, dependencies, and deliberate cut list.
 

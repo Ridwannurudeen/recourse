@@ -42,6 +42,144 @@ function nonnegativeBigInt(value, label, { positive = false } = {}) {
   return parsed;
 }
 
+function validateTransactionFeePolicy(policy) {
+  if (
+    policy?.transactionType !== "eip1559" &&
+    policy?.transactionType !== "legacy"
+  ) {
+    throw new Error("Transaction fee policy type must be eip1559 or legacy");
+  }
+  const normalized = {
+    transactionType: policy.transactionType,
+    maximumGasLimit: nonnegativeBigInt(
+      policy.maximumGasLimit,
+      "maximum transaction gas limit",
+      { positive: true },
+    ),
+    maximumNativeFee: nonnegativeBigInt(
+      policy.maximumNativeFee,
+      "maximum native transaction fee",
+      { positive: true },
+    ),
+  };
+  if (policy.transactionType === "eip1559") {
+    if (policy.maximumGasPrice !== undefined) {
+      throw new Error(
+        "Transaction fee policy mixes legacy and EIP-1559 fields",
+      );
+    }
+    normalized.maximumFeePerGas = nonnegativeBigInt(
+      policy.maximumFeePerGas,
+      "maximum transaction fee per gas",
+      { positive: true },
+    );
+    normalized.maximumPriorityFeePerGas = nonnegativeBigInt(
+      policy.maximumPriorityFeePerGas,
+      "maximum transaction priority fee per gas",
+      { positive: true },
+    );
+    if (normalized.maximumPriorityFeePerGas > normalized.maximumFeePerGas) {
+      throw new Error(
+        "Maximum transaction priority fee exceeds maximum fee per gas",
+      );
+    }
+    if (
+      normalized.maximumGasLimit * normalized.maximumFeePerGas >
+      normalized.maximumNativeFee
+    ) {
+      throw new Error("Transaction fee policy exceeds its maximum native fee");
+    }
+  } else {
+    if (
+      policy.maximumFeePerGas !== undefined ||
+      policy.maximumPriorityFeePerGas !== undefined
+    ) {
+      throw new Error(
+        "Transaction fee policy mixes legacy and EIP-1559 fields",
+      );
+    }
+    normalized.maximumGasPrice = nonnegativeBigInt(
+      policy.maximumGasPrice,
+      "maximum transaction gas price",
+      { positive: true },
+    );
+    if (
+      normalized.maximumGasLimit * normalized.maximumGasPrice >
+      normalized.maximumNativeFee
+    ) {
+      throw new Error("Transaction fee policy exceeds its maximum native fee");
+    }
+  }
+  return normalized;
+}
+
+function normalizeTransactionFees(input, feePolicy, label) {
+  const policy = validateTransactionFeePolicy(feePolicy);
+  const type = Number(input.type);
+  const gasLimit = nonnegativeBigInt(input.gasLimit, `${label} gas limit`, {
+    positive: true,
+  });
+  if (gasLimit > policy.maximumGasLimit) {
+    throw new Error(`${label} gas limit exceeds the configured maximum`);
+  }
+  if (policy.transactionType === "eip1559") {
+    if (type !== 2 || input.gasPrice != null) {
+      throw new Error(`${label} must use an EIP-1559 transaction`);
+    }
+    const maxFeePerGas = nonnegativeBigInt(
+      input.maxFeePerGas,
+      `${label} maximum fee per gas`,
+      { positive: true },
+    );
+    const maxPriorityFeePerGas = nonnegativeBigInt(
+      input.maxPriorityFeePerGas,
+      `${label} maximum priority fee per gas`,
+      { positive: true },
+    );
+    if (
+      maxFeePerGas > policy.maximumFeePerGas ||
+      maxPriorityFeePerGas > policy.maximumPriorityFeePerGas ||
+      maxPriorityFeePerGas > maxFeePerGas
+    ) {
+      throw new Error(`${label} EIP-1559 fees exceed the configured maximum`);
+    }
+    if (gasLimit * maxFeePerGas > policy.maximumNativeFee) {
+      throw new Error(`${label} exceeds the configured maximum native fee`);
+    }
+    return {
+      type: 2,
+      gasLimit,
+      gasPrice: null,
+      maxFeePerGas,
+      maxPriorityFeePerGas,
+    };
+  }
+  if (
+    type !== 0 ||
+    input.gasPrice == null ||
+    input.maxFeePerGas != null ||
+    input.maxPriorityFeePerGas != null
+  ) {
+    throw new Error(`${label} must use a legacy transaction`);
+  }
+  const gasPrice = nonnegativeBigInt(input.gasPrice, `${label} gas price`, {
+    positive: true,
+  });
+  if (gasPrice > policy.maximumGasPrice) {
+    throw new Error(`${label} gas price exceeds the configured maximum`);
+  }
+  if (gasLimit * gasPrice > policy.maximumNativeFee) {
+    throw new Error(`${label} exceeds the configured maximum native fee`);
+  }
+  return {
+    type: 0,
+    gasLimit,
+    gasPrice,
+    maxFeePerGas: null,
+    maxPriorityFeePerGas: null,
+  };
+}
+
 function bytes32(value, label) {
   if (!isHexString(value, 32)) throw new Error(`Invalid ${label}`);
   return value.toLowerCase();
@@ -58,7 +196,7 @@ function addressFromTopic(value) {
   return getAddress(`0x${normalized.slice(-40)}`);
 }
 
-function normalizeTransactionIntent(input, signerAddress, label) {
+function normalizeTransactionIntent(input, signerAddress, label, feePolicy) {
   const from = getAddress(input.from ?? signerAddress);
   if (from !== signerAddress) throw new Error(`${label} signer mismatch`);
   const to = getAddress(input.to);
@@ -69,7 +207,7 @@ function normalizeTransactionIntent(input, signerAddress, label) {
   const data = input.data ?? "0x";
   if (!isHexString(data)) throw new Error(`Invalid ${label} calldata`);
   const value = nonnegativeBigInt(input.value ?? 0, `${label} value`);
-  return {
+  const intent = {
     chainId,
     from,
     to,
@@ -77,6 +215,10 @@ function normalizeTransactionIntent(input, signerAddress, label) {
     dataHash: keccak256(data),
     value,
   };
+  if (feePolicy !== undefined) {
+    Object.assign(intent, normalizeTransactionFees(input, feePolicy, label));
+  }
+  return intent;
 }
 
 function transactionMatchesIntent(transaction, intent) {
@@ -88,7 +230,17 @@ function transactionMatchesIntent(transaction, intent) {
     transaction.chainId === intent.chainId &&
     transaction.nonce === intent.nonce &&
     keccak256(transaction.data) === intent.dataHash &&
-    transaction.value === intent.value,
+    transaction.value === intent.value &&
+    (intent.type === undefined ||
+      (Number(transaction.type) === intent.type &&
+        transaction.gasLimit === intent.gasLimit &&
+        (intent.type === 2
+          ? transaction.gasPrice == null &&
+            transaction.maxFeePerGas === intent.maxFeePerGas &&
+            transaction.maxPriorityFeePerGas === intent.maxPriorityFeePerGas
+          : transaction.gasPrice === intent.gasPrice &&
+            transaction.maxFeePerGas == null &&
+            transaction.maxPriorityFeePerGas == null))),
   );
 }
 
@@ -262,6 +414,7 @@ export function validateExecutionPolicy(policy) {
   if (policy?.exclusiveSigner !== true) {
     throw new Error("Execution requires an exclusive signer policy");
   }
+  const feePolicy = validateTransactionFeePolicy(policy?.feePolicy);
   return {
     targetConfirmations,
     recoveryBlocks,
@@ -270,6 +423,7 @@ export function validateExecutionPolicy(policy) {
     maxCommitBond,
     minProofReimbursement,
     minRewardToBondBps,
+    feePolicy,
     exclusiveSigner: true,
   };
 }
@@ -302,9 +456,13 @@ export function validateOperatorConfig(config) {
     "Source chain",
     (value) => BigInt(value).toString(),
   );
-  if (sourceChains.size !== 1 || !sourceChains.has("3")) {
+  if (
+    [...sourceChains].some(
+      (sourceChain) => sourceChain !== "1" && sourceChain !== "3",
+    )
+  ) {
     throw new Error(
-      "This operator version supports only source chain key 3 (Ethereum mainnet)",
+      "This operator supports only CC3 source chain keys 1 and 3",
     );
   }
   const pollIntervalMs = unsignedInteger(
@@ -328,6 +486,7 @@ export function validateOperatorConfig(config) {
     maxCommitBond: config.economics?.maxCommitBond,
     minProofReimbursement: config.economics?.minProofReimbursement,
     minRewardToBondBps: config.economics?.minRewardToBondBps,
+    feePolicy: config.transactionPolicy?.feePolicy,
     exclusiveSigner: execution === "enabled" ? config.exclusiveSigner : true,
   });
   return {
@@ -498,9 +657,10 @@ export function qualifyReceipt(receipt, configuration) {
     const startIndex = 2 + offset * 2;
     const value = BigInt(`0x${log.data.slice(startIndex, startIndex + 64)}`);
     if (observedValue > UINT256_MAX - value) {
-      return { qualified: false, reason: "observed value overflows uint256" };
+      observedValue = UINT256_MAX;
+    } else {
+      observedValue += value;
     }
-    observedValue += value;
     matchingLogs += 1;
   }
   if (matchingLogs === 0) {
@@ -518,6 +678,7 @@ export function validatePendingTransaction(
   pending,
   expectedKind,
   expectedIntent,
+  feePolicy,
 ) {
   if (!pending || pending.kind !== expectedKind) {
     throw new Error(`Missing ${expectedKind} transaction journal`);
@@ -538,7 +699,12 @@ export function validatePendingTransaction(
   const nonce = unsignedInteger(pending.nonce, "transaction nonce");
   const dataHash = bytes32(pending.dataHash, "transaction calldata hash");
   const value = nonnegativeBigInt(pending.value, "transaction value");
-  const intent = { chainId, from, to, nonce, dataHash, value };
+  const fees = normalizeTransactionFees(
+    pending,
+    feePolicy,
+    "journaled transaction",
+  );
+  const intent = { chainId, from, to, nonce, dataHash, value, ...fees };
   if (
     transaction.hash?.toLowerCase() !== transactionHash ||
     !transactionMatchesIntent(transaction, intent)
@@ -576,6 +742,7 @@ export function validatePendingTransaction(
     nonce,
     dataHash,
     value,
+    ...fees,
   };
 }
 
@@ -583,10 +750,15 @@ export async function prepareJournaledTransaction({
   kind,
   signer,
   request,
+  feePolicy,
   state,
   statePath,
 }) {
-  const populated = await signer.populateTransaction(request);
+  const normalizedFeePolicy = validateTransactionFeePolicy(feePolicy);
+  const populated = await signer.populateTransaction({
+    ...request,
+    type: normalizedFeePolicy.transactionType === "eip1559" ? 2 : 0,
+  });
   const signerAddress = getAddress(
     typeof signer.getAddress === "function"
       ? await signer.getAddress()
@@ -596,6 +768,7 @@ export async function prepareJournaledTransaction({
     populated,
     signerAddress,
     "populated transaction",
+    normalizedFeePolicy,
   );
   const rawTransaction = await signer.signTransaction(populated);
   const transaction = Transaction.from(rawTransaction);
@@ -615,6 +788,11 @@ export async function prepareJournaledTransaction({
       nonce: intent.nonce,
       dataHash: intent.dataHash,
       value: intent.value.toString(),
+      type: intent.type,
+      gasLimit: intent.gasLimit.toString(),
+      gasPrice: intent.gasPrice?.toString() ?? null,
+      maxFeePerGas: intent.maxFeePerGas?.toString() ?? null,
+      maxPriorityFeePerGas: intent.maxPriorityFeePerGas?.toString() ?? null,
     },
     updatedAt: new Date().toISOString(),
   };
@@ -634,11 +812,14 @@ export async function reconcileJournaledTransaction({
   signal = new AbortController().signal,
   delay = abortableDelay,
   expectedIntent,
+  feePolicy,
+  beforeBroadcast = async () => {},
 }) {
   const pending = validatePendingTransaction(
     state.pending,
     kind,
     expectedIntent,
+    feePolicy,
   );
   const network = await provider.getNetwork();
   if (network.chainId !== pending.chainId) {
@@ -685,10 +866,12 @@ export async function reconcileJournaledTransaction({
       const confirmedThrough = await provider.getBlockNumber();
       const requiredBlock = receipt.blockNumber + targetConfirmations - 1;
       if (confirmedThrough >= requiredBlock) {
-        const [canonicalBlock, confirmedReceipt] = await Promise.all([
-          provider.getBlock(receipt.blockNumber),
-          provider.getTransactionReceipt(pending.transactionHash),
-        ]);
+        const [canonicalBlock, confirmedReceipt, confirmedTransaction] =
+          await Promise.all([
+            provider.getBlock(receipt.blockNumber),
+            provider.getTransactionReceipt(pending.transactionHash),
+            provider.getTransaction(pending.transactionHash),
+          ]);
         if (
           !canonicalBlock ||
           !canonicalBlock.hash ||
@@ -702,7 +885,11 @@ export async function reconcileJournaledTransaction({
           confirmedReceipt.blockHash.toLowerCase() !==
             receipt.blockHash.toLowerCase() ||
           confirmedReceipt.blockNumber !== receipt.blockNumber ||
-          confirmedReceipt.status !== 1
+          confirmedReceipt.status !== 1 ||
+          !confirmedTransaction ||
+          confirmedTransaction.hash?.toLowerCase() !==
+            pending.transactionHash ||
+          !transactionMatchesIntent(confirmedTransaction, pending)
         ) {
           throw new OperatorIncidentError(
             `${kind} transaction receipt changed before canonical confirmation`,
@@ -726,7 +913,17 @@ export async function reconcileJournaledTransaction({
           `${kind} transaction nonce ${pending.nonce} was advanced or replaced`,
         );
       }
+      if (
+        known &&
+        (known.hash?.toLowerCase() !== pending.transactionHash ||
+          !transactionMatchesIntent(known, pending))
+      ) {
+        throw new OperatorIncidentError(
+          `${kind} pending transaction does not match its journal`,
+        );
+      }
       if (!known && !broadcastAttempted) {
+        await beforeBroadcast();
         await provider.broadcastTransaction(pending.rawTransaction);
         broadcastAttempted = true;
       }

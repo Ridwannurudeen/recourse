@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { Wallet, getAddress, id } from "ethers";
+import { Transaction, Wallet, getAddress, id } from "ethers";
 import {
   OperatorIncidentError,
   acquireProcessLock,
@@ -27,6 +27,12 @@ const TOKEN = ADDRESS("1000");
 const SUBJECT = ADDRESS("b0b");
 const OTHER = ADDRESS("a11");
 const SIGNATURE = id("Transfer(address,address,uint256)");
+const FEE_POLICY = {
+  transactionType: "legacy",
+  maximumGasLimit: "200000",
+  maximumGasPrice: "2",
+  maximumNativeFee: "400000",
+};
 
 const CONFIGURATION = {
   sourceChain: "3",
@@ -75,6 +81,7 @@ function operatorConfig(overrides = {}) {
       minRevealWindowBlocks: 5,
       minSecondsToExpiry: 60,
     },
+    transactionPolicy: { feePolicy: FEE_POLICY },
     allowlists: {
       facilities: [FACILITY],
       policyIds: ["7"],
@@ -106,6 +113,17 @@ test("operator configuration defaults to no authority and requires explicit allo
       ),
     /allowlist must not be empty/,
   );
+  const multiChain = validateOperatorConfig(
+    operatorConfig({
+      allowlists: {
+        facilities: [FACILITY],
+        policyIds: ["7"],
+        tokens: [TOKEN],
+        sourceChains: ["1", "3"],
+      },
+    }),
+  );
+  assert.deepEqual([...multiChain.sourceChains], ["1", "3"]);
   assert.throws(
     () =>
       validateOperatorConfig(
@@ -118,7 +136,7 @@ test("operator configuration defaults to no authority and requires explicit allo
           },
         }),
       ),
-    /only source chain key 3/,
+    /supports only CC3 source chain keys 1 and 3/,
   );
   assert.throws(
     () =>
@@ -284,6 +302,21 @@ test("event filter and receipt qualification match the exact Solidity policy bou
     ),
     { qualified: false, reason: "no exact policy event match" },
   );
+  assert.deepEqual(
+    qualifyReceipt(
+      {
+        status: 1,
+        blockNumber: 100,
+        logs: [matchingLog((1n << 256n) - 1n), matchingLog(1)],
+      },
+      CONFIGURATION,
+    ),
+    {
+      qualified: true,
+      observedValue: (1n << 256n) - 1n,
+      matchingLogs: 2,
+    },
+  );
 });
 
 test("duplicate operator instances are refused until the owning lock releases", async () => {
@@ -334,6 +367,7 @@ test("a transaction journal is durable before broadcast and resumes the same sig
     data: "0xabcd",
     nonce: 9,
     chainId: 102031,
+    type: 0,
     gasLimit: 100_000,
     gasPrice: 1,
   };
@@ -353,6 +387,7 @@ test("a transaction journal is durable before broadcast and resumes the same sig
         getAddress: async () => wallet.address,
       },
       request: { to: TOKEN, data: "0xabcd" },
+      feePolicy: FEE_POLICY,
       state: { schemaVersion: 2, phase: "prepared" },
       statePath,
     });
@@ -366,7 +401,7 @@ test("a transaction journal is durable before broadcast and resumes the same sig
     assert.equal(persistedBeforeBroadcast.pending.chainId, "102031");
     assert.equal(persistedBeforeBroadcast.pending.nonce, 9);
     assert.deepEqual(calls, [
-      ["populate", { to: TOKEN, data: "0xabcd" }],
+      ["populate", { to: TOKEN, data: "0xabcd", type: 0 }],
       ["sign", populated],
     ]);
 
@@ -387,7 +422,8 @@ test("a transaction journal is durable before broadcast and resumes the same sig
                 blockHash,
               };
         },
-        getTransaction: async () => null,
+        getTransaction: async () =>
+          broadcasts > 0 ? Transaction.from(rawTransaction) : null,
         getTransactionCount: async () => 9,
         getBlockNumber: async () => 44,
         getBlock: async () => ({ hash: blockHash }),
@@ -400,6 +436,7 @@ test("a transaction journal is durable before broadcast and resumes the same sig
       statePath,
       kind: "commit",
       successPhase: "committed",
+      feePolicy: FEE_POLICY,
       delay: async () => {},
     });
     assert.equal(broadcasts, 1);
@@ -429,6 +466,7 @@ test("a signer cannot substitute a different self-consistent transaction", async
             value: 0,
             nonce: 9,
             chainId: 102031,
+            type: 0,
             gasLimit: 100_000,
             gasPrice: 1,
           }),
@@ -439,12 +477,14 @@ test("a signer cannot substitute a different self-consistent transaction", async
               value: 0,
               nonce: 9,
               chainId: 102031,
+              type: 0,
               gasLimit: 100_000,
               gasPrice: 1,
             }),
           getAddress: async () => wallet.address,
         },
         request: { to: TOKEN, data: "0xabcd" },
+        feePolicy: FEE_POLICY,
         state: { schemaVersion: 2, phase: "approved" },
         statePath,
       }),
@@ -456,12 +496,157 @@ test("a signer cannot substitute a different self-consistent transaction", async
   }
 });
 
+test("RPC-populated transactions cannot exceed the approved fee envelope", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "recourse-fee-envelope-"));
+  const wallet = Wallet.createRandom();
+  try {
+    for (const [label, populated, expected] of [
+      [
+        "gas price",
+        {
+          to: TOKEN,
+          nonce: 1,
+          chainId: 102031,
+          type: 0,
+          gasLimit: 100_000,
+          gasPrice: 3,
+        },
+        /gas price exceeds the configured maximum/,
+      ],
+      [
+        "gas limit",
+        {
+          to: TOKEN,
+          nonce: 1,
+          chainId: 102031,
+          type: 0,
+          gasLimit: 200_001,
+          gasPrice: 1,
+        },
+        /gas limit exceeds the configured maximum/,
+      ],
+      [
+        "fee mode",
+        {
+          to: TOKEN,
+          nonce: 1,
+          chainId: 102031,
+          type: 2,
+          gasLimit: 100_000,
+          maxFeePerGas: 1,
+          maxPriorityFeePerGas: 1,
+        },
+        /must use a legacy transaction/,
+      ],
+    ]) {
+      const statePath = join(directory, `${label.replace(" ", "-")}.json`);
+      let signed = 0;
+      await assert.rejects(
+        prepareJournaledTransaction({
+          kind: "commit",
+          signer: {
+            populateTransaction: async () => populated,
+            signTransaction: async () => {
+              signed += 1;
+              return wallet.signTransaction(populated);
+            },
+            getAddress: async () => wallet.address,
+          },
+          request: { to: TOKEN },
+          feePolicy: FEE_POLICY,
+          state: { schemaVersion: 2, phase: "approved" },
+          statePath,
+        }),
+        expected,
+      );
+      assert.equal(signed, 0);
+      await assert.rejects(readFile(statePath, "utf8"), /ENOENT/);
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("journaled fee fields are signed exactly and live validity is rechecked before first broadcast", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "recourse-fee-journal-"));
+  const statePath = join(directory, "job.json");
+  const wallet = Wallet.createRandom();
+  const populated = {
+    to: TOKEN,
+    nonce: 4,
+    chainId: 102031,
+    type: 0,
+    gasLimit: 100_000,
+    gasPrice: 1,
+  };
+  try {
+    const prepared = await prepareJournaledTransaction({
+      kind: "commit",
+      signer: {
+        populateTransaction: async () => populated,
+        signTransaction: async (request) => wallet.signTransaction(request),
+        getAddress: async () => wallet.address,
+      },
+      request: { to: TOKEN },
+      feePolicy: FEE_POLICY,
+      state: { schemaVersion: 2, phase: "approved" },
+      statePath,
+    });
+    await assert.rejects(
+      reconcileJournaledTransaction({
+        provider: {},
+        state: {
+          ...prepared,
+          pending: { ...prepared.pending, gasPrice: "2" },
+        },
+        statePath,
+        kind: "commit",
+        successPhase: "committed",
+        feePolicy: FEE_POLICY,
+      }),
+      /signed transaction journal metadata mismatch/i,
+    );
+
+    let checks = 0;
+    let broadcasts = 0;
+    await assert.rejects(
+      reconcileJournaledTransaction({
+        provider: {
+          getNetwork: async () => ({ chainId: 102031n }),
+          getTransactionReceipt: async () => null,
+          getTransaction: async () => null,
+          getTransactionCount: async () => 4,
+          broadcastTransaction: async () => {
+            broadcasts += 1;
+          },
+        },
+        state: prepared,
+        statePath,
+        kind: "commit",
+        successPhase: "committed",
+        feePolicy: FEE_POLICY,
+        maxReceiptPolls: 1,
+        beforeBroadcast: async () => {
+          checks += 1;
+          throw new OperatorIncidentError("live approval expired");
+        },
+      }),
+      /live approval expired/,
+    );
+    assert.equal(checks, 1);
+    assert.equal(broadcasts, 0);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("receipt reconciliation after a crash never rebroadcasts an already-mined transaction", async () => {
   const wallet = Wallet.createRandom();
   const rawTransaction = await wallet.signTransaction({
     to: TOKEN,
     nonce: 3,
     chainId: 102031,
+    type: 0,
     gasLimit: 100_000,
     gasPrice: 1,
   });
@@ -472,6 +657,7 @@ test("receipt reconciliation after a crash never rebroadcasts an already-mined t
         to: TOKEN,
         nonce: 3,
         chainId: 102031,
+        type: 0,
         gasLimit: 100_000,
         gasPrice: 1,
       }),
@@ -479,12 +665,14 @@ test("receipt reconciliation after a crash never rebroadcasts an already-mined t
       getAddress: async () => wallet.address,
     },
     request: {},
+    feePolicy: FEE_POLICY,
     state: { schemaVersion: 2, phase: "committed" },
     statePath: join(tmpdir(), `recourse-prepared-${process.pid}.json`),
   });
   const transactionHash = prepared.pending.transactionHash;
   const blockHash = `0x${"46".repeat(32)}`;
   let broadcasts = 0;
+  let preBroadcastChecks = 0;
   const result = await reconcileJournaledTransaction({
     provider: {
       getNetwork: async () => ({ chainId: 102031n }),
@@ -494,9 +682,7 @@ test("receipt reconciliation after a crash never rebroadcasts an already-mined t
       },
       getBlockNumber: async () => 45,
       getBlock: async () => ({ hash: blockHash }),
-      getTransaction: async () => {
-        throw new Error("must not read pending transaction after receipt");
-      },
+      getTransaction: async () => Transaction.from(rawTransaction),
       broadcastTransaction: async () => {
         broadcasts += 1;
       },
@@ -505,8 +691,14 @@ test("receipt reconciliation after a crash never rebroadcasts an already-mined t
     statePath: join(tmpdir(), `recourse-reconciled-${process.pid}.json`),
     kind: "reveal",
     successPhase: "revealed",
+    feePolicy: FEE_POLICY,
+    beforeBroadcast: async () => {
+      preBroadcastChecks += 1;
+      throw new Error("already-public transactions must not be re-authorized");
+    },
   });
   assert.equal(broadcasts, 0);
+  assert.equal(preBroadcastChecks, 0);
   assert.equal(result.state.revealBlock, 45);
   await rm(join(tmpdir(), `recourse-reconciled-${process.pid}.json`), {
     force: true,
@@ -524,6 +716,7 @@ test("journal reconciliation waits for target confirmations and detects a shallo
     to: TOKEN,
     nonce: 5,
     chainId: 102031,
+    type: 0,
     gasLimit: 100_000,
     gasPrice: 1,
   });
@@ -534,6 +727,7 @@ test("journal reconciliation waits for target confirmations and detects a shallo
         to: TOKEN,
         nonce: 5,
         chainId: 102031,
+        type: 0,
         gasLimit: 100_000,
         gasPrice: 1,
       }),
@@ -541,6 +735,7 @@ test("journal reconciliation waits for target confirmations and detects a shallo
       getAddress: async () => wallet.address,
     },
     request: {},
+    feePolicy: FEE_POLICY,
     state: { schemaVersion: 2, phase: "approved" },
     statePath,
   });
@@ -560,6 +755,7 @@ test("journal reconciliation waits for target confirmations and detects a shallo
       return head;
     },
     getBlock: async () => ({ hash: receipt.blockHash }),
+    getTransaction: async () => Transaction.from(rawTransaction),
   };
   try {
     const confirmed = await reconcileJournaledTransaction({
@@ -568,6 +764,7 @@ test("journal reconciliation waits for target confirmations and detects a shallo
       statePath,
       kind: "commit",
       successPhase: "committed",
+      feePolicy: FEE_POLICY,
       targetConfirmations: 3,
       maxReceiptPolls: 4,
       delay: async () => {
@@ -593,6 +790,7 @@ test("journal reconciliation waits for target confirmations and detects a shallo
         statePath,
         kind: "commit",
         successPhase: "committed",
+        feePolicy: FEE_POLICY,
         targetConfirmations: 3,
         maxReceiptPolls: 1,
       }),
@@ -615,6 +813,7 @@ test("a missing journaled transaction with an advanced signer nonce becomes an i
     to: TOKEN,
     nonce: 6,
     chainId: 102031,
+    type: 0,
     gasLimit: 100_000,
     gasPrice: 1,
   });
@@ -625,6 +824,7 @@ test("a missing journaled transaction with an advanced signer nonce becomes an i
         to: TOKEN,
         nonce: 6,
         chainId: 102031,
+        type: 0,
         gasLimit: 100_000,
         gasPrice: 1,
       }),
@@ -632,6 +832,7 @@ test("a missing journaled transaction with an advanced signer nonce becomes an i
       getAddress: async () => wallet.address,
     },
     request: {},
+    feePolicy: FEE_POLICY,
     state: { schemaVersion: 2, phase: "committed" },
     statePath,
   });
@@ -652,6 +853,7 @@ test("a missing journaled transaction with an advanced signer nonce becomes an i
         statePath,
         kind: "reveal",
         successPhase: "revealed",
+        feePolicy: FEE_POLICY,
         maxReceiptPolls: 1,
       }),
       /nonce 6 was advanced or replaced/,

@@ -13,8 +13,9 @@ import {
     ProvenTransaction
 } from "../v2/types/RecourseTypesV2.sol";
 import {IRemedyCoordinatorV1} from "./interfaces/IRemedyCoordinatorV1.sol";
+import {ISourceOrderingPolicyV1} from "./interfaces/ISourceOrderingPolicyV1.sol";
 
-contract ClosedLoopPolicyV1 is IPolicyEvaluatorV1 {
+contract ClosedLoopPolicyV1 is IPolicyEvaluatorV1, ISourceOrderingPolicyV1 {
     struct EventRule {
         uint64 sourceChain;
         address emitter;
@@ -31,6 +32,7 @@ contract ClosedLoopPolicyV1 is IPolicyEvaluatorV1 {
     struct CureRule {
         EventRule eventRule;
         uint8 intentTopicIndex;
+        uint8 executionTopicIndex;
         uint16 actionDigestOffset;
     }
 
@@ -58,6 +60,7 @@ contract ClosedLoopPolicyV1 is IPolicyEvaluatorV1 {
     error PolicyAlreadyRegistered();
     error PolicyNotConfigured();
     error RemedyNotAcknowledged();
+    error RemedyNotReplaceable();
     error RemedyPending();
     error TransactionReverted();
     error WrongTransactionCount();
@@ -65,6 +68,12 @@ contract ClosedLoopPolicyV1 is IPolicyEvaluatorV1 {
 
     event PolicyConfigured(address indexed facility, uint256 indexed policyId, bytes32 indexed configurationHash);
     event RemedyIntentLinked(address indexed facility, uint256 indexed policyId, bytes32 indexed intentId);
+    event RemedyIntentReplaced(
+        address indexed facility, uint256 indexed policyId, bytes32 indexed predecessorIntentId, bytes32 intentId
+    );
+
+    bytes32 public constant REMEDY_EXECUTION_CONFIRMED_EVENT_SIGNATURE =
+        keccak256("RemedyExecutionConfirmed(address,bytes32,bytes32,bytes32,bytes32)");
 
     IPolicyConfigurationContextV1 public immutable context;
     IRemedyCoordinatorV1 public immutable coordinator;
@@ -147,6 +156,25 @@ contract ClosedLoopPolicyV1 is IPolicyEvaluatorV1 {
         return _result(transaction, configuration, configuration.cureEffect, cureValue, false);
     }
 
+    function replaceRemedyIntent(address facility, uint256 policyId) external returns (bytes32 intentId) {
+        if (msg.sender != context.lenderOf(facility)) revert NotLender();
+        if (!configuredPolicies[facility][policyId]) revert PolicyNotConfigured();
+        bytes32 predecessorIntentId = latestIntent[facility][policyId];
+        IRemedyCoordinatorV1.IntentStatus status = coordinator.intentStatus(predecessorIntentId);
+        if (
+            predecessorIntentId == bytes32(0)
+                || (status != IRemedyCoordinatorV1.IntentStatus.Failed
+                    && status != IRemedyCoordinatorV1.IntentStatus.Expired)
+        ) revert RemedyNotReplaceable();
+        Configuration storage configuration = configurations[facility][policyId];
+        if (block.timestamp > type(uint64).max - configuration.remedyDuration) revert InvalidConfiguration();
+        intentId =
+            coordinator.recordReplacement(predecessorIntentId, uint64(block.timestamp) + configuration.remedyDuration);
+        latestIntent[facility][policyId] = intentId;
+        emit RemedyIntentLinked(facility, policyId, intentId);
+        emit RemedyIntentReplaced(facility, policyId, predecessorIntentId, intentId);
+    }
+
     function configurationOf(address facility, uint256 policyId) external view returns (Configuration memory) {
         return configurations[facility][policyId];
     }
@@ -169,6 +197,10 @@ contract ClosedLoopPolicyV1 is IPolicyEvaluatorV1 {
         return "closed-loop-v1";
     }
 
+    function sourceOrdering() external pure returns (SourceOrdering) {
+        return SourceOrdering.StrictlyIncreasing;
+    }
+
     function _matchBasic(
         ProvenTransaction calldata transaction,
         EvmV1Decoder.ReceiptFields memory receipt,
@@ -183,7 +215,7 @@ contract ClosedLoopPolicyV1 is IPolicyEvaluatorV1 {
             EvmV1Decoder.LogEntry memory entry = receipt.receiptLogs[i];
             if (!_matchesShape(entry, rule)) continue;
             matched = true;
-            observedValue += _wordAt(entry.data, rule.observedValueOffset);
+            observedValue = _saturatingAdd(observedValue, _wordAt(entry.data, rule.observedValueOffset));
         }
     }
 
@@ -200,13 +232,17 @@ contract ClosedLoopPolicyV1 is IPolicyEvaluatorV1 {
                 || transaction.blockHeight > base.endSourceBlock
         ) return (false, 0);
         bytes32 expectedActionDataHash = coordinator.intentActionDataHash(intentId);
+        bytes32 expectedExecutionId = coordinator.intentExecutionId(intentId);
         uint256 logCount = receipt.receiptLogs.length;
         for (uint256 i; i < logCount; ++i) {
             EvmV1Decoder.LogEntry memory entry = receipt.receiptLogs[i];
-            if (!_matchesShape(entry, base) || entry.topics[rule.intentTopicIndex] != intentId) continue;
+            if (
+                !_matchesShape(entry, base) || entry.topics[rule.intentTopicIndex] != intentId
+                    || entry.topics[rule.executionTopicIndex] != expectedExecutionId
+            ) continue;
             if (bytes32(_wordAt(entry.data, rule.actionDigestOffset)) != expectedActionDataHash) continue;
+            if (!matched) observedValue = _wordAt(entry.data, base.observedValueOffset);
             matched = true;
-            observedValue += _wordAt(entry.data, base.observedValueOffset);
         }
     }
 
@@ -233,7 +269,7 @@ contract ClosedLoopPolicyV1 is IPolicyEvaluatorV1 {
             evidenceKind: adverse ? EvidenceKind.EventDelta : EvidenceKind.EventTransition,
             sourceBlock: transaction.blockHeight,
             transactionIndex: transaction.txIndex,
-            subject: rule.subject,
+            subject: configuration.adverseRule.subject,
             emitter: rule.emitter,
             observedValue: observedValue,
             freshnessPeriod: configuration.freshnessPeriod
@@ -244,14 +280,17 @@ contract ClosedLoopPolicyV1 is IPolicyEvaluatorV1 {
         EventRule calldata adverse = configuration.adverseRule;
         CureRule calldata cure = configuration.cureRule;
         return _validRule(adverse) && _validRule(cure.eventRule) && !_predicatesOverlap(adverse, cure.eventRule)
-            && cure.intentTopicIndex > 0 && cure.intentTopicIndex < cure.eventRule.topicCount
-            && cure.intentTopicIndex != cure.eventRule.subjectTopicIndex && cure.actionDigestOffset % 32 == 0
-            && uint256(cure.actionDigestOffset) + 32 <= cure.eventRule.dataLength
-            && cure.actionDigestOffset != cure.eventRule.observedValueOffset && configuration.freshnessPeriod > 0
-            && configuration.remedyDuration > 0 && configuration.destinationChain > 0
-            && configuration.receiver != address(0) && configuration.target != address(0)
-            && configuration.actionKind != bytes32(0) && configuration.actionDataHash != bytes32(0)
-            && _validAdverseEffect(configuration.adverseEffect) && _validCureEffect(configuration.cureEffect);
+            && cure.eventRule.sourceChain == configuration.destinationChain
+            && cure.eventRule.emitter == configuration.receiver
+            && cure.eventRule.eventSignature == REMEDY_EXECUTION_CONFIRMED_EVENT_SIGNATURE
+            && cure.eventRule.subject == configuration.target && cure.eventRule.topicCount == 4
+            && cure.eventRule.subjectTopicIndex == 1 && cure.intentTopicIndex == 2 && cure.executionTopicIndex == 3
+            && cure.eventRule.dataLength == 64 && cure.eventRule.observedValueOffset == 0
+            && cure.actionDigestOffset == 32 && configuration.freshnessPeriod > 0 && configuration.remedyDuration > 0
+            && configuration.destinationChain > 0 && configuration.receiver != address(0)
+            && configuration.target != address(0) && configuration.actionKind != bytes32(0)
+            && configuration.actionDataHash != bytes32(0) && _validAdverseEffect(configuration.adverseEffect)
+            && _validCureEffect(configuration.cureEffect);
     }
 
     function _validRule(EventRule calldata rule) private pure returns (bool) {
@@ -272,12 +311,17 @@ contract ClosedLoopPolicyV1 is IPolicyEvaluatorV1 {
 
     function _validAdverseEffect(PolicyEffect calldata effect) private pure returns (bool) {
         return effect.outcome != PolicyOutcome.Eligible && effect.outcome != PolicyOutcome.Cured
-            && effect.creditLimitBps <= 10_000 && effect.futureDrawFeeBps <= 10_000;
+            && effect.creditLimitBps <= 10_000 && effect.futureDrawFeeBps <= 10_000 && !effect.terminate;
     }
 
     function _validCureEffect(PolicyEffect calldata effect) private pure returns (bool) {
         return effect.outcome == PolicyOutcome.Cured && effect.creditLimitBps <= 10_000
             && effect.futureDrawFeeBps <= 10_000 && !effect.terminate;
+    }
+
+    function _saturatingAdd(uint256 first, uint256 second) private pure returns (uint256) {
+        if (second > type(uint256).max - first) return type(uint256).max;
+        return first + second;
     }
 
     function _wordAt(bytes memory data, uint256 offset) private pure returns (uint256 value) {

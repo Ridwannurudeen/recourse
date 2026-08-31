@@ -12,6 +12,81 @@ const ATTEMPTS_EXHAUSTED_JOB_STATE = 2n;
 const EXPIRED_JOB_STATE = 3n;
 const REVEAL_GAS_LIMIT = 1_500_000n;
 
+export async function assertHorizon1BroadcastStillValid({
+  kind,
+  provider,
+  jobsRead,
+  hunter,
+  jobId,
+  state,
+}) {
+  const liveJob = await jobsRead.getJob(jobId);
+  if (kind === "approval" || kind === "commit") {
+    const latestBlock = await provider.getBlock("latest");
+    if (
+      !latestBlock ||
+      liveJob.state !== OPEN_JOB_STATE ||
+      BigInt(latestBlock.timestamp) >= BigInt(liveJob.expiry)
+    ) {
+      throw new OperatorIncidentError(
+        `${kind} transaction is no longer valid for the live proof job`,
+      );
+    }
+    if (kind === "commit") {
+      const commitment = await jobsRead.getCommitment(jobId, hunter.address);
+      if (
+        commitment.bond !== 0n &&
+        (commitment.digest !== state.commitment ||
+          commitment.evidenceDigest !== state.evidenceDigest)
+      ) {
+        throw new OperatorIncidentError(
+          "Commit transaction no longer matches the live commitment",
+        );
+      }
+    }
+    return true;
+  }
+  const commitment = await jobsRead.getCommitment(jobId, hunter.address);
+  if (kind === "reveal") {
+    const latestBlock = await provider.getBlock("latest");
+    if (
+      !latestBlock ||
+      liveJob.state !== OPEN_JOB_STATE ||
+      BigInt(latestBlock.timestamp) >= BigInt(liveJob.expiry) ||
+      BigInt(latestBlock.number) <= commitment.committedBlock ||
+      BigInt(latestBlock.number) > commitment.revealDeadlineBlock ||
+      commitment.digest !== state.commitment ||
+      commitment.evidenceDigest !== state.evidenceDigest ||
+      commitment.bond === 0n
+    ) {
+      throw new OperatorIncidentError(
+        "Reveal transaction is no longer valid for the live commitment",
+      );
+    }
+    return true;
+  }
+  if (kind === "release") {
+    if (
+      (liveJob.state !== OUTCOME_REACHED_JOB_STATE &&
+        liveJob.state !== ATTEMPTS_EXHAUSTED_JOB_STATE) ||
+      commitment.bond === 0n
+    ) {
+      throw new OperatorIncidentError(
+        "Release transaction is no longer valid for the live commitment",
+      );
+    }
+    return true;
+  }
+  if (kind === "claim") {
+    const amount = await jobsRead.claimable(liveJob.token, hunter.address);
+    if (amount === 0n) {
+      throw new OperatorIncidentError("Claim transaction has no live proceeds");
+    }
+    return true;
+  }
+  throw new Error(`Unknown proof-job transaction kind: ${kind}`);
+}
+
 function incident(statePath, state, reason, writeState) {
   const incidentState = {
     ...state,
@@ -50,6 +125,7 @@ export async function recoverHorizon1TargetState({
       commit: "committed",
       reveal: "revealed",
       release: "released",
+      claim: state.phase,
     }[kind];
     try {
       const reconciled = await reconcileTransaction({
@@ -61,6 +137,15 @@ export async function recoverHorizon1TargetState({
         expectedIntent: expectedIntentForKind
           ? await expectedIntentForKind(kind, state)
           : undefined,
+        beforeBroadcast: () =>
+          assertHorizon1BroadcastStillValid({
+            kind,
+            provider,
+            jobsRead,
+            hunter,
+            jobId,
+            state,
+          }),
         ...confirmationPolicy,
       });
       state = validateResumeState(reconciled.state, expectedState);
@@ -90,6 +175,60 @@ export async function recoverHorizon1TargetState({
   }
 
   if (state.phase === "revealed" || state.phase === "released") {
+    if (state.claimSettlementComplete === true) {
+      return { state, status: state.phase };
+    }
+    const liveJob = await jobsRead.getJob(jobId);
+    const claimable = await jobsRead.claimable(liveJob.token, hunter.address);
+    if (claimable === 0n) {
+      state = {
+        ...state,
+        claimSettlementComplete: true,
+        updatedAt: new Date().toISOString(),
+      };
+      writeState(statePath, state);
+      state = validateResumeState(state, expectedState);
+      return { state, status: state.phase };
+    }
+    assertCanStartTransaction();
+    state = await prepareTransaction({
+      kind: "claim",
+      signer: hunter,
+      feePolicy: confirmationPolicy.feePolicy,
+      request: await jobs.claim.populateTransaction(liveJob.token),
+      state,
+      statePath,
+    });
+    state = (
+      await reconcileTransaction({
+        provider,
+        state,
+        statePath,
+        kind: "claim",
+        successPhase: state.phase,
+        expectedIntent: expectedIntentForKind
+          ? await expectedIntentForKind("claim", state)
+          : undefined,
+        beforeBroadcast: () =>
+          assertHorizon1BroadcastStillValid({
+            kind: "claim",
+            provider,
+            jobsRead,
+            hunter,
+            jobId,
+            state,
+          }),
+        ...confirmationPolicy,
+      })
+    ).state;
+    state = validateResumeState(state, expectedState);
+    state = {
+      ...state,
+      claimSettlementComplete: true,
+      updatedAt: new Date().toISOString(),
+    };
+    writeState(statePath, state);
+    state = validateResumeState(state, expectedState);
     return { state, status: state.phase };
   }
   if (state.phase === "incident") {
@@ -108,13 +247,29 @@ export async function recoverHorizon1TargetState({
     if (commitment.bond === 0n) {
       state = { ...state, phase: "released", pending: null };
       writeState(statePath, state);
-      return { state, status: "released" };
+      return recoverHorizon1TargetState({
+        provider,
+        jobsRead,
+        jobs,
+        hunter,
+        jobId,
+        state,
+        statePath,
+        expectedState,
+        confirmationPolicy,
+        assertCanStartTransaction,
+        expectedIntentForKind,
+        prepareTransaction,
+        reconcileTransaction,
+        writeState,
+      });
     }
     assertCanStartTransaction();
     const request = await jobs.releaseCommit.populateTransaction(jobId);
     state = await prepareTransaction({
       kind: "release",
       signer: hunter,
+      feePolicy: confirmationPolicy.feePolicy,
       request,
       state,
       statePath,
@@ -129,11 +284,35 @@ export async function recoverHorizon1TargetState({
         expectedIntent: expectedIntentForKind
           ? await expectedIntentForKind("release", state)
           : undefined,
+        beforeBroadcast: () =>
+          assertHorizon1BroadcastStillValid({
+            kind: "release",
+            provider,
+            jobsRead,
+            hunter,
+            jobId,
+            state,
+          }),
         ...confirmationPolicy,
       })
     ).state;
     state = validateResumeState(state, expectedState);
-    return { state, status: "released" };
+    return recoverHorizon1TargetState({
+      provider,
+      jobsRead,
+      jobs,
+      hunter,
+      jobId,
+      state,
+      statePath,
+      expectedState,
+      confirmationPolicy,
+      assertCanStartTransaction,
+      expectedIntentForKind,
+      prepareTransaction,
+      reconcileTransaction,
+      writeState,
+    });
   }
   if (liveJob.state === EXPIRED_JOB_STATE) {
     incident(
@@ -188,6 +367,7 @@ export async function recoverHorizon1TargetState({
   state = await prepareTransaction({
     kind: "reveal",
     signer: hunter,
+    feePolicy: confirmationPolicy.feePolicy,
     request,
     state,
     statePath,
@@ -203,11 +383,35 @@ export async function recoverHorizon1TargetState({
         expectedIntent: expectedIntentForKind
           ? await expectedIntentForKind("reveal", state)
           : undefined,
+        beforeBroadcast: () =>
+          assertHorizon1BroadcastStillValid({
+            kind: "reveal",
+            provider,
+            jobsRead,
+            hunter,
+            jobId,
+            state,
+          }),
         ...confirmationPolicy,
       })
     ).state;
     state = validateResumeState(state, expectedState);
-    return { state, status: "revealed" };
+    return recoverHorizon1TargetState({
+      provider,
+      jobsRead,
+      jobs,
+      hunter,
+      jobId,
+      state,
+      statePath,
+      expectedState,
+      confirmationPolicy,
+      assertCanStartTransaction,
+      expectedIntentForKind,
+      prepareTransaction,
+      reconcileTransaction,
+      writeState,
+    });
   } catch (error) {
     if (!(error instanceof OperatorIncidentError)) throw error;
     const [finalJob, finalCommitment] = await Promise.all([

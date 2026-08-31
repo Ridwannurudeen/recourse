@@ -16,6 +16,7 @@ import { runHorizon1Job } from "../daemon/horizon1-runner.mjs";
 const HASH = (byte) => `0x${byte.repeat(32)}`;
 const HUNTER = getAddress("0x0000000000000000000000000000000000000B0b");
 const FACILITY = getAddress("0x000000000000000000000000000000000000fac1");
+const TOKEN = getAddress("0x0000000000000000000000000000000000001000");
 const SOURCE_HASH = HASH("ab");
 const REQUIREMENTS = HASH("cd");
 
@@ -329,6 +330,19 @@ test("validateResumeState accepts revealed state only with a reveal transaction 
       ),
     /reveal transaction/,
   );
+  assert.equal(
+    validateResumeState({ ...state, claimSettlementComplete: true }, EXPECTED)
+      .claimSettlementComplete,
+    true,
+  );
+  assert.throws(
+    () =>
+      validateResumeState(
+        { ...state, claimSettlementComplete: "true" },
+        EXPECTED,
+      ),
+    /claim settlement marker/,
+  );
 });
 
 test("validateResumeState binds each pre-broadcast journal to its exact lifecycle phase", () => {
@@ -452,14 +466,21 @@ test("offline committed recovery releases a job finalized while the operator was
   const result = await recoverHorizon1TargetState({
     provider: { getBlockNumber: async () => 5_377_801 },
     jobsRead: {
-      getJob: async () => ({ state: 1n }),
+      getJob: async () => ({ state: 1n, token: TOKEN }),
       getCommitment: async () => ({ bond: 10n }),
+      claimable: async () => 15n,
     },
     jobs: {
       releaseCommit: {
         populateTransaction: async (jobId) => {
           calls.push(["release", jobId]);
           return { to: FACILITY, data: "0x1234" };
+        },
+      },
+      claim: {
+        populateTransaction: async (token) => {
+          calls.push(["claim", token]);
+          return { to: FACILITY, data: "0x5678" };
         },
       },
     },
@@ -470,16 +491,84 @@ test("offline committed recovery releases a job finalized while the operator was
     expectedState: EXPECTED,
     confirmationPolicy: {},
     assertCanStartTransaction: () => {},
-    prepareTransaction: async ({ state: current }) => ({
+    prepareTransaction: async ({ kind, state: current }) => ({
       ...current,
-      pending: { kind: "release" },
+      pending: { kind },
     }),
-    reconcileTransaction: async ({ state: current }) => ({
-      state: { ...current, phase: "released", pending: null },
+    reconcileTransaction: async ({ kind, state: current, successPhase }) => ({
+      state: {
+        ...current,
+        phase: successPhase,
+        pending: null,
+        [`${kind}TransactionHash`]: HASH(kind === "release" ? "91" : "92"),
+        [`${kind}Block`]: 5_377_802,
+      },
     }),
+    writeState: () => {},
   });
   assert.equal(result.status, "released");
-  assert.deepEqual(calls, [["release", 1n]]);
+  assert.equal(result.state.claimSettlementComplete, true);
+  assert.deepEqual(calls, [
+    ["release", 1n],
+    ["claim", TOKEN],
+  ]);
+});
+
+test("committed recovery reveals and claims in the same durable lifecycle", async () => {
+  const state = resumeFixture();
+  const calls = [];
+  const result = await recoverHorizon1TargetState({
+    provider: { getBlockNumber: async () => state.commitBlock + 1 },
+    jobsRead: {
+      getJob: async () => ({ state: 0n, token: TOKEN, expiry: 9_999_999_999n }),
+      getCommitment: async () => ({
+        digest: state.commitment,
+        evidenceDigest: state.evidenceDigest,
+        committedBlock: BigInt(state.commitBlock),
+        revealDeadlineBlock: BigInt(state.commitBlock + 20),
+        bond: 10n,
+      }),
+      claimable: async () => 25n,
+    },
+    jobs: {
+      revealEvidence: {
+        populateTransaction: async () => {
+          calls.push("reveal");
+          return { to: FACILITY, data: "0x1234" };
+        },
+      },
+      claim: {
+        populateTransaction: async (token) => {
+          calls.push(["claim", token]);
+          return { to: FACILITY, data: "0x5678" };
+        },
+      },
+    },
+    hunter: { address: HUNTER },
+    jobId: 1n,
+    state,
+    statePath: "unused.json",
+    expectedState: EXPECTED,
+    confirmationPolicy: {},
+    assertCanStartTransaction: () => {},
+    prepareTransaction: async ({ kind, state: current }) => ({
+      ...current,
+      pending: { kind },
+    }),
+    reconcileTransaction: async ({ kind, state: current, successPhase }) => ({
+      state: {
+        ...current,
+        phase: successPhase,
+        pending: null,
+        [`${kind}TransactionHash`]: HASH(kind === "reveal" ? "93" : "94"),
+        [`${kind}Block`]: state.commitBlock + 1,
+      },
+    }),
+    writeState: () => {},
+  });
+  assert.equal(result.status, "revealed");
+  assert.equal(result.state.claimSettlementComplete, true);
+  assert.deepEqual(calls, ["reveal", ["claim", TOKEN]]);
 });
 
 test("pending reveal journal reconciles using only target-chain dependencies", async () => {
@@ -490,11 +579,8 @@ test("pending reveal journal reconciles using only target-chain dependencies", a
   const result = await recoverHorizon1TargetState({
     provider: {},
     jobsRead: {
-      getJob: async () => {
-        throw new Error(
-          "must not read source or job after reveal reconciliation",
-        );
-      },
+      getJob: async () => ({ state: 0n, token: TOKEN }),
+      claimable: async () => 0n,
     },
     jobs: {},
     hunter: { address: HUNTER },
@@ -512,6 +598,8 @@ test("pending reveal journal reconciles using only target-chain dependencies", a
         revealTransactionHash: HASH("99"),
       },
     }),
+    writeState: () => {},
   });
   assert.equal(result.status, "revealed");
+  assert.equal(result.state.claimSettlementComplete, true);
 });

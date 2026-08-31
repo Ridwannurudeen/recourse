@@ -8,7 +8,9 @@ import {INativeQueryVerifier} from "@gluwa/usc-contracts/contracts/write-ability
 contract MockVerifierTest is Test {
     MockVerifier verifier;
 
-    function setUp() public { verifier = new MockVerifier(); }
+    function setUp() public {
+        verifier = new MockVerifier();
+    }
 
     function test_defaultsToVerifyingTrue() public view {
         INativeQueryVerifier.MerkleProof memory m;

@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "execution": "read-only",
+  "deploymentManifest": "activation-v3.json",
+  "deploymentManifestSha256": "REPLACE_WITH_LOWERCASE_ACTIVATION_FILE_SHA256",
+  "activationConfigCommitment": "REPLACE_WITH_ACTIVATION_CONFIG_COMMITMENT",
+  "stateNamespace": "generation-activation-commitment-v1",
+  "bindAllowlistsToActivation": true,
+  "pollIntervalMs": 15000,
+  "maxBackoffMs": 120000,
+  "maxSourceBlocksPerPoll": 2000,
+  "confirmations": 12,
+  "discoveryChunkSize": 2000,
+  "targetConfirmations": 6,
+  "recoveryBlocks": 12,
+  "exclusiveSigner": false,
+  "economics": {
+    "maxCommitBond": "10000000",
+    "minProofReimbursement": "25000000",
+    "minRewardToBondBps": 25000,
+    "minRevealWindowBlocks": 18,
+    "minSecondsToExpiry": 3600
+  },
+  "transactionPolicy": {
+    "feePolicy": {
+      "transactionType": "eip1559",
+      "maximumGasLimit": "3000000",
+      "maximumNativeFee": "300000000000000000",
+      "maximumFeePerGas": "100000000000",
+      "maximumPriorityFeePerGas": "5000000000"
+    }
+  }
+}

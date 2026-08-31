@@ -56,7 +56,10 @@ contract FacilityV3DefaultHandler {
     }
 
     function settleDefaultLoss() external {
-        if (facility.bondPosted() != 0) facility.settleDefaultLoss();
+        if (facility.bondPosted() != 0) {
+            vm.prank(LENDER);
+            facility.settleDefaultLoss();
+        }
     }
 
     function repay(uint256 seed) external {

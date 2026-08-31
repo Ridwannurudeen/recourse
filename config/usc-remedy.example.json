@@ -1,0 +1,135 @@
+{
+  "schemaVersion": 1,
+  "generation": "usc-remedy-v1",
+  "uscContractsVersion": "0.2.0",
+  "exclusiveSigners": true,
+  "source": {
+    "chainId": 102031,
+    "rpcUrlEnvironment": "CREDITCOIN_RPC_URL",
+    "privateKeyEnvironment": "SOURCE_DEPLOYER_PRIVATE_KEY",
+    "deployer": "REPLACE_WITH_SOURCE_DEPLOYER_ADDRESS",
+    "expectedStartingNonce": null,
+    "context": {
+      "address": "REPLACE_WITH_EXACT_POLICY_CONTEXT_ADDRESS",
+      "runtimeCodeKeccak256": "REPLACE_WITH_EXACT_CONTEXT_RUNTIME_CODE_HASH"
+    },
+    "outbox": {
+      "address": "REPLACE_WITH_OFFICIAL_USC_OUTBOX_ADDRESS",
+      "runtimeCodeKeccak256": "REPLACE_WITH_EXACT_OUTBOX_RUNTIME_CODE_HASH",
+      "deploymentTransactionHash": "REPLACE_WITH_OUTBOX_DEPLOYMENT_TRANSACTION_HASH",
+      "chainKey": null,
+      "owner": "REPLACE_WITH_EXPECTED_OUTBOX_OWNER",
+      "validator": {
+        "address": "REPLACE_WITH_EXPECTED_OUTBOX_VALIDATOR",
+        "runtimeCodeKeccak256": "REPLACE_WITH_EXACT_OUTBOX_VALIDATOR_RUNTIME_CODE_HASH",
+        "dedicatedToRecourse": true,
+        "deploymentTransactionHash": "REPLACE_WITH_ACKNOWLEDGEMENT_VALIDATOR_DEPLOYMENT_TRANSACTION_HASH",
+        "creationCodeKeccak256": "REPLACE_WITH_EXACT_ACKNOWLEDGEMENT_VALIDATOR_CREATION_CODE_HASH",
+        "owner": "REPLACE_WITH_EXPECTED_ACKNOWLEDGEMENT_VALIDATOR_OWNER",
+        "destinationChainKey": null,
+        "outbox": "REPLACE_WITH_OFFICIAL_USC_OUTBOX_ADDRESS",
+        "proofVerifier": {
+          "address": "REPLACE_WITH_EXPECTED_USC_PROOF_VERIFIER",
+          "runtimeCodeKeccak256": "REPLACE_WITH_EXACT_PROOF_VERIFIER_RUNTIME_CODE_HASH"
+        },
+        "attestToken": "REPLACE_WITH_EXPECTED_ATTEST_TOKEN",
+        "trustedInboxes": ["REPLACE_WITH_DEDICATED_RECOURSE_INBOX"]
+      },
+      "defaultRateLimit": "REPLACE_WITH_EXPECTED_DEFAULT_RATE_LIMIT",
+      "attestorVault": {
+        "address": "REPLACE_WITH_EXPECTED_ATTESTOR_VAULT",
+        "runtimeCodeKeccak256": "REPLACE_WITH_EXACT_ATTESTOR_VAULT_RUNTIME_CODE_HASH"
+      },
+      "feeRegistry": {
+        "address": "REPLACE_WITH_EXPECTED_FEE_REGISTRY",
+        "runtimeCodeKeccak256": "REPLACE_WITH_EXACT_FEE_REGISTRY_RUNTIME_CODE_HASH"
+      },
+      "attestToken": {
+        "address": "REPLACE_WITH_EXPECTED_ATTEST_TOKEN",
+        "runtimeCodeKeccak256": "REPLACE_WITH_EXACT_ATTEST_TOKEN_RUNTIME_CODE_HASH"
+      },
+      "maximumCoreFee": "REPLACE_WITH_REVIEWED_MAXIMUM_CORE_FEE",
+      "paused": false
+    }
+  },
+  "destination": {
+    "chainId": null,
+    "uscChainKey": null,
+    "rpcUrlEnvironment": "DESTINATION_RPC_URL",
+    "privateKeyEnvironment": "DESTINATION_DEPLOYER_PRIVATE_KEY",
+    "deployer": "REPLACE_WITH_DESTINATION_DEPLOYER_ADDRESS",
+    "expectedStartingNonce": null,
+    "guardian": "REPLACE_WITH_DESTINATION_GUARDIAN_ADDRESS",
+    "inbox": {
+      "dedicatedToRecourse": true,
+      "expectedAddress": "REPLACE_WITH_PRECOMPUTED_DEDICATED_INBOX_ADDRESS",
+      "localChainKey": "REPLACE_WITH_ZERO_PADDED_DESTINATION_USC_CHAIN_KEY",
+      "creditcoinChainId": "102031",
+      "owner": "REPLACE_WITH_EXPECTED_INBOX_OWNER",
+      "defaultVoteValidator": {
+        "address": "REPLACE_WITH_EXPECTED_INBOX_VOTE_VALIDATOR",
+        "runtimeCodeKeccak256": "REPLACE_WITH_EXACT_INBOX_VALIDATOR_RUNTIME_CODE_HASH",
+        "validatorType": "eoa",
+        "owner": "REPLACE_WITH_EXPECTED_VOTE_VALIDATOR_OWNER",
+        "attestorRegistry": {
+          "address": "REPLACE_WITH_EXPECTED_ATTESTOR_REGISTRY",
+          "runtimeCodeKeccak256": "REPLACE_WITH_EXACT_ATTESTOR_REGISTRY_RUNTIME_CODE_HASH",
+          "dedicatedToRecourse": true,
+          "deploymentTransactionHash": "REPLACE_WITH_ATTESTOR_REGISTRY_DEPLOYMENT_TRANSACTION_HASH",
+          "creationCodeKeccak256": "REPLACE_WITH_EXACT_ATTESTOR_REGISTRY_CREATION_CODE_HASH",
+          "owner": "REPLACE_WITH_EXPECTED_ATTESTOR_REGISTRY_OWNER",
+          "authorizedUpdaters": ["REPLACE_WITH_EXPECTED_INBOX_VOTE_VALIDATOR"]
+        },
+        "minAttestorCount": null,
+        "thresholdNumerator": null,
+        "thresholdAddition": null,
+        "attestorSetUpdateNonce": null,
+        "attestors": [
+          "REPLACE_WITH_EXPECTED_ATTESTOR_1",
+          "REPLACE_WITH_EXPECTED_ATTESTOR_2",
+          "REPLACE_WITH_EXPECTED_ATTESTOR_3"
+        ]
+      },
+      "paused": false
+    }
+  },
+  "artifacts": {
+    "UscRemedyTransportV1": {
+      "path": "out/UscRemedyTransportV1.sol/UscRemedyTransportV1.json",
+      "keccak256": "0xeac22a5a831ec9ba3c2bc44c0e65ec0c0daf4485258240b836e5d6cc62afb4df"
+    },
+    "RemedyCoordinatorV1": {
+      "path": "out/RemedyCoordinatorV1.sol/RemedyCoordinatorV1.json",
+      "keccak256": "0xbb5c732c198e11bed0dd8ed7a38268e3e3d55a7f95ce9a5fa7bf00ac9850c9d7"
+    },
+    "BoundedRemedyReceiverV1": {
+      "path": "out/BoundedRemedyReceiverV1.sol/BoundedRemedyReceiverV1.json",
+      "keccak256": "0x6adf663ad94c3b4119f6075ee95534fa1226f0b1f417f96e4b9a63f5f09b8a22"
+    },
+    "UscRemedyDispatcherV1": {
+      "path": "out/UscRemedyDispatcherV1.sol/UscRemedyDispatcherV1.json",
+      "keccak256": "0x9826539d24a77e9754fa8d9d82a45dec2851bc6c897db5b03f0f1ef3f1c1abf8"
+    },
+    "Inbox020": {
+      "path": "REPLACE_WITH_EXACT_COMPILED_USC_0_2_0_INBOX_ARTIFACT_PATH",
+      "keccak256": "REPLACE_WITH_REVIEWED_INBOX_0_2_0_ARTIFACT_HASH"
+    }
+  },
+  "transactionPolicy": {
+    "sourceConfirmations": 6,
+    "destinationConfirmations": 12,
+    "maximumReceiptPolls": 24,
+    "sourceFeePolicy": {
+      "transactionType": "eip1559",
+      "maximumGasLimit": "REPLACE_WITH_REVIEWED_SOURCE_MAXIMUM_GAS_LIMIT",
+      "maximumFeePerGas": "REPLACE_WITH_REVIEWED_SOURCE_MAXIMUM_FEE_PER_GAS",
+      "maximumPriorityFeePerGas": "REPLACE_WITH_REVIEWED_SOURCE_MAXIMUM_PRIORITY_FEE_PER_GAS"
+    },
+    "destinationFeePolicy": {
+      "transactionType": "eip1559",
+      "maximumGasLimit": "REPLACE_WITH_REVIEWED_DESTINATION_MAXIMUM_GAS_LIMIT",
+      "maximumFeePerGas": "REPLACE_WITH_REVIEWED_DESTINATION_MAXIMUM_FEE_PER_GAS",
+      "maximumPriorityFeePerGas": "REPLACE_WITH_REVIEWED_DESTINATION_MAXIMUM_PRIORITY_FEE_PER_GAS"
+    }
+  }
+}

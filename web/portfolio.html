@@ -29,16 +29,95 @@
         >
         <nav class="obs-nav" aria-label="Recourse applications">
           <a href="./index.html">Facilities</a
-          ><a href="./horizon1.html">Horizon 1</a
+          ><a href="./horizon1.html">Horizon 1</a><a href="./v3.html">V3</a
           ><a href="./operator.html">Operators</a
           ><a href="./portfolio.html" aria-current="page">Portfolio</a>
         </nav>
       </div>
     </header>
     <main class="obs-shell obs-main" id="main">
+      <section
+        class="obs-truth-stage"
+        id="portfolio-pool-source"
+        aria-labelledby="portfolio-pool-source-title"
+      >
+        <div class="obs-truth-heading">
+          <div>
+            <p class="obs-eyebrow">Capital pool · repository source</p>
+            <h1 id="portfolio-pool-source-title">
+              PortfolioPoolV1 is built, not deployed.
+            </h1>
+          </div>
+          <p>
+            The fixed-vintage, single-asset pool has contract and SDK coverage.
+            No verified pool address exists in the deployment manifest, so no
+            funding, allocation, loss, recovery, or claim below is presented as
+            live state.
+          </p>
+        </div>
+        <div class="obs-truth-rail" aria-label="Portfolio pool truth state">
+          <div class="obs-truth-item" data-truth="source-only">
+            <span>Implementation</span><strong>Source-only</strong
+            ><small>Compiled local contract and exact SDK ABI.</small>
+          </div>
+          <div class="obs-truth-item" data-truth="unavailable">
+            <span>Deployment</span><strong>Not deployed</strong
+            ><small>No verified pool address.</small>
+          </div>
+          <div class="obs-truth-item" data-truth="unavailable">
+            <span>Lifecycle</span><strong>Not activated</strong
+            ><small>No configured or funded pool instance.</small>
+          </div>
+          <div class="obs-truth-item" data-truth="unavailable">
+            <span>Capital</span><strong>None verified</strong
+            ><small>No verified pool capital, TVL, or yield.</small>
+          </div>
+          <div class="obs-truth-item" data-truth="source-only">
+            <span>Execution</span><strong>External-gated</strong
+            ><small>Deployment and on-chain configuration are required.</small>
+          </div>
+        </div>
+        <ol class="obs-pool-lifecycle" aria-label="Portfolio pool lifecycle">
+          <li>
+            <span>01 · setup</span><strong>Configuring</strong>
+            <p>
+              Bind one mandate; create and register candidates, investors, and
+              an optional proof-job venue.
+            </p>
+          </li>
+          <li>
+            <span>02 · subscriptions</span><strong>Funding</strong>
+            <p>
+              Registered investors deposit before the deadline, within the
+              immutable asset cap.
+            </p>
+          </li>
+          <li>
+            <span>03 · vintage</span><strong>Active</strong>
+            <p>
+              Allocate an exact facility limit only after full bond and mandate
+              rechecks; harvests remain permissionless.
+            </p>
+          </li>
+          <li>
+            <span>04 · closeout</span><strong>Finalized</strong>
+            <p>
+              Settled recovery and realized loss feed pro-rata pull claims; late
+              recoveries remain distributable.
+            </p>
+          </li>
+          <li>
+            <span>05 · no vintage</span><strong>Cancelled</strong>
+            <p>
+              Funding shares can be withdrawn when the pool closes before
+              activation.
+            </p>
+          </li>
+        </ol>
+      </section>
       <section class="obs-state" id="portfolio-state" aria-live="polite">
         <p class="obs-eyebrow">Factory provenance · single-endpoint reads</p>
-        <h1 id="portfolio-state-title">Reading facility inventory</h1>
+        <h2 id="portfolio-state-title">Reading facility inventory</h2>
         <p id="portfolio-state-copy">
           Enumerating the factory at one block, then grouping only exact
           asset-address and decimal identities.
@@ -51,7 +130,7 @@
         <section class="obs-intro" aria-labelledby="portfolio-title">
           <div>
             <p class="obs-eyebrow">Credit portfolio · raw units</p>
-            <h1 id="portfolio-title">Capital without an invented price.</h1>
+            <h2 id="portfolio-title">Capital without an invented price.</h2>
             <p class="obs-intro-copy">
               Factory-proven facilities grouped by chain, asset contract, and
               token decimals. Values are contract base units converted only by

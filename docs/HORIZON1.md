@@ -6,15 +6,15 @@ This is technical testnet scaffolding. It is not a pilot, production stablecoin 
 
 ## Live CC3 deployment
 
-| Component | Address |
-| --- | --- |
-| Policy Kernel v1 | [`0x5cE48b776CBFa04Bf3f375809d16B33B3d413Dbb`](https://creditcoin-testnet.blockscout.com/address/0x5cE48b776CBFa04Bf3f375809d16B33B3d413Dbb) |
-| Verified Credit State | [`0x574916dc2D41b2Ac57FF77c4bc47e91D26550AE4`](https://creditcoin-testnet.blockscout.com/address/0x574916dc2D41b2Ac57FF77c4bc47e91D26550AE4) |
-| Facility factory | [`0x04719DA84B91AC2Cb2bf9ad770F412989DF61fbd`](https://creditcoin-testnet.blockscout.com/address/0x04719DA84B91AC2Cb2bf9ad770F412989DF61fbd) |
-| Event-history policy | [`0xcB6cc391E524966438a6B1f9ac411e7d2e500cA5`](https://creditcoin-testnet.blockscout.com/address/0xcB6cc391E524966438a6B1f9ac411e7d2e500cA5) |
+| Component                 | Address                                                                                                                                      |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Policy Kernel v1          | [`0x5cE48b776CBFa04Bf3f375809d16B33B3d413Dbb`](https://creditcoin-testnet.blockscout.com/address/0x5cE48b776CBFa04Bf3f375809d16B33B3d413Dbb) |
+| Verified Credit State     | [`0x574916dc2D41b2Ac57FF77c4bc47e91D26550AE4`](https://creditcoin-testnet.blockscout.com/address/0x574916dc2D41b2Ac57FF77c4bc47e91D26550AE4) |
+| Facility factory          | [`0x04719DA84B91AC2Cb2bf9ad770F412989DF61fbd`](https://creditcoin-testnet.blockscout.com/address/0x04719DA84B91AC2Cb2bf9ad770F412989DF61fbd) |
+| Event-history policy      | [`0xcB6cc391E524966438a6B1f9ac411e7d2e500cA5`](https://creditcoin-testnet.blockscout.com/address/0xcB6cc391E524966438a6B1f9ac411e7d2e500cA5) |
 | Permissionless proof jobs | [`0xdA28730f8BCd7dAd54Fe3c77D01aacC41E8DeB4b`](https://creditcoin-testnet.blockscout.com/address/0xdA28730f8BCd7dAd54Fe3c77D01aacC41E8DeB4b) |
-| Demonstration facility | [`0xF1E51D2d648E7FeA60fE4B2C739f7591426d14FA`](https://creditcoin-testnet.blockscout.com/address/0xF1E51D2d648E7FeA60fE4B2C739f7591426d14FA) |
-| Fixed-supply demo rUSD | [`0x3c6eF93E1d2C539c5EFefbBc51cc6a1E120fBf77`](https://creditcoin-testnet.blockscout.com/address/0x3c6eF93E1d2C539c5EFefbBc51cc6a1E120fBf77) |
+| Demonstration facility    | [`0xF1E51D2d648E7FeA60fE4B2C739f7591426d14FA`](https://creditcoin-testnet.blockscout.com/address/0xF1E51D2d648E7FeA60fE4B2C739f7591426d14FA) |
+| Fixed-supply demo rUSD    | [`0x3c6eF93E1d2C539c5EFefbBc51cc6a1E120fBf77`](https://creditcoin-testnet.blockscout.com/address/0x3c6eF93E1d2C539c5EFefbBc51cc6a1E120fBf77) |
 
 The demonstration facility is Active with a 100,000 rUSD limit, 20,000 rUSD bond, 40,000 rUSD drawn principal, 40,800 rUSD debt, and 60,000 rUSD available credit. Proof job 1 is funded. rUSD is a six-decimal fixed-supply testnet token, not a stablecoin with reserves, redemption, or production value.
 
@@ -59,7 +59,7 @@ The lender and borrower have independent draw-pause flags. Neither can clear the
 
 The local [`sdk/`](../sdk/README.md) package exposes typed reads for both Horizon 1 and `PolicyRegistryV1`, exact ABI encodings, calldata-only builders, event-policy manifest hashing, proof-job commitments, and conservative facility simulation. Its off-chain `recourse-policy-package` artifact is intentionally separate from the registry's on-chain issuer declarations.
 
-`PolicyRegistryV1` is implemented and tested locally but is not deployed. A release binds an issuer namespace, issuer-declared build-artifact hash, reference runtime, declared evidence kinds, and metadata-only action-adapter specifications. The issuer can approve exact constructor-bound runtime variants and attest deployments whose facility, kernel, evaluator runtime, manifest, and configuration agree. Audit publishers attach their own identity to either an exact release snapshot or exact deployment snapshot; the registry never exposes a global "audited" flag.
+`PolicyRegistryV1` is deployed separately as part of the historical inactive V3 core at [`0x07459CC8065e46BC3E5F519c715e71DDb10f6c30`](https://creditcoin-testnet.blockscout.com/address/0x07459CC8065e46BC3E5F519c715e71DDb10f6c30), but it remains empty and is not part of the live Horizon 1 facility path. That V3 deployment predates the current source-ordering interface and cannot be activated by the hardened tooling; a fresh full-core deployment is required. A release binds an issuer namespace, issuer-declared build-artifact hash, reference runtime, declared evidence kinds, and metadata-only action-adapter specifications. The issuer can approve exact constructor-bound runtime variants and attest deployments whose facility, kernel, evaluator runtime, manifest, and configuration agree. Audit publishers attach their own identity to either an exact release snapshot or exact deployment snapshot; the registry never exposes a global "audited" flag.
 
 Deployment history is issuer-attested, not factory-certified. The registry does not prove that a facility came from `RecourseFacilityFactoryV2` or that its kernel is a canonical Recourse build. Its v1 constructor check models the current kernel-only `EventHistoryPolicyV1` constructor. The correct description is issuer-attested, facility/kernel-consistent, evaluator-runtime/config-bound deployment records.
 

@@ -12,10 +12,18 @@ import {
   readFileSync,
   realpathSync,
 } from "node:fs";
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { basename, resolve } from "node:path";
 import { discoverProofJobs, writeDiscoveryReport } from "./job-discovery.mjs";
 import { runHorizon1Job } from "./horizon1-runner.mjs";
+import { runV3Job } from "./v3-runner.mjs";
+import {
+  V3_ACTIVATION_GENERATION,
+  activationDiscoveryDeployments,
+  assertV3OperatorBinding,
+  multiRuleExecutionConfigurations,
+} from "./v3-core.mjs";
 import {
   acquireProcessLock,
   abortableDelay,
@@ -31,13 +39,14 @@ import {
 } from "./operator-core.mjs";
 import {
   getAttestedHeight,
+  getSourceNetwork,
   getSourceProvider,
 } from "../scripts/lib/proofs.mjs";
 
 const DEFAULT_CONFIG_PATH = "daemon/operator-config.example.json";
 const DEFAULT_DEPLOYMENT_PATH = "deployments-horizon1.json";
 const DEFAULT_DATA_DIRECTORY = "daemon/operator-data";
-const EXPECTED_SOURCE_CHAIN_ID = 1n;
+const V3_STATE_NAMESPACE = "generation-activation-commitment-v1";
 export const OPERATOR_LIMITS = Object.freeze({
   maxLogsPerCycle: 512,
   maxCandidatesPerJob: 256,
@@ -47,7 +56,10 @@ const KERNEL_EXECUTION_ABI = [
   "function safeStaleProofRelease() view returns (bool)",
   "function isProcessed(address facility,uint256 policyId,bytes32 queryId) view returns (bool)",
   "function latestSourcePosition(address facility,uint256 policyId,uint64 chainKey) view returns (bool recorded,uint64 blockHeight,uint64 transactionIndex)",
+  "function sourceOrderingOf(address facility,uint256 policyId) view returns (uint8)",
 ];
+const STRICTLY_INCREASING_SOURCE_ORDERING = 0;
+const UNIQUE_ONLY_SOURCE_ORDERING = 1;
 
 function errorMessage(error) {
   return (
@@ -76,6 +88,22 @@ function executionPolicy(config) {
     maxCommitBond: config.maxCommitBond.toString(),
     minProofReimbursement: config.minProofReimbursement.toString(),
     minRewardToBondBps: config.minRewardToBondBps,
+    feePolicy:
+      config.feePolicy.transactionType === "eip1559"
+        ? {
+            transactionType: "eip1559",
+            maximumGasLimit: config.feePolicy.maximumGasLimit.toString(),
+            maximumNativeFee: config.feePolicy.maximumNativeFee.toString(),
+            maximumFeePerGas: config.feePolicy.maximumFeePerGas.toString(),
+            maximumPriorityFeePerGas:
+              config.feePolicy.maximumPriorityFeePerGas.toString(),
+          }
+        : {
+            transactionType: "legacy",
+            maximumGasLimit: config.feePolicy.maximumGasLimit.toString(),
+            maximumNativeFee: config.feePolicy.maximumNativeFee.toString(),
+            maximumGasPrice: config.feePolicy.maximumGasPrice.toString(),
+          },
     exclusiveSigner: config.exclusiveSigner,
   };
 }
@@ -87,7 +115,8 @@ function rangeLimitError(error) {
 }
 
 export async function verifySourceCursor(provider, state) {
-  if (!state?.lastScannedBlock) return;
+  if (state?.lastScannedBlock === null || state?.lastScannedBlock === undefined)
+    return;
   const block = await provider.getBlock(state.lastScannedBlock);
   if (
     !block ||
@@ -101,11 +130,93 @@ export async function verifySourceCursor(provider, state) {
 
 export async function assertEthereumMainnetProvider(provider) {
   const network = await provider.getNetwork();
-  if (network.chainId !== EXPECTED_SOURCE_CHAIN_ID) {
+  if (network.chainId !== 1n) {
     throw new Error(
       `Refusing source chain ${network.chainId}; expected Ethereum mainnet chain 1`,
     );
   }
+  return true;
+}
+
+export async function assertSourceProviderIdentity(
+  provider,
+  expectedEvmChainId,
+  sourceChain,
+) {
+  const network = await provider.getNetwork();
+  if (network.chainId !== BigInt(expectedEvmChainId)) {
+    throw new Error(
+      `Refusing EVM chain ${network.chainId} for source key ${sourceChain}; expected ${expectedEvmChainId}`,
+    );
+  }
+  return true;
+}
+
+export function validateOperatorSourceNetworks(
+  input,
+  sourceChains,
+  environment = process.env,
+) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw new Error("Source network configuration must be an object");
+  }
+  const expected = [...sourceChains].sort(
+    (left, right) => Number(left) - Number(right),
+  );
+  const supplied = Object.keys(input).sort(
+    (left, right) => Number(left) - Number(right),
+  );
+  if (
+    supplied.length !== expected.length ||
+    supplied.some((chain, index) => chain !== expected[index])
+  ) {
+    throw new Error(
+      "Source network configuration must exactly match the source-chain allowlist",
+    );
+  }
+  return new Map(
+    expected.map((chainKey) => {
+      const expectedNetwork = getSourceNetwork(chainKey);
+      const item = input[chainKey];
+      const evmChainId = Number(item?.evmChainId);
+      if (!Number.isSafeInteger(evmChainId) || evmChainId <= 0) {
+        throw new Error(`Invalid EVM chain ID for source key ${chainKey}`);
+      }
+      const rpcUrlEnvironment = item?.rpcUrlEnvironment;
+      if (
+        typeof rpcUrlEnvironment !== "string" ||
+        !/^[A-Z][A-Z0-9_]*$/.test(rpcUrlEnvironment)
+      ) {
+        throw new Error(`Invalid RPC environment for source key ${chainKey}`);
+      }
+      if (evmChainId !== expectedNetwork.evmChainId) {
+        throw new Error(
+          `CC3 source key ${chainKey} must bind to EVM chain ${expectedNetwork.evmChainId}`,
+        );
+      }
+      if (rpcUrlEnvironment !== expectedNetwork.rpcUrlEnvironment) {
+        throw new Error(
+          `CC3 source key ${chainKey} must use ${expectedNetwork.rpcUrlEnvironment}`,
+        );
+      }
+      const rpcUrl = environment[rpcUrlEnvironment];
+      if (typeof rpcUrl !== "string" || rpcUrl.length === 0) {
+        throw new Error(
+          `${rpcUrlEnvironment} is required for source key ${chainKey}`,
+        );
+      }
+      let parsed;
+      try {
+        parsed = new URL(rpcUrl);
+      } catch {
+        throw new Error(`Invalid RPC URL for source key ${chainKey}`);
+      }
+      if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+        throw new Error(`Invalid RPC URL protocol for source key ${chainKey}`);
+      }
+      return [chainKey, { evmChainId, rpcUrlEnvironment, rpcUrl }];
+    }),
+  );
 }
 
 export async function assertExecutionKernelCapability(
@@ -135,24 +246,60 @@ export async function scanJobEvidence({
   statePath,
   attestedHeight,
   maxSourceBlocks,
+  expectedSourceChainId = 1,
 }) {
-  await assertEthereumMainnetProvider(sourceProvider);
-  const configuration = policy.configuration;
+  const grouped = policy.configurations !== undefined;
+  const configurations = grouped
+    ? policy.configurations
+    : [policy.configuration];
+  if (!Array.isArray(configurations) || configurations.length === 0) {
+    throw new Error("Evidence policy must contain at least one configuration");
+  }
+  const sourceChain = BigInt(configurations[0].sourceChain).toString();
+  const ruleIndexes = new Set();
+  for (const configuration of configurations) {
+    if (BigInt(configuration.sourceChain).toString() !== sourceChain) {
+      throw new Error(
+        "Evidence scan configurations must share one source chain",
+      );
+    }
+    if (grouped) {
+      const ruleIndex = Number(configuration.ruleIndex);
+      if (
+        !Number.isSafeInteger(ruleIndex) ||
+        ruleIndex < 0 ||
+        ruleIndexes.has(ruleIndex)
+      ) {
+        throw new Error("Evidence scan rule indexes must be unique integers");
+      }
+      ruleIndexes.add(ruleIndex);
+    }
+  }
+  await assertSourceProviderIdentity(
+    sourceProvider,
+    expectedSourceChainId,
+    sourceChain,
+  );
   const stored = existsSync(statePath) ? readJson(statePath) : undefined;
   if (stored) {
     if (
-      stored.schemaVersion !== 1 ||
+      stored.schemaVersion !== (grouped ? 2 : 1) ||
       stored.jobId !== job.jobId ||
       stored.facility.toLowerCase() !== job.facility.toLowerCase() ||
       stored.requirementsDigest.toLowerCase() !==
-        job.requirementsDigest.toLowerCase()
+        job.requirementsDigest.toLowerCase() ||
+      (grouped && stored.sourceChain !== sourceChain)
     ) {
       throw new Error(`Operator state mismatch for job ${job.jobId}`);
     }
     await verifySourceCursor(sourceProvider, stored);
   }
-  const startWindow = Number(configuration.startSourceBlock);
-  const endWindow = Number(configuration.endSourceBlock);
+  const startWindow = Math.min(
+    ...configurations.map(({ startSourceBlock }) => Number(startSourceBlock)),
+  );
+  const endWindow = Math.max(
+    ...configurations.map(({ endSourceBlock }) => Number(endSourceBlock)),
+  );
   const fromBlock = Math.max(
     stored?.nextSourceBlock ?? startWindow,
     startWindow,
@@ -162,31 +309,13 @@ export async function scanJobEvidence({
     endWindow,
     fromBlock + maxSourceBlocks - 1,
   );
-  if (toBlock < fromBlock) {
-    return {
-      state: stored ?? {
-        schemaVersion: 1,
-        jobId: job.jobId,
-        facility: job.facility,
-        policyId: job.policyId,
-        requirementsDigest: job.requirementsDigest,
-        nextSourceBlock: fromBlock,
-        lastScannedBlock: null,
-        lastScannedBlockHash: null,
-        candidates: [],
-        completedTransactionHashes: [],
-        skippedCandidates: [],
-        incidents: [],
-      },
-      added: [],
-    };
-  }
-  let state = stored ?? {
-    schemaVersion: 1,
+  const initialState = () => ({
+    schemaVersion: grouped ? 2 : 1,
     jobId: job.jobId,
     facility: job.facility,
     policyId: job.policyId,
     requirementsDigest: job.requirementsDigest,
+    ...(grouped ? { sourceChain } : {}),
     nextSourceBlock: fromBlock,
     lastScannedBlock: null,
     lastScannedBlockHash: null,
@@ -194,10 +323,16 @@ export async function scanJobEvidence({
     completedTransactionHashes: [],
     skippedCandidates: [],
     incidents: [],
-  };
+  });
+  if (toBlock < fromBlock) {
+    return {
+      state: stored ?? initialState(),
+      added: [],
+    };
+  }
+  let state = stored ?? initialState();
   const added = [];
   let logCount = 0;
-  const filter = eventLogFilter(configuration);
 
   async function scanRange(rangeStart, rangeEnd) {
     if (
@@ -209,31 +344,34 @@ export async function scanJobEvidence({
     const initialAnchor = await sourceProvider.getBlock(rangeEnd);
     if (!initialAnchor)
       throw new Error(`Source block ${rangeEnd} is unavailable`);
-    let logs;
+    const queried = [];
     try {
-      logs = await sourceProvider.getLogs({
-        ...filter,
-        fromBlock: rangeStart,
-        toBlock: rangeEnd,
-      });
+      for (const configuration of configurations) {
+        const queryStart = Math.max(
+          rangeStart,
+          Number(configuration.startSourceBlock),
+        );
+        const queryEnd = Math.min(
+          rangeEnd,
+          Number(configuration.endSourceBlock),
+        );
+        if (queryEnd < queryStart) continue;
+        const logs = await sourceProvider.getLogs({
+          ...eventLogFilter(configuration),
+          fromBlock: queryStart,
+          toBlock: queryEnd,
+        });
+        queried.push({ configuration, logs });
+      }
     } catch (error) {
       if (rangeStart === rangeEnd || !rangeLimitError(error)) throw error;
       const midpoint = Math.floor((rangeStart + rangeEnd) / 2);
       const leftCompleted = await scanRange(rangeStart, midpoint);
       return leftCompleted ? scanRange(midpoint + 1, rangeEnd) : false;
     }
-    if (logCount + logs.length > OPERATOR_LIMITS.maxLogsPerCycle) {
-      if (rangeStart === rangeEnd) {
-        if (logs.length > OPERATOR_LIMITS.maxLogsPerCycle) {
-          throw new Error("Source log limit exceeded for a single block");
-        }
-        return false;
-      }
-      const midpoint = Math.floor((rangeStart + rangeEnd) / 2);
-      const leftCompleted = await scanRange(rangeStart, midpoint);
-      return leftCompleted ? scanRange(midpoint + 1, rangeEnd) : false;
-    }
-    for (const log of logs) {
+    const returnedLogs = queried.flatMap(({ logs: matches }) => matches);
+    const logsByIdentity = new Map();
+    for (const log of returnedLogs) {
       if (
         !isHexString(log.transactionHash, 32) ||
         !isHexString(log.blockHash, 32) ||
@@ -245,6 +383,32 @@ export async function scanJobEvidence({
           "Canonical source log is missing transaction or block identity",
         );
       }
+      const logIndex = Number.isSafeInteger(log.index)
+        ? log.index
+        : Number.isSafeInteger(log.logIndex)
+          ? log.logIndex
+          : null;
+      const identity = JSON.stringify([
+        log.blockHash.toLowerCase(),
+        log.transactionHash.toLowerCase(),
+        logIndex,
+        log.address?.toLowerCase() ?? null,
+        log.topics?.map((topic) => topic.toLowerCase()) ?? null,
+        log.data?.toLowerCase() ?? null,
+      ]);
+      if (!logsByIdentity.has(identity)) logsByIdentity.set(identity, log);
+    }
+    const logs = [...logsByIdentity.values()];
+    if (logCount + logs.length > OPERATOR_LIMITS.maxLogsPerCycle) {
+      if (rangeStart === rangeEnd) {
+        if (logs.length > OPERATOR_LIMITS.maxLogsPerCycle) {
+          throw new Error("Source log limit exceeded for a single block");
+        }
+        return false;
+      }
+      const midpoint = Math.floor((rangeStart + rangeEnd) / 2);
+      const leftCompleted = await scanRange(rangeStart, midpoint);
+      return leftCompleted ? scanRange(midpoint + 1, rangeEnd) : false;
     }
     const hashes = [
       ...new Set(
@@ -297,20 +461,39 @@ export async function scanJobEvidence({
           `Canonical source log ${transactionHash} belongs to a failed receipt`,
         );
       }
-      const result = qualifyReceipt(receipt, configuration);
-      if (!result.qualified) {
+      const results = configurations.map((configuration) => ({
+        configuration,
+        result: qualifyReceipt(receipt, configuration),
+      }));
+      const qualified = results.filter(({ result }) => result.qualified);
+      if (qualified.length === 0) {
         throw new Error(
           `RPC log filter returned receipt ${transactionHash} without an exact policy event`,
         );
       }
-      rangeAdded.push({
+      const candidate = {
         transactionHash,
+        sourceChain,
         blockNumber: receipt.blockNumber,
         transactionIndex: receipt.index,
-        observedValue: result.observedValue.toString(),
-        matchingLogs: result.matchingLogs,
         discoveredAt: new Date().toISOString(),
-      });
+      };
+      if (grouped) {
+        candidate.matchedRuleIndexes = qualified
+          .map(({ configuration }) => configuration.ruleIndex)
+          .sort((left, right) => left - right);
+        candidate.ruleMatches = qualified
+          .map(({ configuration, result }) => ({
+            ruleIndex: configuration.ruleIndex,
+            observedValue: result.observedValue.toString(),
+            matchingLogs: result.matchingLogs,
+          }))
+          .sort((left, right) => left.ruleIndex - right.ruleIndex);
+      } else {
+        candidate.observedValue = qualified[0].result.observedValue.toString();
+        candidate.matchingLogs = qualified[0].result.matchingLogs;
+      }
+      rangeAdded.push(candidate);
     }
     rangeAdded.sort(
       (left, right) =>
@@ -349,12 +532,30 @@ export async function prefilterExecutionCandidates({
   state,
   job,
   sourceChain,
+  sourceOrderingCache = new Map(),
 }) {
-  const latest = await kernel.latestSourcePosition(
-    job.facility,
-    job.policyId,
-    sourceChain,
-  );
+  const key = policyKey(job.facility, job.policyId);
+  let sourceOrdering = sourceOrderingCache.get(key);
+  if (sourceOrdering === undefined) {
+    sourceOrdering = Number(
+      await kernel.sourceOrderingOf(job.facility, job.policyId),
+    );
+    if (
+      sourceOrdering !== STRICTLY_INCREASING_SOURCE_ORDERING &&
+      sourceOrdering !== UNIQUE_ONLY_SOURCE_ORDERING
+    ) {
+      throw new Error(`Unsupported source ordering ${sourceOrdering}`);
+    }
+    sourceOrderingCache.set(key, sourceOrdering);
+  }
+  const latest =
+    sourceOrdering === STRICTLY_INCREASING_SOURCE_ORDERING
+      ? await kernel.latestSourcePosition(
+          job.facility,
+          job.policyId,
+          sourceChain,
+        )
+      : undefined;
   const retained = [];
   for (const candidate of state.candidates) {
     const queryId = solidityPackedKeccak256(
@@ -367,6 +568,7 @@ export async function prefilterExecutionCandidates({
       queryId,
     );
     const stale =
+      sourceOrdering === STRICTLY_INCREASING_SOURCE_ORDERING &&
       latest.recorded &&
       (BigInt(candidate.blockNumber) < latest.blockHeight ||
         (BigInt(candidate.blockNumber) === latest.blockHeight &&
@@ -387,13 +589,30 @@ export async function prefilterExecutionCandidates({
   return state;
 }
 
-export function executionStatePath(directory, chainId, jobId, transactionHash) {
+export function executionStatePath(
+  directory,
+  chainId,
+  jobId,
+  transactionHash,
+  sourceChain,
+) {
   if (!isHexString(transactionHash, 32)) {
     throw new Error("Invalid execution source transaction hash");
   }
+  const sourceSegment =
+    sourceChain === undefined
+      ? ""
+      : `-source-${BigInt(sourceChain).toString()}`;
   return resolve(
     directory,
-    `${Number(chainId)}-${BigInt(jobId)}-${transactionHash.slice(2).toLowerCase()}.json`,
+    `${Number(chainId)}-${BigInt(jobId)}${sourceSegment}-${transactionHash.slice(2).toLowerCase()}.json`,
+  );
+}
+
+export function sourceStatePathForJob(directory, chainId, jobId, sourceChain) {
+  return resolve(
+    directory,
+    `${Number(chainId)}-${BigInt(jobId)}-source-${BigInt(sourceChain)}.json`,
   );
 }
 
@@ -401,6 +620,7 @@ export async function executeQueuedCandidates({
   state,
   statePath,
   chainId,
+  sourceChain,
   jobId,
   jobsDirectory,
   deploymentPath,
@@ -408,16 +628,32 @@ export async function executeQueuedCandidates({
   executeJob,
   executionPolicy,
 }) {
+  const attempted = new Set();
   for (const candidate of [...state.candidates]) {
     if (signal.aborted) break;
+    const normalizedHash = candidate.transactionHash.toLowerCase();
+    if (attempted.has(normalizedHash)) continue;
+    attempted.add(normalizedHash);
+    if (
+      sourceChain !== undefined &&
+      BigInt(candidate.sourceChain) !== BigInt(sourceChain)
+    ) {
+      throw new Error(
+        `Queued candidate source ${candidate.sourceChain} does not match source ${sourceChain}`,
+      );
+    }
     const result = await executeJob({
       transactionHash: candidate.transactionHash,
+      ...(sourceChain === undefined
+        ? {}
+        : { sourceChain: Number(sourceChain) }),
       jobId,
       statePath: executionStatePath(
         jobsDirectory,
         chainId,
         jobId,
         candidate.transactionHash,
+        sourceChain,
       ),
       deploymentPath,
       signal,
@@ -455,9 +691,16 @@ export async function recoverExistingExecutionJournals({
   signal,
   executeJob,
   executionPolicy: policy,
+  requireSourceChain = false,
+  sourceChains,
 }) {
   const prefix = `${Number(chainId)}-`;
-  const pattern = new RegExp(`^${prefix}(\\d+)-([0-9a-fA-F]{64})\\.json$`);
+  const pattern = new RegExp(
+    `^${prefix}(\\d+)(?:-source-(\\d+))?-([0-9a-fA-F]{64})\\.json$`,
+  );
+  const allowedSources = sourceChains
+    ? new Set([...sourceChains].map((value) => BigInt(value).toString()))
+    : undefined;
   const recovered = [];
   for (const entry of readdirSync(jobsDirectory, { withFileTypes: true }).sort(
     (left, right) => left.name.localeCompare(right.name),
@@ -467,7 +710,22 @@ export async function recoverExistingExecutionJournals({
     if (!match) continue;
     const statePath = resolve(jobsDirectory, entry.name);
     const state = readJson(statePath);
-    const transactionHash = `0x${match[2].toLowerCase()}`;
+    const sourceChain = match[2];
+    const transactionHash = `0x${match[3].toLowerCase()}`;
+    if (requireSourceChain && sourceChain === undefined) {
+      throw new Error(
+        `V3 execution journal is missing its source chain: ${entry.name}`,
+      );
+    }
+    if (
+      sourceChain !== undefined &&
+      (!allowedSources?.has(sourceChain) ||
+        BigInt(state.sourceChain).toString() !== sourceChain)
+    ) {
+      throw new Error(
+        `Execution journal source chain does not match ${entry.name}`,
+      );
+    }
     if (
       BigInt(state.jobId) !== BigInt(match[1]) ||
       state.sourceTransactionHash?.toLowerCase() !== transactionHash
@@ -476,24 +734,35 @@ export async function recoverExistingExecutionJournals({
         `Execution journal filename does not match ${entry.name}`,
       );
     }
+    const terminalClaimPending =
+      (state.phase === "revealed" || state.phase === "released") &&
+      state.claimSettlementComplete !== true;
     if (
-      state.phase === "revealed" ||
-      state.phase === "released" ||
       state.phase === "incident" ||
-      (!state.pending && state.phase !== "committed")
+      ((state.phase === "revealed" || state.phase === "released") &&
+        state.claimSettlementComplete === true) ||
+      (!state.pending && state.phase !== "committed" && !terminalClaimPending)
     ) {
       continue;
     }
     const result = await executeJob({
       transactionHash,
       jobId: match[1],
+      ...(sourceChain === undefined
+        ? {}
+        : { sourceChain: Number(sourceChain) }),
       statePath,
       deploymentPath,
       signal,
       executionPolicy: policy,
       recoveryOnly: true,
     });
-    recovered.push({ jobId: match[1], transactionHash, result });
+    recovered.push({
+      jobId: match[1],
+      ...(sourceChain === undefined ? {} : { sourceChain }),
+      transactionHash,
+      result,
+    });
   }
   return recovered;
 }
@@ -506,10 +775,20 @@ export async function runOperatorCycle({
   signal,
   sourceProviderForChain = getSourceProvider,
   attestedHeightForChain = getAttestedHeight,
-  executeJob = runHorizon1Job,
+  executeJob,
   executionKernelForProvider = assertExecutionKernelCapability,
+  discoverJobs = discoverProofJobs,
+  writeReport = writeDiscoveryReport,
+  scanEvidence = scanJobEvidence,
+  executeCandidates = executeQueuedCandidates,
 }) {
-  const policy = executionPolicy(config);
+  const validatedExecutionPolicy = executionPolicy(config);
+  const jobExecutor =
+    executeJob ||
+    (deployments.generation === V3_ACTIVATION_GENERATION
+      ? runV3Job
+      : runHorizon1Job);
+  const isV3 = deployments.generation === V3_ACTIVATION_GENERATION;
   const executionKernel =
     config.execution === "enabled"
       ? await executionKernelForProvider(provider, deployments.policyKernel)
@@ -520,84 +799,161 @@ export async function runOperatorCycle({
       chainId: deployments.chainId,
       deploymentPath: paths.deployments,
       signal,
-      executeJob,
-      executionPolicy: policy,
+      executeJob: jobExecutor,
+      executionPolicy: validatedExecutionPolicy,
+      requireSourceChain: isV3,
+      sourceChains: config.sourceChains,
     });
   }
   const sourceProviders = new Map();
-  for (const sourceChain of config.sourceChains) {
-    const chainKey = Number(sourceChain);
-    const sourceProvider = sourceProviderForChain(chainKey);
-    await assertEthereumMainnetProvider(sourceProvider);
-    sourceProviders.set(chainKey, sourceProvider);
+  if (
+    config.sourceNetworks &&
+    (config.sourceNetworks.size !== config.sourceChains.size ||
+      [...config.sourceNetworks.keys()].some(
+        (sourceChain) => !config.sourceChains.has(sourceChain),
+      ))
+  ) {
+    throw new Error(
+      "Configured source networks must exactly match the source-chain allowlist",
+    );
   }
-  const report = await discoverProofJobs({
+  for (const sourceChain of config.sourceChains) {
+    const expected = getSourceNetwork(sourceChain);
+    const configured = config.sourceNetworks?.get(sourceChain) ?? expected;
+    if (
+      Number(configured.evmChainId) !== expected.evmChainId ||
+      configured.rpcUrlEnvironment !== expected.rpcUrlEnvironment
+    ) {
+      throw new Error(
+        `Source network binding for CC3 key ${sourceChain} does not match its documented EVM network`,
+      );
+    }
+    const sourceProvider = sourceProviderForChain(expected.chainKey, {
+      [configured.rpcUrlEnvironment]: configured.rpcUrl,
+    });
+    await assertSourceProviderIdentity(
+      sourceProvider,
+      expected.evmChainId,
+      sourceChain,
+    );
+    sourceProviders.set(sourceChain, {
+      provider: sourceProvider,
+      evmChainId: expected.evmChainId,
+    });
+  }
+  const report = await discoverJobs({
     provider,
     deployments,
     cursorPath: paths.discoveryCursor,
     confirmations: config.confirmations,
     chunkSize: config.discoveryChunkSize,
   });
-  writeDiscoveryReport(paths.discoveryReport, report);
+  writeReport(paths.discoveryReport, report);
   const policies = new Map(
     report.policies.map((policy) => [
       policyKey(policy.facility, policy.policyId),
       policy,
     ]),
   );
+  const sourceOrderingCache = new Map();
   const summaries = [];
   for (const job of report.jobs) {
     if (signal.aborted) break;
-    const policy = policies.get(policyKey(job.facility, job.policyId));
-    if (!jobAllowed(job, policy, config, report.scan.stateBlockTimestamp)) {
+    const hydratedPolicy = policies.get(policyKey(job.facility, job.policyId));
+    if (
+      deployments.generation === V3_ACTIVATION_GENERATION &&
+      BigInt(job.jobId) !== BigInt(deployments.proofJobId)
+    ) {
       continue;
     }
-    const sourceChain = Number(policy.configuration.sourceChain);
-    const sourceProvider = sourceProviders.get(sourceChain);
-    const statePath = statePathForJob(
-      paths.jobsDirectory,
-      report.chainId,
-      job.jobId,
+    if (!hydratedPolicy?.configuration) continue;
+    const configurations = isV3
+      ? multiRuleExecutionConfigurations(hydratedPolicy.configuration)
+      : [hydratedPolicy.configuration];
+    if (
+      configurations.some(
+        (configuration) =>
+          !jobAllowed(
+            job,
+            { ...hydratedPolicy, configuration },
+            config,
+            report.scan.stateBlockTimestamp,
+          ),
+      )
+    ) {
+      continue;
+    }
+    const groups = new Map();
+    for (const configuration of configurations) {
+      const sourceChain = BigInt(configuration.sourceChain).toString();
+      const group = groups.get(sourceChain) ?? [];
+      group.push(configuration);
+      groups.set(sourceChain, group);
+    }
+    const orderedGroups = [...groups.entries()].sort(
+      ([left], [right]) => Number(left) - Number(right),
     );
-    const attestedHeight = await attestedHeightForChain(sourceChain);
-    const { state, added } = await scanJobEvidence({
-      sourceProvider,
-      job,
-      policy,
-      statePath,
-      attestedHeight,
-      maxSourceBlocks: config.maxSourceBlocksPerPoll,
-    });
-    if (config.execution === "enabled" && !signal.aborted) {
-      await prefilterExecutionCandidates({
-        kernel: executionKernel,
-        state,
+    for (const [sourceChain, group] of orderedGroups) {
+      if (signal.aborted) break;
+      const source = sourceProviders.get(sourceChain);
+      if (!source) {
+        throw new Error(`Missing source provider for CC3 key ${sourceChain}`);
+      }
+      const statePath = isV3
+        ? sourceStatePathForJob(
+            paths.jobsDirectory,
+            report.chainId,
+            job.jobId,
+            sourceChain,
+          )
+        : statePathForJob(paths.jobsDirectory, report.chainId, job.jobId);
+      const attestedHeight = await attestedHeightForChain(Number(sourceChain));
+      const normalizedPolicy = isV3
+        ? { ...hydratedPolicy, configurations: group }
+        : { ...hydratedPolicy, configuration: group[0] };
+      const { state, added } = await scanEvidence({
+        sourceProvider: source.provider,
         job,
-        sourceChain,
-      });
-      atomicWriteJson(statePath, state);
-      await executeQueuedCandidates({
-        state,
+        policy: normalizedPolicy,
         statePath,
-        chainId: report.chainId,
+        attestedHeight,
+        maxSourceBlocks: config.maxSourceBlocksPerPoll,
+        expectedSourceChainId: source.evmChainId,
+      });
+      if (config.execution === "enabled" && !signal.aborted) {
+        await prefilterExecutionCandidates({
+          kernel: executionKernel,
+          state,
+          job,
+          sourceChain: Number(sourceChain),
+          sourceOrderingCache,
+        });
+        atomicWriteJson(statePath, state);
+        await executeCandidates({
+          state,
+          statePath,
+          chainId: report.chainId,
+          ...(isV3 ? { sourceChain: Number(sourceChain) } : {}),
+          jobId: job.jobId,
+          jobsDirectory: paths.jobsDirectory,
+          deploymentPath: paths.deployments,
+          signal,
+          executeJob: jobExecutor,
+          executionPolicy: validatedExecutionPolicy,
+        });
+      }
+      summaries.push({
         jobId: job.jobId,
-        jobsDirectory: paths.jobsDirectory,
-        deploymentPath: paths.deployments,
-        signal,
-        executeJob,
-        executionPolicy: policy,
+        ...(isV3 ? { sourceChain } : {}),
+        mode: config.execution,
+        newlyQualified: added.length,
+        queued: state.candidates.length,
+        completed: state.completedTransactionHashes.length,
+        skipped: state.skippedCandidates.length,
+        incidents: state.incidents.length,
+        scannedThrough: state.lastScannedBlock,
       });
     }
-    summaries.push({
-      jobId: job.jobId,
-      mode: config.execution,
-      newlyQualified: added.length,
-      queued: state.candidates.length,
-      completed: state.completedTransactionHashes.length,
-      skipped: state.skippedCandidates.length,
-      incidents: state.incidents.length,
-      scannedThrough: state.lastScannedBlock,
-    });
   }
   return { report, jobs: summaries };
 }
@@ -676,24 +1032,108 @@ export async function runOperatorService({
   );
 }
 
-function runtimeInputs() {
+export function runtimeInputs(environment = process.env) {
   const configPath = resolve(
-    process.env.RECOURSE_OPERATOR_CONFIG || DEFAULT_CONFIG_PATH,
+    environment.RECOURSE_OPERATOR_CONFIG || DEFAULT_CONFIG_PATH,
   );
-  const deploymentPath = resolve(
-    process.env.HORIZON1_DEPLOYMENTS_FILE || DEFAULT_DEPLOYMENT_PATH,
-  );
-  const dataDirectory = resolve(
-    process.env.RECOURSE_OPERATOR_DATA_DIRECTORY || DEFAULT_DATA_DIRECTORY,
-  );
-  mkdirSync(dataDirectory, { recursive: true });
-  const deployments = JSON.parse(readFileSync(deploymentPath, "utf8"));
   const rawConfig = JSON.parse(readFileSync(configPath, "utf8"));
+  const deploymentPath = resolve(
+    rawConfig.deploymentManifest ||
+      environment.HORIZON1_DEPLOYMENTS_FILE ||
+      DEFAULT_DEPLOYMENT_PATH,
+  );
+  const dataRoot = resolve(
+    environment.RECOURSE_OPERATOR_DATA_DIRECTORY || DEFAULT_DATA_DIRECTORY,
+  );
+  const manifestBytes = readFileSync(deploymentPath);
+  const manifest = JSON.parse(manifestBytes.toString("utf8"));
+  if (manifest.generation === V3_ACTIVATION_GENERATION) {
+    if (!/^[0-9a-f]{64}$/.test(rawConfig.deploymentManifestSha256 ?? "")) {
+      throw new Error(
+        "V3 operator configuration requires a lowercase deploymentManifestSha256",
+      );
+    }
+    const actualManifestSha256 = createHash("sha256")
+      .update(manifestBytes)
+      .digest("hex");
+    if (actualManifestSha256 !== rawConfig.deploymentManifestSha256) {
+      throw new Error("V3 activation manifest SHA-256 mismatch");
+    }
+    if (
+      !isHexString(rawConfig.activationConfigCommitment, 32) ||
+      rawConfig.activationConfigCommitment.toLowerCase() !==
+        manifest.configCommitment?.toLowerCase()
+    ) {
+      throw new Error("V3 activation config commitment mismatch");
+    }
+    if (rawConfig.stateNamespace !== V3_STATE_NAMESPACE) {
+      throw new Error(
+        `V3 operator stateNamespace must be ${V3_STATE_NAMESPACE}`,
+      );
+    }
+  }
+  const deployments =
+    manifest.generation === V3_ACTIVATION_GENERATION
+      ? activationDiscoveryDeployments(manifest)
+      : manifest;
+  const validatedInput =
+    deployments.generation === V3_ACTIVATION_GENERATION &&
+    rawConfig.bindAllowlistsToActivation === true
+      ? {
+          ...rawConfig,
+          allowlists: {
+            facilities: [deployments.demonstrationFacility],
+            policyIds: [deployments.policyId],
+            tokens: [deployments.demoAsset],
+            sourceChains: [
+              ...new Set(
+                manifest.policy.configuration.rules.map(({ sourceChain }) =>
+                  BigInt(sourceChain).toString(),
+                ),
+              ),
+            ],
+          },
+        }
+      : rawConfig;
+  const validatedConfig = validateOperatorConfig(validatedInput);
+  const sourceNetworkInput =
+    deployments.generation === V3_ACTIVATION_GENERATION
+      ? manifest.policy.sourceNetworks
+      : (rawConfig.sourceNetworks ??
+        Object.fromEntries(
+          [...validatedConfig.sourceChains].map((sourceChain) => {
+            const network = getSourceNetwork(sourceChain);
+            return [
+              sourceChain,
+              {
+                evmChainId: network.evmChainId,
+                rpcUrlEnvironment: network.rpcUrlEnvironment,
+              },
+            ];
+          }),
+        ));
   const config = {
-    ...validateOperatorConfig(rawConfig),
+    ...validatedConfig,
+    sourceNetworks: validateOperatorSourceNetworks(
+      sourceNetworkInput,
+      validatedConfig.sourceChains,
+      environment,
+    ),
     confirmations: rawConfig.confirmations ?? 12,
     discoveryChunkSize: rawConfig.discoveryChunkSize ?? 2_000,
   };
+  if (deployments.generation === V3_ACTIVATION_GENERATION) {
+    assertV3OperatorBinding(manifest, config);
+  }
+  const dataDirectory =
+    deployments.generation === V3_ACTIVATION_GENERATION
+      ? resolve(
+          dataRoot,
+          V3_ACTIVATION_GENERATION,
+          manifest.configCommitment.slice(2).toLowerCase(),
+        )
+      : dataRoot;
+  mkdirSync(dataDirectory, { recursive: true });
   return {
     deployments,
     config,
@@ -722,9 +1162,6 @@ export function isOperatorMainModule(
 async function main() {
   if (!process.env.CREDITCOIN_RPC_URL)
     throw new Error("CREDITCOIN_RPC_URL is required");
-  if (!process.env.ETH_MAINNET_RPC_URL) {
-    throw new Error("ETH_MAINNET_RPC_URL is required");
-  }
   const inputs = runtimeInputs();
   const lock = acquireProcessLock(inputs.paths.lock, {
     mode: inputs.config.execution,

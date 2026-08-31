@@ -44,6 +44,20 @@ export interface PolicyRegistryAuditCursor extends BlockContinuation {
   nextIndex: number;
 }
 
+export interface CappedPilotFactoryCursor extends BlockContinuation {
+  nextIndex: number;
+}
+
+export interface OperatorMarketCursor extends BlockContinuation {
+  nextIndex: number;
+}
+
+export interface PortfolioPoolCursor extends BlockContinuation {
+  nextCreatedFacilityIndex: number;
+  nextCandidateIndex: number;
+  nextInvestorIndex: number;
+}
+
 export interface ReadPolicyRegistryReleaseOptions extends ReadSnapshotOptions {
   detailLimit?: number;
   cursor?: PolicyRegistryReleaseCursor;
@@ -53,6 +67,28 @@ export interface ReadPolicyRegistryAuditScopeOptions extends ReadSnapshotOptions
   limit?: number;
   cursor?: PolicyRegistryAuditCursor;
 }
+
+export interface ReadCappedPilotFactoryOptions extends ReadSnapshotOptions {
+  limit?: number;
+  cursor?: CappedPilotFactoryCursor;
+}
+
+export interface ReadOperatorMarketOptions extends ReadSnapshotOptions {
+  limit?: number;
+  cursor?: OperatorMarketCursor;
+  claimableAccounts?: Address[];
+}
+
+export interface ReadPortfolioPoolOptions extends ReadSnapshotOptions {
+  detailLimit?: number;
+  cursor?: PortfolioPoolCursor;
+}
+
+export type ReadPortfolioMandateOptions = ReadSnapshotOptions &
+  (
+    | { facility?: undefined; deploymentId?: undefined }
+    | { facility: Address; deploymentId: Hex }
+  );
 
 export declare const PolicyOutcome: Readonly<{
   Eligible: 0;
@@ -107,6 +143,52 @@ export declare const PortfolioEligibilityCode: Readonly<{
   InvalidDeployment: 11;
   MissingEvidenceKind: 12;
   MissingActionAdapter: 13;
+}>;
+export declare const PortfolioPoolStatus: Readonly<{
+  Configuring: 0;
+  Funding: 1;
+  Active: 2;
+  Finalized: 3;
+  Cancelled: 4;
+}>;
+export declare const SourceOrdering: Readonly<{
+  StrictlyIncreasing: 0;
+  UniqueOnly: 1;
+}>;
+export declare const PortfolioPoolAllocationCode: Readonly<{
+  Eligible: 0;
+  NotManager: 1;
+  WrongStatus: 2;
+  FundingExpired: 3;
+  CandidateNotRegistered: 4;
+  AllocationAlreadySettled: 5;
+  InvalidFacility: 6;
+  InvalidAmount: 7;
+  IneligibleFacility: 8;
+}>;
+export declare const PilotCreationCode: Readonly<{
+  Eligible: 0;
+  NotLender: 1;
+  CreationPaused: 2;
+  FacilityCountExceeded: 3;
+  FacilityLimitExceeded: 4;
+  TotalLimitExceeded: 5;
+  InvalidBond: 6;
+  InvalidDrawFee: 7;
+  InvalidMaturity: 8;
+}>;
+export declare const OperatorServiceKind: Readonly<{
+  Monitoring: 0;
+  ProofConstruction: 1;
+  Submission: 2;
+  Delivery: 3;
+}>;
+export declare const OperatorQuoteStatus: Readonly<{
+  Open: 0;
+  Accepted: 1;
+  Settled: 2;
+  Cancelled: 3;
+  Expired: 4;
 }>;
 
 export interface PolicyEffectInput {
@@ -204,6 +286,128 @@ export interface FacilitySimulation {
   availableCredit: bigint;
 }
 
+export interface MultiChainRuleInput {
+  sourceChain: UintLike;
+  emitter: Address;
+  eventSignature: Hex;
+  startSourceBlock: UintLike;
+  endSourceBlock: UintLike;
+  topicCount: UintLike;
+  subjectTopicIndex: UintLike;
+  dataLength: UintLike;
+  observedValueOffset: UintLike;
+  observationKind: UintLike;
+  riskWeight: UintLike;
+}
+
+export interface MultiChainRule {
+  sourceChain: bigint;
+  emitter: Address;
+  eventSignature: Hex;
+  startSourceBlock: bigint;
+  endSourceBlock: bigint;
+  topicCount: number;
+  subjectTopicIndex: number;
+  dataLength: number;
+  observedValueOffset: number;
+  observationKind: number;
+  riskWeight: bigint;
+}
+
+export interface MultiChainConfigurationInput {
+  subject: Address;
+  freshnessPeriod: UintLike;
+  watchThreshold: UintLike;
+  restrictedThreshold: UintLike;
+  marginThreshold: UintLike;
+  breachThreshold: UintLike;
+  watchEffect: PolicyEffectInput;
+  restrictedEffect: PolicyEffectInput;
+  marginEffect: PolicyEffectInput;
+  breachEffect: PolicyEffectInput;
+  rules: MultiChainRuleInput[];
+}
+
+export interface MultiChainConfiguration {
+  subject: Address;
+  freshnessPeriod: bigint;
+  watchThreshold: bigint;
+  restrictedThreshold: bigint;
+  marginThreshold: bigint;
+  breachThreshold: bigint;
+  watchEffect: PolicyEffect;
+  restrictedEffect: PolicyEffect;
+  marginEffect: PolicyEffect;
+  breachEffect: PolicyEffect;
+  rules: MultiChainRule[];
+}
+
+export interface CappedPilotFacilityRequest {
+  facilityLimit: UintLike;
+  bondRequired: UintLike;
+  drawFeeBps: UintLike;
+  maturityBlock: UintLike;
+  drawDelayBlocks: UintLike;
+}
+
+export interface CappedPilotFactorySimulationInput {
+  factory: {
+    lender: Address;
+    creationPaused: boolean;
+    facilityCount: UintLike;
+    totalFacilityLimit: UintLike;
+    maximumFacilityLimit: UintLike;
+    maximumTotalLimit: UintLike;
+    minimumBondBps: UintLike;
+    maximumDrawFeeBps: UintLike;
+    maximumMaturityBlocks: UintLike;
+    maximumDrawDelayBlocks: UintLike;
+    maximumFacilityCount: UintLike;
+  };
+  request: CappedPilotFacilityRequest;
+  sender: Address;
+  blockNumber: UintLike;
+}
+
+export interface DefaultLossSettlementInput {
+  lender: Address;
+  sender: Address;
+  status: UintLike;
+  maturityBlock?: UintLike;
+  blockNumber?: UintLike;
+  bondPosted: UintLike;
+  outstandingDebt: UintLike;
+  lenderClaimable: UintLike;
+  borrowerClaimable: UintLike;
+}
+
+export interface OperatorQuoteInput {
+  serviceKind: UintLike;
+  requirementsDigest: Hex;
+  price: UintLike;
+  operatorBond: UintLike;
+  quoteExpiry: UintLike;
+  serviceDuration: UintLike;
+}
+
+export interface OperatorAgreementQuoteInput extends OperatorQuoteInput {
+  operator: Address;
+}
+
+export interface OperatorQuote {
+  operator: Address;
+  sponsor: Address;
+  serviceKind: bigint;
+  status: bigint;
+  quoteExpiry: bigint;
+  serviceDuration: bigint;
+  deliveryDeadline: bigint;
+  price: bigint;
+  operatorBond: bigint;
+  requirementsDigest: Hex;
+  deliveryDigest: Hex;
+}
+
 export interface PortfolioMandateSimulationInput {
   mandate: {
     asset: Address;
@@ -244,6 +448,106 @@ export interface PortfolioMandateSimulationInput {
   actionAdapters: Array<{ adapterKind: Hex }>;
   chainId: UintLike;
   blockNumber: UintLike;
+}
+
+export interface PortfolioPoolAllocationSimulationInput {
+  pool: {
+    address: Address;
+    manager: Address;
+    status: UintLike;
+    fundingDeadline: UintLike;
+    assetBalance: UintLike;
+    totalAllocatedPrincipal: UintLike;
+    allocatedFacilityCount: UintLike;
+  };
+  allocation: {
+    registered: boolean;
+    settled: boolean;
+    principal: UintLike;
+  };
+  facility: {
+    lender: Address;
+    facilityLimit: UintLike;
+    lenderFunded: UintLike;
+    bondRequired: UintLike;
+    bondPosted: UintLike;
+  };
+  sender: Address;
+  timestamp: UintLike;
+  amount: UintLike;
+  mandateEligibilityCode: UintLike;
+}
+
+export interface PortfolioPoolDistributionSimulationInput {
+  assetBalance: UintLike;
+  totalDistributed: UintLike;
+  totalClaimed: UintLike;
+  totalSupply: UintLike;
+  investors: Array<{
+    account: Address;
+    shares: UintLike;
+    claimable: UintLike;
+  }>;
+}
+
+export interface PortfolioPoolAllocation {
+  deploymentId: Hex;
+  principal: bigint;
+  recovered: bigint;
+  realizedLoss: bigint;
+  registered: boolean;
+  settled: boolean;
+}
+
+export interface PortfolioPoolRead {
+  address: Address;
+  blockTag: BlockTag;
+  blockHash: Hex;
+  asset: Address;
+  assetBalance: bigint;
+  maximumInvestors: bigint;
+  manager: Address;
+  maximumPoolAssets: bigint;
+  maximumServiceBudget: bigint;
+  maximumServiceJobDuration: bigint;
+  maximumFacilityCount: bigint;
+  fundingDeadline: bigint;
+  recoveryDelayBlocks: bigint;
+  mandate: Address;
+  proofJobsVenue: Address;
+  status: bigint;
+  totalDeposited: bigint;
+  totalAllocatedPrincipal: bigint;
+  totalRecovered: bigint;
+  totalRealizedLoss: bigint;
+  totalServiceEscrowed: bigint;
+  totalServiceRecovered: bigint;
+  allocatedFacilityCount: bigint;
+  settledFacilityCount: bigint;
+  totalDistributed: bigint;
+  totalClaimed: bigint;
+  name: string;
+  symbol: string;
+  decimals: bigint;
+  totalSupply: bigint;
+  createdFacilityTotalCount: number;
+  candidateTotalCount: number;
+  investorTotalCount: number;
+  createdFacilityStart: number;
+  candidateStart: number;
+  investorStart: number;
+  createdFacilities: Address[];
+  candidates: Array<{
+    facility: Address;
+    allocation: PortfolioPoolAllocation;
+  }>;
+  investors: Array<{
+    account: Address;
+    shares: bigint;
+    claimable: bigint;
+    claimedAssets: bigint;
+  }>;
+  nextCursor: PortfolioPoolCursor | null;
 }
 
 export interface PolicyDeployment {
@@ -503,6 +807,10 @@ export declare const policyRegistryPackageReleaseTuple: string;
 export declare const policyRegistryRuntimeVariantTuple: string;
 export declare const policyRegistryAuditArtifactTuple: string;
 export declare const policyRegistryDeploymentRecordTuple: string;
+export declare const multiChainRuleTuple: string;
+export declare const multiChainConfigurationTuple: string;
+export declare const operatorQuoteTuple: string;
+export declare const portfolioPoolAllocationTuple: string;
 export declare const KERNEL_PROOF_TYPES: readonly string[];
 export declare const policyKernelV1Abi: InterfaceAbi;
 export declare const verifiedCreditStateV1Abi: InterfaceAbi;
@@ -513,7 +821,14 @@ export declare const eventHistoryPolicyV1Abi: InterfaceAbi;
 export declare const recourseDemoUsdAbi: InterfaceAbi;
 export declare const policyRegistryV1Abi: InterfaceAbi;
 export declare const portfolioMandateV1Abi: InterfaceAbi;
+export declare const portfolioPoolV1Abi: InterfaceAbi;
+export declare const cappedPilotFactoryV1Abi: InterfaceAbi;
+export declare const recourseFacilityV3Abi: InterfaceAbi;
+export declare const policyKernelV2Abi: InterfaceAbi;
+export declare const multiChainEventPolicyV1Abi: InterfaceAbi;
+export declare const operatorMarketV1Abi: InterfaceAbi;
 export declare const horizon1Abis: Readonly<Record<string, InterfaceAbi>>;
+export declare const v3Abis: Readonly<Record<string, InterfaceAbi>>;
 
 export declare function encodeKernelProof(input: KernelProofInput): Hex;
 export declare function computeEvidenceDigest(proof: Hex): Hex;
@@ -545,9 +860,68 @@ export declare function validateEventHistoryManifestBinding(
   manifestBytes: Hex,
   expectedConfigHash: Hex,
 ): { manifest: EventHistoryManifest; manifestHash: Hex };
+export declare function validateMultiChainConfiguration(
+  value: MultiChainConfigurationInput,
+): MultiChainConfiguration;
+export declare function encodeMultiChainConfiguration(
+  value: MultiChainConfigurationInput,
+): Hex;
+export declare function hashMultiChainConfiguration(
+  value: MultiChainConfigurationInput,
+): Hex;
+export declare function decodeMultiChainConfiguration(
+  configurationBytes: Hex,
+): MultiChainConfiguration;
+export declare function simulateMultiChainRisk(value: {
+  configuration: MultiChainConfigurationInput;
+  currentScore: UintLike;
+  ruleMatchCounts: UintLike[];
+}): {
+  priorScore: bigint;
+  newScore: bigint;
+  matchedRuleIndexes: number[];
+  effect: PolicyEffect;
+};
 export declare function simulateFacilityPolicyState(
   input: FacilitySimulationInput,
 ): FacilitySimulation;
+export declare function simulateCappedPilotFacilityCreation(
+  input: CappedPilotFactorySimulationInput,
+): {
+  code: number;
+  minimumBond: bigint;
+  totalFacilityLimitAfter: bigint;
+};
+export declare function simulateDefaultLossSettlement(
+  input: DefaultLossSettlementInput,
+): {
+  lenderRecovery: bigint;
+  borrowerExcess: bigint;
+  bondPosted: 0n;
+  outstandingDebt: bigint;
+  lenderClaimable: bigint;
+  borrowerClaimable: bigint;
+};
+export declare function simulatePortfolioPoolAllocation(
+  input: PortfolioPoolAllocationSimulationInput,
+): {
+  code: number;
+  allocationPrincipalAfter: bigint;
+  totalAllocatedPrincipalAfter: bigint;
+  allocatedFacilityCountAfter: bigint;
+};
+export declare function simulatePortfolioPoolDistribution(
+  input: PortfolioPoolDistributionSimulationInput,
+): {
+  amount: bigint;
+  reserved: bigint;
+  totalDistributedAfter: bigint;
+  investors: Array<{
+    account: Address;
+    amount: bigint;
+    claimableAfter: bigint;
+  }>;
+};
 export declare function simulatePortfolioMandateEligibility(
   input: PortfolioMandateSimulationInput,
 ): number;
@@ -556,6 +930,110 @@ export declare function validatePolicyPackage(
 ): PolicyPackage;
 export declare function canonicalizePolicyPackage(value: PolicyPackage): string;
 export declare function hashPolicyPackage(value: PolicyPackage): Hex;
+export declare function computeOperatorAgreementId(value: {
+  market: Address;
+  chainId: UintLike;
+  quoteId: UintLike;
+  sponsor: Address;
+  quote: OperatorAgreementQuoteInput;
+}): Hex;
+export declare function encodeCreateCappedPilotFacility(
+  value: CappedPilotFacilityRequest,
+): Hex;
+export declare function encodeSetCappedPilotCreationPaused(
+  paused: boolean,
+): Hex;
+export declare function encodeConfigureMultiChainPolicy(value: {
+  facility: Address;
+  policyId: UintLike;
+  configuration: MultiChainConfigurationInput;
+}): Hex;
+export declare function encodeSetPolicyKernelV2ProofJobs(
+  proofJobs: Address,
+): Hex;
+export declare function encodeFundFacility(amount: UintLike): Hex;
+export declare function encodePostFacilityBond(amount: UintLike): Hex;
+export declare function encodeRequestFacilityDraw(amount: UintLike): Hex;
+export declare function encodeExecuteFacilityDraw(): Hex;
+export declare function encodeRepayFacility(amount: UintLike): Hex;
+export declare function encodeMarkFacilityDefaulted(): Hex;
+export declare function encodeCancelFacility(): Hex;
+export declare function encodeLenderWithdraw(): Hex;
+export declare function encodeClaimBorrowerRefund(): Hex;
+export declare function encodeSetFacilityDrawPaused(paused: boolean): Hex;
+export declare function encodeSettleDefaultLoss(): Hex;
+export declare function encodePostOperatorQuote(value: OperatorQuoteInput): Hex;
+export declare function encodeAcceptOperatorQuote(quoteId: UintLike): Hex;
+export declare function encodeSettleOperatorQuote(
+  quoteId: UintLike,
+  deliveryDigest: Hex,
+  evidence: Hex,
+): Hex;
+export declare function encodeCancelOperatorQuote(quoteId: UintLike): Hex;
+export declare function encodeExpireOperatorQuote(quoteId: UintLike): Hex;
+export declare function encodeOperatorWithdrawal(): Hex;
+export declare function encodeSetPortfolioPoolMandate(mandate: Address): Hex;
+export declare function encodeCreatePortfolioPoolFacility(
+  value: CappedPilotFacilityRequest,
+): Hex;
+export declare function encodeConfigureAndRegisterPortfolioPoolPolicy(value: {
+  facility: Address;
+  policyId: UintLike;
+  evaluator: Address;
+  configurationCall: Hex;
+}): Hex;
+export declare function encodeAuthorizePortfolioPoolRemedyPolicy(value: {
+  facility: Address;
+  policyId: UintLike;
+  coordinator: Address;
+}): Hex;
+export declare function encodePublishPortfolioPoolRemedyIntent(value: {
+  facility: Address;
+  policyId: UintLike;
+  actionData: Hex;
+}): Hex;
+export declare function encodeReplacePortfolioPoolRemedyIntent(value: {
+  facility: Address;
+  policyId: UintLike;
+}): Hex;
+export declare function encodeRegisterPortfolioPoolCandidate(value: {
+  facility: Address;
+  deploymentId: Hex;
+}): Hex;
+export declare function encodeRegisterPortfolioPoolInvestor(
+  investor: Address,
+): Hex;
+export declare function encodeSetPortfolioPoolProofJobsVenue(
+  proofJobs: Address,
+): Hex;
+export declare function encodeOpenPortfolioPoolFunding(): Hex;
+export declare function encodePortfolioPoolDeposit(amount: UintLike): Hex;
+export declare function encodePortfolioPoolFundingWithdrawal(
+  amount: UintLike,
+): Hex;
+export declare function encodeCancelPortfolioPoolFunding(): Hex;
+export declare function encodeActivatePortfolioPool(): Hex;
+export declare function encodePortfolioPoolAllocation(
+  facility: Address,
+  amount: UintLike,
+): Hex;
+export declare function encodeSetPortfolioPoolFacilityDrawPaused(
+  facility: Address,
+  paused: boolean,
+): Hex;
+export declare function encodeCreatePortfolioPoolProofJob(
+  params: ProofJobParams,
+): Hex;
+export declare function encodeRecoverPortfolioPoolProofJobFunds(): Hex;
+export declare function encodeHarvestPortfolioPoolFacility(
+  facility: Address,
+): Hex;
+export declare function encodeSettlePortfolioPoolAllocation(
+  facility: Address,
+): Hex;
+export declare function encodeFinalizePortfolioPool(): Hex;
+export declare function encodeDistributePortfolioPoolAvailable(): Hex;
+export declare function encodeClaimPortfolioPoolAssets(): Hex;
 export declare function encodeCreateFacility(value: CreateFacilityRequest): Hex;
 export declare function encodeConfigureEventHistoryPolicy(value: {
   facility: Address;
@@ -580,6 +1058,13 @@ export declare function encodeRevealEvidence(
   salt: Hex,
   proof: Hex,
 ): Hex;
+export declare function encodeSlashExpiredProofCommit(
+  jobId: UintLike,
+  hunter: Address,
+): Hex;
+export declare function encodeReleaseProofCommit(jobId: UintLike): Hex;
+export declare function encodeFinalizeExpiredProofJob(jobId: UintLike): Hex;
+export declare function encodeClaimProofJobs(token: Address): Hex;
 export declare function encodePublishPolicyRegistryRelease(
   value: PublishPolicyRegistryReleaseRequest,
 ): Hex;
@@ -649,6 +1134,146 @@ export declare function buildHorizon1Calldata(requests: {
     proof: Hex;
   };
 }): Record<string, Hex>;
+export declare function buildV3Calldata(requests: {
+  createPilotFacility?: CappedPilotFacilityRequest;
+  setCreationPaused?: boolean;
+  configureMultiChainPolicy?: {
+    facility: Address;
+    policyId: UintLike;
+    configuration: MultiChainConfigurationInput;
+  };
+  registerPolicy?: {
+    facility: Address;
+    policyId: UintLike;
+    evaluator: Address;
+  };
+  setProofJobs?: { proofJobs: Address };
+  fundFacility?: { amount: UintLike };
+  postFacilityBond?: { amount: UintLike };
+  activateFacility?: { expectedPolicySet: Hex };
+  requestFacilityDraw?: { amount: UintLike };
+  executeFacilityDraw?: boolean;
+  repayFacility?: { amount: UintLike };
+  markFacilityDefaulted?: boolean;
+  cancelFacility?: boolean;
+  lenderWithdraw?: boolean;
+  claimBorrowerRefund?: boolean;
+  setFacilityDrawPaused?: boolean;
+  settleDefaultLoss?: boolean;
+  createProofJob?: ProofJobParams;
+  slashExpiredProofCommit?: { jobId: UintLike; hunter: Address };
+  releaseProofCommit?: { jobId: UintLike };
+  finalizeExpiredProofJob?: { jobId: UintLike };
+  claimProofJobs?: { token: Address };
+  postOperatorQuote?: OperatorQuoteInput;
+  acceptOperatorQuote?: { quoteId: UintLike };
+  settleOperatorQuote?: {
+    quoteId: UintLike;
+    deliveryDigest: Hex;
+    evidence: Hex;
+  };
+  cancelOperatorQuote?: { quoteId: UintLike };
+  expireOperatorQuote?: { quoteId: UintLike };
+  withdrawOperatorClaim?: boolean;
+}): Partial<
+  Record<
+    | "createPilotFacility"
+    | "setCreationPaused"
+    | "configureMultiChainPolicy"
+    | "registerPolicy"
+    | "setProofJobs"
+    | "fundFacility"
+    | "postFacilityBond"
+    | "activateFacility"
+    | "requestFacilityDraw"
+    | "executeFacilityDraw"
+    | "repayFacility"
+    | "markFacilityDefaulted"
+    | "cancelFacility"
+    | "lenderWithdraw"
+    | "claimBorrowerRefund"
+    | "setFacilityDrawPaused"
+    | "settleDefaultLoss"
+    | "createProofJob"
+    | "slashExpiredProofCommit"
+    | "releaseProofCommit"
+    | "finalizeExpiredProofJob"
+    | "claimProofJobs"
+    | "postOperatorQuote"
+    | "acceptOperatorQuote"
+    | "settleOperatorQuote"
+    | "cancelOperatorQuote"
+    | "expireOperatorQuote"
+    | "withdrawOperatorClaim",
+    Hex
+  >
+>;
+
+export declare function buildPortfolioPoolCalldata(requests: {
+  setMandate?: { mandate: Address };
+  createFacility?: CappedPilotFacilityRequest;
+  configureAndRegisterPolicy?: {
+    facility: Address;
+    policyId: UintLike;
+    evaluator: Address;
+    configurationCall: Hex;
+  };
+  authorizeRemedyPolicy?: {
+    facility: Address;
+    policyId: UintLike;
+    coordinator: Address;
+  };
+  publishRemedyIntent?: {
+    facility: Address;
+    policyId: UintLike;
+    actionData: Hex;
+  };
+  replaceRemedyIntent?: { facility: Address; policyId: UintLike };
+  registerCandidate?: { facility: Address; deploymentId: Hex };
+  registerInvestor?: { investor: Address };
+  setProofJobsVenue?: { proofJobs: Address };
+  openFunding?: boolean;
+  deposit?: { amount: UintLike };
+  withdrawFunding?: { amount: UintLike };
+  cancelFunding?: boolean;
+  activate?: boolean;
+  allocate?: { facility: Address; amount: UintLike };
+  setFacilityDrawPaused?: { facility: Address; paused: boolean };
+  createProofJob?: ProofJobParams;
+  recoverProofJobFunds?: boolean;
+  harvest?: { facility: Address };
+  settleAllocation?: { facility: Address };
+  finalize?: boolean;
+  distributeAvailable?: boolean;
+  claim?: boolean;
+}): Partial<
+  Record<
+    | "setMandate"
+    | "createFacility"
+    | "configureAndRegisterPolicy"
+    | "authorizeRemedyPolicy"
+    | "publishRemedyIntent"
+    | "replaceRemedyIntent"
+    | "registerCandidate"
+    | "registerInvestor"
+    | "setProofJobsVenue"
+    | "openFunding"
+    | "deposit"
+    | "withdrawFunding"
+    | "cancelFunding"
+    | "activate"
+    | "allocate"
+    | "setFacilityDrawPaused"
+    | "createProofJob"
+    | "recoverProofJobFunds"
+    | "harvest"
+    | "settleAllocation"
+    | "finalize"
+    | "distributeAvailable"
+    | "claim",
+    Hex
+  >
+>;
 
 export interface FacilityRead {
   address: Address;
@@ -823,3 +1448,140 @@ export declare function readPolicyRegistryAuditScope(
   scopeId: Hex,
   options?: ReadPolicyRegistryAuditScopeOptions,
 ): Promise<PolicyRegistryAuditScopeRead>;
+export declare function readCappedPilotFactory(
+  address: Address,
+  runner: ContractRunner,
+  options?: ReadCappedPilotFactoryOptions,
+): Promise<{
+  address: Address;
+  blockTag: BlockTag;
+  blockHash: Hex;
+  asset: Address;
+  kernel: Address;
+  lender: Address;
+  borrower: Address;
+  guardian: Address;
+  maximumFacilityLimit: bigint;
+  maximumTotalLimit: bigint;
+  minimumBondBps: bigint;
+  maximumDrawFeeBps: bigint;
+  maximumMaturityBlocks: bigint;
+  maximumDrawDelayBlocks: bigint;
+  maximumFacilityCount: bigint;
+  creationPaused: boolean;
+  totalFacilityLimit: bigint;
+  totalCount: number;
+  start: number;
+  facilities: Address[];
+  nextCursor: CappedPilotFactoryCursor | null;
+}>;
+export declare function readPolicyKernelV2(
+  address: Address,
+  runner: ContractRunner,
+  options?: ReadSnapshotOptions,
+): Promise<{
+  address: Address;
+  blockTag: BlockTag;
+  blockHash: Hex;
+  verifier: Address;
+  creditState: Address;
+  owner: Address;
+  proofJobs: Address;
+  safeStaleProofRelease: boolean;
+}>;
+export declare function readPolicyRegistrationV2(
+  address: Address,
+  runner: ContractRunner,
+  facilityAddress: Address,
+  policyId: UintLike,
+  chainKeys?: UintLike[],
+  options?: ReadSnapshotOptions,
+): Promise<{
+  address: Address;
+  blockTag: BlockTag;
+  blockHash: Hex;
+  facility: Address;
+  policyId: bigint;
+  registered: boolean;
+  evaluator: Address;
+  configHash: Hex;
+  manifest: Hex;
+  policySetCommitment: Hex;
+  sourceOrdering: bigint;
+  sourcePositions: Array<{
+    chainKey: bigint;
+    recorded: boolean;
+    blockHeight: bigint;
+    transactionIndex: bigint;
+  }>;
+}>;
+export declare function readMultiChainPolicy(
+  address: Address,
+  runner: ContractRunner,
+  facilityAddress: Address,
+  policyId: UintLike,
+  options?: ReadSnapshotOptions,
+): Promise<{
+  address: Address;
+  blockTag: BlockTag;
+  blockHash: Hex;
+  facility: Address;
+  policyId: bigint;
+  context: Address;
+  maximumRules: bigint;
+  policyKind: string;
+  sourceOrdering: bigint;
+  configured: boolean;
+  configHash: Hex;
+  manifest: Hex;
+  riskScore: bigint;
+  configuration?: MultiChainConfiguration;
+}>;
+export declare function readOperatorMarket(
+  address: Address,
+  runner: ContractRunner,
+  options?: ReadOperatorMarketOptions,
+): Promise<{
+  address: Address;
+  blockTag: BlockTag;
+  blockHash: Hex;
+  token: Address;
+  verifier: Address;
+  minimumOperatorBond: bigint;
+  maximumQuoteDuration: bigint;
+  maximumServiceDuration: bigint;
+  quoteTotalCount: number;
+  start: number;
+  quotes: Array<{ quoteId: bigint; quote: OperatorQuote }>;
+  claimable: Array<{ account: Address; amount: bigint }>;
+  nextCursor: OperatorMarketCursor | null;
+}>;
+export declare function readPortfolioMandate(
+  address: Address,
+  runner: ContractRunner,
+  options?: ReadPortfolioMandateOptions,
+): Promise<{
+  address: Address;
+  blockTag: BlockTag;
+  blockHash: Hex;
+  factory: Address;
+  registry: Address;
+  asset: Address;
+  kernel: Address;
+  requiredReleaseId: Hex;
+  requiredPolicySetCommitment: Hex;
+  requiredEvidenceKind: bigint;
+  requiredActionAdapterKind: Hex;
+  maximumFacilityLimit: bigint;
+  minimumBondBps: bigint;
+  maximumDrawFeeBps: bigint;
+  maximumRemainingMaturityBlocks: bigint;
+  facility?: Address;
+  deploymentId?: Hex;
+  eligibilityCode?: bigint;
+}>;
+export declare function readPortfolioPool(
+  address: Address,
+  runner: ContractRunner,
+  options?: ReadPortfolioPoolOptions,
+): Promise<PortfolioPoolRead>;

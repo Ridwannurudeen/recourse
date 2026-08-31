@@ -1,12 +1,43 @@
 import { Contract, Interface, getAddress } from "ethers";
 import {
+  cappedPilotFactoryV1Abi,
+  multiChainEventPolicyV1Abi,
+  operatorMarketV1Abi,
   policyKernelV1Abi,
+  policyKernelV2Abi,
   policyRegistryV1Abi,
+  portfolioMandateV1Abi,
+  portfolioPoolV1Abi,
   proofJobsV1Abi,
+  recourseDemoUsdAbi,
   recourseFacilityFactoryV2Abi,
   recourseFacilityV2Abi,
   verifiedCreditStateV1Abi,
 } from "./abis.mjs";
+
+const MAX_UINT64 = (1n << 64n) - 1n;
+
+function uint64(value, label, { positive = false } = {}) {
+  if (
+    (typeof value !== "bigint" &&
+      typeof value !== "number" &&
+      typeof value !== "string") ||
+    (typeof value === "string" && value.trim() === "") ||
+    (typeof value === "number" && !Number.isSafeInteger(value))
+  ) {
+    throw new TypeError(`Invalid ${label}`);
+  }
+  let result;
+  try {
+    result = BigInt(value);
+  } catch {
+    throw new TypeError(`Invalid ${label}`);
+  }
+  if (result < (positive ? 1n : 0n) || result > MAX_UINT64) {
+    throw new RangeError(`Invalid ${label}`);
+  }
+  return result;
+}
 
 function contract(address, abi, runner) {
   if (!runner) throw new TypeError("A contract runner is required");
@@ -109,6 +140,31 @@ function continuation(value, nextField, label) {
   }
   if (!Number.isSafeInteger(value[nextField]) || value[nextField] < 0) {
     throw new TypeError(`Invalid ${label}.${nextField}`);
+  }
+  return value;
+}
+
+function portfolioPoolContinuation(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new TypeError("Invalid portfolio pool cursor");
+  }
+  if (!Number.isSafeInteger(value.blockNumber) || value.blockNumber < 0) {
+    throw new TypeError("Invalid portfolio pool cursor.blockNumber");
+  }
+  if (
+    typeof value.blockHash !== "string" ||
+    !/^0x[0-9a-fA-F]{64}$/.test(value.blockHash)
+  ) {
+    throw new TypeError("Invalid portfolio pool cursor.blockHash");
+  }
+  for (const field of [
+    "nextCreatedFacilityIndex",
+    "nextCandidateIndex",
+    "nextInvestorIndex",
+  ]) {
+    if (!Number.isSafeInteger(value[field]) || value[field] < 0) {
+      throw new TypeError(`Invalid portfolio pool cursor.${field}`);
+    }
   }
   return value;
 }
@@ -863,5 +919,627 @@ export async function readPolicyRegistryAuditScope(
           }
         : null,
     artifacts,
+  };
+}
+
+export async function readCappedPilotFactory(address, runner, options = {}) {
+  const factory = contract(address, cappedPilotFactoryV1Abi, runner);
+  const cursor =
+    options.cursor === undefined
+      ? undefined
+      : continuation(options.cursor, "nextIndex", "factory cursor");
+  if (cursor && options.blockTag !== undefined) {
+    throw new TypeError("A factory cursor cannot be combined with blockTag");
+  }
+  const limit = options.limit ?? 25;
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+    throw new TypeError("Invalid factory limit");
+  }
+  const snapshot = await beginSnapshot(
+    runner,
+    cursor?.blockNumber ?? options.blockTag,
+    cursor?.blockHash,
+  );
+  const { blockTag } = snapshot;
+  const overrides = { blockTag };
+  const [
+    asset,
+    kernel,
+    lender,
+    borrower,
+    guardian,
+    maximumFacilityLimit,
+    maximumTotalLimit,
+    minimumBondBps,
+    maximumDrawFeeBps,
+    maximumMaturityBlocks,
+    maximumDrawDelayBlocks,
+    maximumFacilityCount,
+    creationPaused,
+    totalFacilityLimit,
+    facilityCount,
+  ] = await Promise.all([
+    factory.asset(overrides),
+    factory.kernel(overrides),
+    factory.lender(overrides),
+    factory.borrower(overrides),
+    factory.guardian(overrides),
+    factory.maximumFacilityLimit(overrides),
+    factory.maximumTotalLimit(overrides),
+    factory.minimumBondBps(overrides),
+    factory.maximumDrawFeeBps(overrides),
+    factory.maximumMaturityBlocks(overrides),
+    factory.maximumDrawDelayBlocks(overrides),
+    factory.maximumFacilityCount(overrides),
+    factory.creationPaused(overrides),
+    factory.totalFacilityLimit(overrides),
+    factory.facilityCount(overrides),
+  ]);
+  const totalCount = indexedLength(facilityCount, "facility count");
+  const start = cursor?.nextIndex ?? 0;
+  const end = Math.min(totalCount, start + limit);
+  const facilities = await Promise.all(
+    Array.from({ length: Math.max(0, end - start) }, (_, offset) =>
+      factory.facilityAt(start + offset, overrides),
+    ),
+  );
+  await assertSnapshot(snapshot);
+  return {
+    address: getAddress(address),
+    blockTag,
+    blockHash: snapshot.expectedHash,
+    asset,
+    kernel,
+    lender,
+    borrower,
+    guardian,
+    maximumFacilityLimit,
+    maximumTotalLimit,
+    minimumBondBps,
+    maximumDrawFeeBps,
+    maximumMaturityBlocks,
+    maximumDrawDelayBlocks,
+    maximumFacilityCount,
+    creationPaused,
+    totalFacilityLimit,
+    totalCount,
+    start,
+    facilities,
+    nextCursor:
+      end < totalCount
+        ? {
+            blockNumber: blockTag,
+            blockHash: snapshot.expectedHash,
+            nextIndex: end,
+          }
+        : null,
+  };
+}
+
+export async function readPolicyKernelV2(address, runner, options = {}) {
+  const kernel = contract(address, policyKernelV2Abi, runner);
+  const snapshot = await beginSnapshot(runner, options.blockTag);
+  const { blockTag } = snapshot;
+  const overrides = { blockTag };
+  const [verifier, creditState, owner, proofJobs, safeStaleProofRelease] =
+    await Promise.all([
+      kernel.verifier(overrides),
+      kernel.creditState(overrides),
+      kernel.owner(overrides),
+      kernel.proofJobs(overrides),
+      kernel.safeStaleProofRelease(overrides),
+    ]);
+  await assertSnapshot(snapshot);
+  return {
+    address: getAddress(address),
+    blockTag,
+    blockHash: snapshot.expectedHash,
+    verifier,
+    creditState,
+    owner,
+    proofJobs,
+    safeStaleProofRelease,
+  };
+}
+
+export async function readPolicyRegistrationV2(
+  address,
+  runner,
+  facilityAddress,
+  policyId,
+  chainKeys = [],
+  options = {},
+) {
+  if (!Array.isArray(chainKeys) || chainKeys.length > 32) {
+    throw new TypeError("Invalid chainKeys");
+  }
+  const normalizedChainKeys = chainKeys.map((chainKey, index) =>
+    uint64(chainKey, `chainKeys[${index}]`, { positive: true }),
+  );
+  if (
+    new Set(normalizedChainKeys.map((chainKey) => chainKey.toString())).size !==
+    normalizedChainKeys.length
+  ) {
+    throw new TypeError("Duplicate chainKeys");
+  }
+  const kernel = contract(address, policyKernelV2Abi, runner);
+  const snapshot = await beginSnapshot(runner, options.blockTag);
+  const { blockTag } = snapshot;
+  const overrides = { blockTag };
+  const facility = getAddress(facilityAddress);
+  const [
+    registered,
+    registration,
+    policySetCommitment,
+    sourceOrdering,
+    sourcePositions,
+  ] = await Promise.all([
+    kernel.isPolicyRegistered(facility, policyId, overrides),
+    kernel.policyOf(facility, policyId, overrides),
+    kernel.policySetCommitment(facility, overrides),
+    kernel.sourceOrderingOf(facility, policyId, overrides),
+    Promise.all(
+      normalizedChainKeys.map(async (chainKey) => {
+        const position = await kernel.latestSourcePosition(
+          facility,
+          policyId,
+          chainKey,
+          overrides,
+        );
+        return {
+          chainKey,
+          recorded: position.recorded,
+          blockHeight: position.blockHeight,
+          transactionIndex: position.transactionIndex,
+        };
+      }),
+    ),
+  ]);
+  await assertSnapshot(snapshot);
+  return {
+    address: getAddress(address),
+    blockTag,
+    blockHash: snapshot.expectedHash,
+    facility,
+    policyId: BigInt(policyId),
+    registered,
+    evaluator: registration.evaluator,
+    configHash: registration.configHash,
+    manifest: registration.manifestBytes,
+    policySetCommitment,
+    sourceOrdering,
+    sourcePositions,
+  };
+}
+
+export async function readMultiChainPolicy(
+  address,
+  runner,
+  facilityAddress,
+  policyId,
+  options = {},
+) {
+  const policy = contract(address, multiChainEventPolicyV1Abi, runner);
+  const snapshot = await beginSnapshot(runner, options.blockTag);
+  const { blockTag } = snapshot;
+  const overrides = { blockTag };
+  const facility = getAddress(facilityAddress);
+  const [
+    context,
+    maximumRules,
+    policyKind,
+    sourceOrdering,
+    configured,
+    configHash,
+    manifest,
+    riskScore,
+  ] = await Promise.all([
+    policy.context(overrides),
+    policy.MAXIMUM_RULES(overrides),
+    policy.policyKind(overrides),
+    policy.sourceOrdering(overrides),
+    policy.isConfigured(facility, policyId, overrides),
+    policy.configHash(facility, policyId, overrides),
+    policy.manifest(facility, policyId, overrides),
+    policy.riskScore(facility, policyId, overrides),
+  ]);
+  const configuration = configured
+    ? await policy.configurationOf(facility, policyId, overrides)
+    : undefined;
+  await assertSnapshot(snapshot);
+  return {
+    address: getAddress(address),
+    blockTag,
+    blockHash: snapshot.expectedHash,
+    facility,
+    policyId: BigInt(policyId),
+    context,
+    maximumRules,
+    policyKind,
+    sourceOrdering,
+    configured,
+    configHash,
+    manifest,
+    riskScore,
+    configuration,
+  };
+}
+
+export async function readOperatorMarket(address, runner, options = {}) {
+  const market = contract(address, operatorMarketV1Abi, runner);
+  const cursor =
+    options.cursor === undefined
+      ? undefined
+      : continuation(options.cursor, "nextIndex", "operator market cursor");
+  if (cursor && options.blockTag !== undefined) {
+    throw new TypeError(
+      "An operator market cursor cannot be combined with blockTag",
+    );
+  }
+  const limit = options.limit ?? 25;
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+    throw new TypeError("Invalid operator market limit");
+  }
+  const claimableAccounts = options.claimableAccounts ?? [];
+  if (!Array.isArray(claimableAccounts) || claimableAccounts.length > 100) {
+    throw new TypeError("Invalid claimableAccounts");
+  }
+  const accounts = claimableAccounts.map((account) => getAddress(account));
+  if (new Set(accounts).size !== accounts.length) {
+    throw new TypeError("Duplicate claimableAccounts");
+  }
+  const snapshot = await beginSnapshot(
+    runner,
+    cursor?.blockNumber ?? options.blockTag,
+    cursor?.blockHash,
+  );
+  const { blockTag } = snapshot;
+  const overrides = { blockTag };
+  const [
+    token,
+    verifier,
+    minimumOperatorBond,
+    maximumQuoteDuration,
+    maximumServiceDuration,
+    quoteCount,
+  ] = await Promise.all([
+    market.token(overrides),
+    market.verifier(overrides),
+    market.minimumOperatorBond(overrides),
+    market.maximumQuoteDuration(overrides),
+    market.maximumServiceDuration(overrides),
+    market.quoteCount(overrides),
+  ]);
+  const quoteTotalCount = indexedLength(quoteCount, "quote count");
+  const start = cursor?.nextIndex ?? 0;
+  const end = Math.min(quoteTotalCount, start + limit);
+  const [quotes, claimable] = await Promise.all([
+    Promise.all(
+      Array.from({ length: Math.max(0, end - start) }, async (_, offset) => {
+        const quoteId = start + offset;
+        return {
+          quoteId: BigInt(quoteId),
+          quote: await market.quoteAt(quoteId, overrides),
+        };
+      }),
+    ),
+    Promise.all(
+      accounts.map(async (account) => ({
+        account,
+        amount: await market.claimable(account, overrides),
+      })),
+    ),
+  ]);
+  await assertSnapshot(snapshot);
+  return {
+    address: getAddress(address),
+    blockTag,
+    blockHash: snapshot.expectedHash,
+    token,
+    verifier,
+    minimumOperatorBond,
+    maximumQuoteDuration,
+    maximumServiceDuration,
+    quoteTotalCount,
+    start,
+    quotes,
+    claimable,
+    nextCursor:
+      end < quoteTotalCount
+        ? {
+            blockNumber: blockTag,
+            blockHash: snapshot.expectedHash,
+            nextIndex: end,
+          }
+        : null,
+  };
+}
+
+export async function readPortfolioMandate(address, runner, options = {}) {
+  if (
+    (options.facility === undefined) !==
+    (options.deploymentId === undefined)
+  ) {
+    throw new TypeError("facility and deploymentId must be supplied together");
+  }
+  const mandate = contract(address, portfolioMandateV1Abi, runner);
+  const snapshot = await beginSnapshot(runner, options.blockTag);
+  const { blockTag } = snapshot;
+  const overrides = { blockTag };
+  const [
+    factory,
+    registry,
+    asset,
+    kernel,
+    requiredReleaseId,
+    requiredPolicySetCommitment,
+    requiredEvidenceKind,
+    requiredActionAdapterKind,
+    maximumFacilityLimit,
+    minimumBondBps,
+    maximumDrawFeeBps,
+    maximumRemainingMaturityBlocks,
+  ] = await Promise.all([
+    mandate.factory(overrides),
+    mandate.registry(overrides),
+    mandate.asset(overrides),
+    mandate.kernel(overrides),
+    mandate.requiredReleaseId(overrides),
+    mandate.requiredPolicySetCommitment(overrides),
+    mandate.requiredEvidenceKind(overrides),
+    mandate.requiredActionAdapterKind(overrides),
+    mandate.maximumFacilityLimit(overrides),
+    mandate.minimumBondBps(overrides),
+    mandate.maximumDrawFeeBps(overrides),
+    mandate.maximumRemainingMaturityBlocks(overrides),
+  ]);
+  const eligibilityCode =
+    options.facility === undefined
+      ? undefined
+      : await mandate.evaluate(
+          getAddress(options.facility),
+          options.deploymentId,
+          overrides,
+        );
+  await assertSnapshot(snapshot);
+  return {
+    address: getAddress(address),
+    blockTag,
+    blockHash: snapshot.expectedHash,
+    factory,
+    registry,
+    asset,
+    kernel,
+    requiredReleaseId,
+    requiredPolicySetCommitment,
+    requiredEvidenceKind,
+    requiredActionAdapterKind,
+    maximumFacilityLimit,
+    minimumBondBps,
+    maximumDrawFeeBps,
+    maximumRemainingMaturityBlocks,
+    facility:
+      options.facility === undefined ? undefined : getAddress(options.facility),
+    deploymentId: options.deploymentId,
+    eligibilityCode,
+  };
+}
+
+export async function readPortfolioPool(address, runner, options = {}) {
+  const pool = contract(address, portfolioPoolV1Abi, runner);
+  const cursor =
+    options.cursor === undefined
+      ? undefined
+      : portfolioPoolContinuation(options.cursor);
+  if (cursor && options.blockTag !== undefined) {
+    throw new TypeError(
+      "A portfolio pool cursor cannot be combined with blockTag",
+    );
+  }
+  const detailLimit = options.detailLimit ?? 25;
+  if (
+    !Number.isSafeInteger(detailLimit) ||
+    detailLimit < 1 ||
+    detailLimit > 100
+  ) {
+    throw new TypeError("Invalid portfolio pool detailLimit");
+  }
+  const snapshot = await beginSnapshot(
+    runner,
+    cursor?.blockNumber ?? options.blockTag,
+    cursor?.blockHash,
+  );
+  const { blockTag } = snapshot;
+  const overrides = { blockTag };
+  const asset = await pool.asset(overrides);
+  const assetContract = contract(asset, recourseDemoUsdAbi, runner);
+  const [
+    maximumInvestors,
+    manager,
+    maximumPoolAssets,
+    maximumServiceBudget,
+    maximumServiceJobDuration,
+    maximumFacilityCount,
+    fundingDeadline,
+    recoveryDelayBlocks,
+    mandate,
+    proofJobsVenue,
+    status,
+    totalDeposited,
+    totalAllocatedPrincipal,
+    totalRecovered,
+    totalRealizedLoss,
+    totalServiceEscrowed,
+    totalServiceRecovered,
+    allocatedFacilityCount,
+    settledFacilityCount,
+    totalDistributed,
+    totalClaimed,
+    name,
+    symbol,
+    decimals,
+    totalSupply,
+    createdFacilityCount,
+    candidateCount,
+    investorCount,
+    assetBalance,
+  ] = await Promise.all([
+    pool.MAXIMUM_INVESTORS(overrides),
+    pool.manager(overrides),
+    pool.maximumPoolAssets(overrides),
+    pool.maximumServiceBudget(overrides),
+    pool.maximumServiceJobDuration(overrides),
+    pool.maximumFacilityCount(overrides),
+    pool.fundingDeadline(overrides),
+    pool.recoveryDelayBlocks(overrides),
+    pool.mandate(overrides),
+    pool.proofJobsVenue(overrides),
+    pool.status(overrides),
+    pool.totalDeposited(overrides),
+    pool.totalAllocatedPrincipal(overrides),
+    pool.totalRecovered(overrides),
+    pool.totalRealizedLoss(overrides),
+    pool.totalServiceEscrowed(overrides),
+    pool.totalServiceRecovered(overrides),
+    pool.allocatedFacilityCount(overrides),
+    pool.settledFacilityCount(overrides),
+    pool.totalDistributed(overrides),
+    pool.totalClaimed(overrides),
+    pool.name(overrides),
+    pool.symbol(overrides),
+    pool.decimals(overrides),
+    pool.totalSupply(overrides),
+    pool.createdFacilityCount(overrides),
+    pool.candidateCount(overrides),
+    pool.investorCount(overrides),
+    assetContract.balanceOf(getAddress(address), overrides),
+  ]);
+  const createdFacilityTotalCount = indexedLength(
+    createdFacilityCount,
+    "created facility count",
+  );
+  const candidateTotalCount = indexedLength(candidateCount, "candidate count");
+  const investorTotalCount = indexedLength(investorCount, "investor count");
+  const createdFacilityStart = cursor?.nextCreatedFacilityIndex ?? 0;
+  const candidateStart = cursor?.nextCandidateIndex ?? 0;
+  const investorStart = cursor?.nextInvestorIndex ?? 0;
+  if (
+    createdFacilityStart > createdFacilityTotalCount ||
+    candidateStart > candidateTotalCount ||
+    investorStart > investorTotalCount
+  ) {
+    throw new RangeError("Portfolio pool cursor exceeds snapshot counts");
+  }
+  const createdFacilityEnd = Math.min(
+    createdFacilityTotalCount,
+    createdFacilityStart + detailLimit,
+  );
+  const candidateEnd = Math.min(
+    candidateTotalCount,
+    candidateStart + detailLimit,
+  );
+  const investorEnd = Math.min(investorTotalCount, investorStart + detailLimit);
+  const [createdFacilities, candidates, investors] = await Promise.all([
+    Promise.all(
+      Array.from(
+        {
+          length: createdFacilityEnd - createdFacilityStart,
+        },
+        (_, offset) =>
+          pool.createdFacilityAt(createdFacilityStart + offset, overrides),
+      ),
+    ),
+    Promise.all(
+      Array.from(
+        { length: candidateEnd - candidateStart },
+        async (_, offset) => {
+          const facility = await pool.candidateAt(
+            candidateStart + offset,
+            overrides,
+          );
+          const allocation = await pool.allocationOf(facility, overrides);
+          return {
+            facility,
+            allocation: {
+              deploymentId: allocation.deploymentId,
+              principal: allocation.principal,
+              recovered: allocation.recovered,
+              realizedLoss: allocation.realizedLoss,
+              registered: allocation.registered,
+              settled: allocation.settled,
+            },
+          };
+        },
+      ),
+    ),
+    Promise.all(
+      Array.from({ length: investorEnd - investorStart }, async (_, offset) => {
+        const account = await pool.investorAt(
+          investorStart + offset,
+          overrides,
+        );
+        const [shares, claimable, claimedAssets] = await Promise.all([
+          pool.balanceOf(account, overrides),
+          pool.claimable(account, overrides),
+          pool.claimedAssets(account, overrides),
+        ]);
+        return { account, shares, claimable, claimedAssets };
+      }),
+    ),
+  ]);
+  await assertSnapshot(snapshot);
+  const hasMore =
+    createdFacilityEnd < createdFacilityTotalCount ||
+    candidateEnd < candidateTotalCount ||
+    investorEnd < investorTotalCount;
+  return {
+    address: getAddress(address),
+    blockTag,
+    blockHash: snapshot.expectedHash,
+    asset,
+    assetBalance,
+    maximumInvestors,
+    manager,
+    maximumPoolAssets,
+    maximumServiceBudget,
+    maximumServiceJobDuration,
+    maximumFacilityCount,
+    fundingDeadline,
+    recoveryDelayBlocks,
+    mandate,
+    proofJobsVenue,
+    status,
+    totalDeposited,
+    totalAllocatedPrincipal,
+    totalRecovered,
+    totalRealizedLoss,
+    totalServiceEscrowed,
+    totalServiceRecovered,
+    allocatedFacilityCount,
+    settledFacilityCount,
+    totalDistributed,
+    totalClaimed,
+    name,
+    symbol,
+    decimals,
+    totalSupply,
+    createdFacilityTotalCount,
+    candidateTotalCount,
+    investorTotalCount,
+    createdFacilityStart,
+    candidateStart,
+    investorStart,
+    createdFacilities,
+    candidates,
+    investors,
+    nextCursor: hasMore
+      ? {
+          blockNumber: blockTag,
+          blockHash: snapshot.expectedHash,
+          nextCreatedFacilityIndex: createdFacilityEnd,
+          nextCandidateIndex: candidateEnd,
+          nextInvestorIndex: investorEnd,
+        }
+      : null,
   };
 }

@@ -453,3 +453,25 @@ test("observatory pages keep external data on safe text DOM paths and expose sta
   assert.match(operatorHtml, /operator-reported/i);
   assert.doesNotMatch(operatorJs, /URLSearchParams/);
 });
+
+test("portfolio observatory labels the pool lifecycle as source-only before RPC state", async () => {
+  const html = await readFile(
+    new URL("../web/portfolio.html", import.meta.url),
+    "utf8",
+  );
+  const sourcePanel = html.indexOf('id="portfolio-pool-source"');
+  const rpcState = html.indexOf('id="portfolio-state"');
+  assert.ok(sourcePanel >= 0 && sourcePanel < rpcState);
+  assert.match(html, /PortfolioPoolV1 is built, not deployed/i);
+  assert.match(html, /No verified pool address/i);
+  assert.match(html, /No verified pool capital/i);
+  for (const status of [
+    "Configuring",
+    "Funding",
+    "Active",
+    "Finalized",
+    "Cancelled",
+  ]) {
+    assert.match(html, new RegExp(`>${status}<`));
+  }
+});

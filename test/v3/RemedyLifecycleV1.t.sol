@@ -125,7 +125,7 @@ contract RemedyTargetMock is IRemedyTargetV1 {
         callbackPayload = payload;
     }
 
-    function executeRemedy(bytes32 actionKind, bytes calldata actionData) external returns (bytes32) {
+    function executeRemedy(bytes32, bytes32 actionKind, bytes calldata actionData) external returns (bytes32) {
         require(actionKind == expectedKind && keccak256(actionData) == expectedDataHash, "wrong action");
         ++calls;
         if (address(callbackTransport) != address(0)) {
@@ -373,8 +373,11 @@ contract RemedyLifecycleV1Test is Test {
 
         vm.expectRevert(BoundedRemedyReceiverV1.MessageAlreadyProcessed.selector);
         transport.deliver(receiver, messageId, SOURCE_CHAIN, address(coordinator), payload);
-        vm.expectRevert(BoundedRemedyReceiverV1.AuthorizationConsumed.selector);
-        transport.deliver(receiver, keccak256("other-message"), SOURCE_CHAIN, address(coordinator), payload);
+        assertEq(
+            transport.deliver(receiver, keccak256("other-message"), SOURCE_CHAIN, address(coordinator), payload),
+            keccak256("executed")
+        );
+        assertEq(target.calls(), 1);
     }
 
     function test_receiverRejectsSpoofedTransportSourceAndPayload() public {
@@ -391,6 +394,7 @@ contract RemedyLifecycleV1Test is Test {
 
         bytes memory altered = abi.encode(
             intentId,
+            coordinator.intentExecutionId(intentId),
             address(target),
             ACTION_KIND,
             abi.encode(address(0xBAD), uint256(100)),
@@ -419,6 +423,131 @@ contract RemedyLifecycleV1Test is Test {
         );
     }
 
+    function test_delayedAcknowledgementCannotExecuteReplacementActionTwice() public {
+        IRemedyCoordinatorV1.IntentRequest memory firstRequest = _request();
+        firstRequest.expiry = uint64(block.timestamp + 10);
+        bytes32 firstIntent = coordinator.recordIntent(firstRequest);
+        coordinator.publishIntent(firstIntent, ACTION_DATA);
+
+        BoundedRemedyReceiverV1.Authorization memory firstAuthorization =
+            _authorization(firstIntent, firstRequest.expiry);
+        vm.prank(GUARDIAN);
+        receiver.authorize(firstAuthorization);
+        bytes memory firstPayload = abi.encode(
+            firstIntent,
+            coordinator.intentExecutionId(firstIntent),
+            address(target),
+            ACTION_KIND,
+            ACTION_DATA,
+            firstRequest.expiry
+        );
+        transport.deliver(receiver, transport.lastMessageId(), SOURCE_CHAIN, address(coordinator), firstPayload);
+        assertEq(target.calls(), 1);
+
+        vm.warp(firstRequest.expiry);
+        coordinator.timeoutIntent(firstIntent);
+
+        uint64 replacementExpiry = uint64(block.timestamp + 1 days);
+        bytes32 replacementIntent = coordinator.recordReplacement(firstIntent, replacementExpiry);
+        assertEq(coordinator.intentExecutionId(replacementIntent), coordinator.intentExecutionId(firstIntent));
+        BoundedRemedyReceiverV1.Authorization memory replacementAuthorization =
+            _authorization(replacementIntent, replacementExpiry);
+        vm.prank(GUARDIAN);
+        receiver.authorize(replacementAuthorization);
+        bytes memory replacementPayload = abi.encode(
+            replacementIntent,
+            coordinator.intentExecutionId(replacementIntent),
+            address(target),
+            ACTION_KIND,
+            ACTION_DATA,
+            replacementExpiry
+        );
+
+        assertEq(
+            transport.deliver(
+                receiver, keccak256("replacement message"), SOURCE_CHAIN, address(coordinator), replacementPayload
+            ),
+            keccak256("executed")
+        );
+        assertEq(target.calls(), 1);
+    }
+
+    function test_onlyAuthorizedPolicyCanReplaceItsLatestTerminalIntent() public {
+        IRemedyCoordinatorV1.IntentRequest memory firstRequest = _request();
+        firstRequest.expiry = uint64(block.timestamp + 10);
+        bytes32 firstIntent = coordinator.recordIntent(firstRequest);
+        vm.warp(firstRequest.expiry);
+        coordinator.timeoutIntent(firstIntent);
+
+        uint64 replacementExpiry = uint64(block.timestamp + 1 days);
+        vm.expectRevert(RemedyCoordinatorV1.NotPolicy.selector);
+        vm.prank(address(0xBAD));
+        coordinator.recordReplacement(firstIntent, replacementExpiry);
+
+        bytes32 replacementIntent = coordinator.recordReplacement(firstIntent, replacementExpiry);
+        RemedyCoordinatorV1.Intent memory first = coordinator.intentOf(firstIntent);
+        RemedyCoordinatorV1.Intent memory replacement = coordinator.intentOf(replacementIntent);
+        assertEq(replacement.predecessorIntentId, firstIntent);
+        assertEq(replacement.adverseEvidenceDigest, first.adverseEvidenceDigest);
+        assertEq(replacement.executionId, first.executionId);
+        assertEq(replacement.target, first.target);
+        assertEq(replacement.actionDataHash, first.actionDataHash);
+
+        vm.expectRevert(RemedyCoordinatorV1.InvalidIntent.selector);
+        coordinator.recordReplacement(firstIntent, replacementExpiry + 1);
+        vm.expectRevert(RemedyCoordinatorV1.InvalidIntent.selector);
+        coordinator.recordReplacement(replacementIntent, replacementExpiry + 1);
+    }
+
+    function test_curedIntentStartsNewExecutionDomain() public {
+        bytes32 firstIntent = coordinator.recordIntent(_request());
+        coordinator.publishIntent(firstIntent, ACTION_DATA);
+        transport.setAcknowledged(transport.lastMessageId(), true);
+        coordinator.syncAcknowledgement(firstIntent);
+        coordinator.recordCure(firstIntent, keccak256("first cure"));
+
+        IRemedyCoordinatorV1.IntentRequest memory nextRequest = _request();
+        nextRequest.adverseEvidenceDigest = keccak256("next adverse");
+        bytes32 nextIntent = coordinator.recordIntent(nextRequest);
+
+        assertNotEq(coordinator.intentExecutionId(nextIntent), coordinator.intentExecutionId(firstIntent));
+        assertEq(coordinator.intentExecutionId(nextIntent), nextIntent);
+    }
+
+    function test_reusedExecutionRejectsDifferentActionCommitment() public {
+        bytes32 intentId = coordinator.recordIntent(_request());
+        bytes32 executionId = coordinator.intentExecutionId(intentId);
+        _authorize(intentId);
+        transport.deliver(receiver, keccak256("first"), SOURCE_CHAIN, address(coordinator), _payload(intentId));
+
+        bytes memory alteredActionData = abi.encode(address(0xBAD), uint256(100));
+        bytes32 secondIntent = keccak256("second-intent");
+        uint64 expiry = uint64(block.timestamp + 1 days);
+        BoundedRemedyReceiverV1.Authorization memory authorization = BoundedRemedyReceiverV1.Authorization({
+            sourceChain: SOURCE_CHAIN,
+            sourceCoordinator: address(coordinator),
+            intentId: secondIntent,
+            executionId: executionId,
+            target: address(target),
+            actionKind: ACTION_KIND,
+            actionDataHash: keccak256(alteredActionData),
+            expiry: expiry,
+            consumed: false
+        });
+        vm.prank(GUARDIAN);
+        receiver.authorize(authorization);
+
+        vm.expectRevert(BoundedRemedyReceiverV1.InvalidAuthorization.selector);
+        transport.deliver(
+            receiver,
+            keccak256("altered"),
+            SOURCE_CHAIN,
+            address(coordinator),
+            abi.encode(secondIntent, executionId, address(target), ACTION_KIND, alteredActionData, expiry)
+        );
+        assertEq(target.calls(), 1);
+    }
+
     function test_receiverExpiryAndReentrancyAreRejected() public {
         bytes32 intentId = coordinator.recordIntent(_request());
         bytes memory payload = _payload(intentId);
@@ -431,8 +560,19 @@ contract RemedyLifecycleV1Test is Test {
         assertEq(target.calls(), 1);
 
         bytes32 secondIntent = keccak256("second-intent");
+        bytes32 secondExecution = keccak256("second-execution");
         uint64 expiry = uint64(block.timestamp + 10);
-        BoundedRemedyReceiverV1.Authorization memory authorization = _authorization(secondIntent, expiry);
+        BoundedRemedyReceiverV1.Authorization memory authorization = BoundedRemedyReceiverV1.Authorization({
+            sourceChain: SOURCE_CHAIN,
+            sourceCoordinator: address(coordinator),
+            intentId: secondIntent,
+            executionId: secondExecution,
+            target: address(target),
+            actionKind: ACTION_KIND,
+            actionDataHash: keccak256(ACTION_DATA),
+            expiry: expiry,
+            consumed: false
+        });
         vm.prank(GUARDIAN);
         receiver.authorize(authorization);
         vm.warp(expiry);
@@ -442,7 +582,7 @@ contract RemedyLifecycleV1Test is Test {
             keccak256("expired"),
             SOURCE_CHAIN,
             address(coordinator),
-            abi.encode(secondIntent, address(target), ACTION_KIND, ACTION_DATA, expiry)
+            abi.encode(secondIntent, secondExecution, address(target), ACTION_KIND, ACTION_DATA, expiry)
         );
     }
 
@@ -461,7 +601,14 @@ contract RemedyLifecycleV1Test is Test {
     }
 
     function _payload(bytes32 intentId) private view returns (bytes memory) {
-        return abi.encode(intentId, address(target), ACTION_KIND, ACTION_DATA, uint64(block.timestamp + 1 days));
+        return abi.encode(
+            intentId,
+            coordinator.intentExecutionId(intentId),
+            address(target),
+            ACTION_KIND,
+            ACTION_DATA,
+            uint64(block.timestamp + 1 days)
+        );
     }
 
     function _authorize(bytes32 intentId) private returns (bytes32) {
@@ -480,6 +627,7 @@ contract RemedyLifecycleV1Test is Test {
             sourceChain: SOURCE_CHAIN,
             sourceCoordinator: address(coordinator),
             intentId: intentId,
+            executionId: coordinator.intentExecutionId(intentId),
             target: address(target),
             actionKind: ACTION_KIND,
             actionDataHash: keccak256(ACTION_DATA),

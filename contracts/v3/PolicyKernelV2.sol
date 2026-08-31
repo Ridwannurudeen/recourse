@@ -9,6 +9,7 @@ import {IPolicyEvaluatorV1} from "../v2/interfaces/IPolicyEvaluatorV1.sol";
 import {IPolicyFacilityV1} from "../v2/interfaces/IPolicyFacilityV1.sol";
 import {IProofJobsKernelV1} from "../v2/interfaces/IProofJobsKernelV1.sol";
 import {VerifiedCreditStateV1} from "../v2/VerifiedCreditStateV1.sol";
+import {ISourceOrderingPolicyV1} from "./interfaces/ISourceOrderingPolicyV1.sol";
 import {
     CreditObservation,
     FacilityStatus,
@@ -24,6 +25,7 @@ contract PolicyKernelV2 is ReentrancyGuard, IPolicyConfigurationContextV1, IProo
     error InvalidBatch();
     error InvalidObservation();
     error InvalidPolicyEffect();
+    error InvalidSourceOrdering();
     error IrrelevantEvidence();
     error NotLender();
     error NotOwner();
@@ -53,11 +55,15 @@ contract PolicyKernelV2 is ReentrancyGuard, IPolicyConfigurationContextV1, IProo
         address submitter,
         PolicyOutcome outcome
     );
+    event PolicySourceOrderingSet(
+        address indexed facility, uint256 indexed policyId, ISourceOrderingPolicyV1.SourceOrdering sourceOrdering
+    );
 
     struct PolicyRegistration {
         IPolicyEvaluatorV1 evaluator;
         bytes32 configHash;
         bytes manifest;
+        ISourceOrderingPolicyV1.SourceOrdering sourceOrdering;
     }
 
     struct SourcePosition {
@@ -97,12 +103,16 @@ contract PolicyKernelV2 is ReentrancyGuard, IPolicyConfigurationContextV1, IProo
         if (manifestBytes.length == 0 || configurationHash == bytes32(0)) revert InvalidManifest();
         if (keccak256(manifestBytes) != configurationHash) revert InvalidManifest();
 
-        policies[facility][policyId] =
-            PolicyRegistration({evaluator: evaluator, configHash: configurationHash, manifest: manifestBytes});
-        policySetCommitment[facility] =
-            keccak256(abi.encode(policySetCommitment[facility], policyId, address(evaluator), configurationHash));
+        ISourceOrderingPolicyV1.SourceOrdering sourceOrdering = _sourceOrdering(evaluator);
+        policies[facility][policyId] = PolicyRegistration({
+            evaluator: evaluator, configHash: configurationHash, manifest: manifestBytes, sourceOrdering: sourceOrdering
+        });
+        policySetCommitment[facility] = keccak256(
+            abi.encode(policySetCommitment[facility], policyId, address(evaluator), configurationHash, sourceOrdering)
+        );
 
         emit PolicyRegistered(facility, policyId, address(evaluator), configurationHash, manifestBytes);
+        emit PolicySourceOrderingSet(facility, policyId, sourceOrdering);
     }
 
     function submitSingle(
@@ -140,6 +150,7 @@ contract PolicyKernelV2 is ReentrancyGuard, IPolicyConfigurationContextV1, IProo
         }
 
         PolicyRegistration storage registration = _activePolicy(facility, policyId);
+        if (registration.sourceOrdering == ISourceOrderingPolicyV1.SourceOrdering.UniqueOnly) revert InvalidBatch();
         ProvenTransaction[] memory proven = new ProvenTransaction[](length);
         bytes32[] memory queryIds = new bytes32[](length);
         SourcePosition memory previous = latestSourcePositions[facility][policyId][chainKey];
@@ -283,7 +294,9 @@ contract PolicyKernelV2 is ReentrancyGuard, IPolicyConfigurationContextV1, IProo
             if (allowProcessed) return (PolicyOutcome.Eligible, false);
             revert ProofAlreadyUsed(qid);
         }
-        if (!_sourceAdvances(facility, policyId, chainKey, height, txIndex)) {
+        bool strictlyIncreasing =
+            registration.sourceOrdering == ISourceOrderingPolicyV1.SourceOrdering.StrictlyIncreasing;
+        if (strictlyIncreasing && !_sourceAdvances(facility, policyId, chainKey, height, txIndex)) {
             if (allowProcessed) return (PolicyOutcome.Eligible, false);
             revert StaleSourcePosition();
         }
@@ -295,7 +308,9 @@ contract PolicyKernelV2 is ReentrancyGuard, IPolicyConfigurationContextV1, IProo
         PolicyResult memory result = registration.evaluator.evaluate(facility, policyId, proven);
         _validateResultBase(facility, result);
         if (result.sourceBlock != height || result.transactionIndex != txIndex) revert InvalidObservation();
-        _requireAdvancingSource(facility, policyId, chainKey, result.sourceBlock, result.transactionIndex);
+        if (strictlyIncreasing) {
+            _requireAdvancingSource(facility, policyId, chainKey, result.sourceBlock, result.transactionIndex);
+        }
 
         uint64 proofTime = _timestamp64();
         uint64 expiry = _expiry(proofTime, result.freshnessPeriod);
@@ -315,9 +330,11 @@ contract PolicyKernelV2 is ReentrancyGuard, IPolicyConfigurationContextV1, IProo
         });
 
         processedQueries[facility][policyId][qid] = true;
-        latestSourcePositions[facility][policyId][chainKey] = SourcePosition({
-            blockHeight: result.sourceBlock, transactionIndex: result.transactionIndex, recorded: true
-        });
+        if (_sourceAdvances(facility, policyId, chainKey, result.sourceBlock, result.transactionIndex)) {
+            latestSourcePositions[facility][policyId][chainKey] = SourcePosition({
+                blockHeight: result.sourceBlock, transactionIndex: result.transactionIndex, recorded: true
+            });
+        }
         creditState.recordObservation(facility, policyId, observation);
         IPolicyFacilityV1(facility).applyPolicyEffect(policyId, result.effect, expiry);
 
@@ -340,6 +357,14 @@ contract PolicyKernelV2 is ReentrancyGuard, IPolicyConfigurationContextV1, IProo
 
     function isPolicyRegistered(address facility, uint256 policyId) external view returns (bool) {
         return address(policies[facility][policyId].evaluator) != address(0);
+    }
+
+    function sourceOrderingOf(address facility, uint256 policyId)
+        external
+        view
+        returns (ISourceOrderingPolicyV1.SourceOrdering)
+    {
+        return policies[facility][policyId].sourceOrdering;
     }
 
     function queryId(uint64 chainKey, uint64 blockHeight, uint64 txIndex) public pure returns (bytes32) {
@@ -399,6 +424,20 @@ contract PolicyKernelV2 is ReentrancyGuard, IPolicyConfigurationContextV1, IProo
         if (outcome == PolicyOutcome.MarginCalled) return 3;
         if (outcome == PolicyOutcome.Breached) return 4;
         return 0;
+    }
+
+    function _sourceOrdering(IPolicyEvaluatorV1 evaluator)
+        private
+        view
+        returns (ISourceOrderingPolicyV1.SourceOrdering ordering)
+    {
+        (bool success, bytes memory returnData) =
+            address(evaluator).staticcall(abi.encodeWithSelector(ISourceOrderingPolicyV1.sourceOrdering.selector));
+        if (!success || returnData.length == 0) return ISourceOrderingPolicyV1.SourceOrdering.StrictlyIncreasing;
+        if (returnData.length != 32) revert InvalidSourceOrdering();
+        uint256 rawOrdering = abi.decode(returnData, (uint256));
+        if (rawOrdering > uint256(ISourceOrderingPolicyV1.SourceOrdering.UniqueOnly)) revert InvalidSourceOrdering();
+        return ISourceOrderingPolicyV1.SourceOrdering(rawOrdering);
     }
 
     function _requireAdvancingSource(

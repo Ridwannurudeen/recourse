@@ -3,10 +3,12 @@ pragma solidity ^0.8.30;
 
 import {Test} from "forge-std/Test.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {FacilityStatus, PolicyEffect, PolicyOutcome} from "../../contracts/v2/types/RecourseTypesV2.sol";
 import {CappedPilotFactoryV1} from "../../contracts/v3/CappedPilotFactoryV1.sol";
 
 interface IPilotFacilityV3 {
     function activate(bytes32 expectedPolicySet) external;
+    function applyPolicyEffect(uint256 policyId, PolicyEffect calldata effect, uint64 evidenceExpiry) external;
     function bondPosted() external view returns (uint256);
     function borrowerClaimable() external view returns (uint256);
     function claimBorrowerRefund() external;
@@ -20,6 +22,7 @@ interface IPilotFacilityV3 {
     function repay(uint256 amount) external;
     function requestDraw(uint256 amount) external;
     function settleDefaultLoss() external;
+    function status() external view returns (FacilityStatus);
 }
 
 contract PilotFacilityToken is ERC20 {
@@ -45,11 +48,12 @@ contract RecourseFacilityV3Test is Test {
     bytes32 private constant POLICY_SET = keccak256("pilot-policy-set");
 
     PilotFacilityToken private token;
+    PilotPolicyCommitment private kernel;
     IPilotFacilityV3 private facility;
 
     function setUp() public {
         token = new PilotFacilityToken();
-        PilotPolicyCommitment kernel = new PilotPolicyCommitment();
+        kernel = new PilotPolicyCommitment();
         CappedPilotFactoryV1 factory = new CappedPilotFactoryV1(
             token, address(kernel), LENDER, BORROWER, GUARDIAN, 1_000, 1_000, 2_000, 0, 20, 0, 1
         );
@@ -77,6 +81,7 @@ contract RecourseFacilityV3Test is Test {
     function test_defaultSettlementAppliesBondToDebtAndPreservesEveryToken() public {
         vm.roll(block.number + 11);
         facility.markDefaulted();
+        vm.prank(LENDER);
         facility.settleDefaultLoss();
 
         assertEq(facility.outstandingDebt(), 500);
@@ -85,6 +90,7 @@ contract RecourseFacilityV3Test is Test {
         assertEq(facility.borrowerClaimable(), 0);
         assertEq(token.balanceOf(address(facility)), 500);
         vm.expectRevert(bytes4(keccak256("ZeroAmount()")));
+        vm.prank(LENDER);
         facility.settleDefaultLoss();
 
         vm.prank(BORROWER);
@@ -104,6 +110,7 @@ contract RecourseFacilityV3Test is Test {
         facility.repay(700);
         vm.roll(block.number + 11);
         facility.markDefaulted();
+        vm.prank(LENDER);
         facility.settleDefaultLoss();
 
         assertEq(facility.outstandingDebt(), 0);
@@ -117,5 +124,27 @@ contract RecourseFacilityV3Test is Test {
         vm.prank(BORROWER);
         facility.claimBorrowerRefund();
         assertEq(token.balanceOf(address(facility)), 0);
+    }
+
+    function test_terminatedDebtCanSettleBondAfterMaturity() public {
+        PolicyEffect memory termination = PolicyEffect({
+            outcome: PolicyOutcome.Breached,
+            creditLimitBps: 0,
+            futureDrawFeeBps: 0,
+            freezePendingDraw: true,
+            requireFreshEvidence: false,
+            terminate: true
+        });
+        vm.prank(address(kernel));
+        facility.applyPolicyEffect(1, termination, uint64(block.timestamp + 1 days));
+        assertEq(uint256(facility.status()), uint256(FacilityStatus.Terminated));
+
+        vm.roll(block.number + 11);
+        vm.prank(LENDER);
+        facility.settleDefaultLoss();
+
+        assertEq(facility.outstandingDebt(), 500);
+        assertEq(facility.bondPosted(), 0);
+        assertEq(facility.lenderClaimable(), 500);
     }
 }

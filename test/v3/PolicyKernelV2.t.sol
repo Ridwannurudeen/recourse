@@ -18,6 +18,7 @@ import {
     PolicyResult,
     ProvenTransaction
 } from "../../contracts/v2/types/RecourseTypesV2.sol";
+import {MultiChainEventPolicyV1} from "../../contracts/v3/MultiChainEventPolicyV1.sol";
 import {PolicyKernelV2} from "../../contracts/v3/PolicyKernelV2.sol";
 import {MockVerifier} from "../mocks/MockVerifier.sol";
 
@@ -28,6 +29,7 @@ contract KernelV2FacilityMock is IPolicyFacilityV1 {
     FacilityStatus public status;
     bool public incidentPaused;
     uint256 public applyCalls;
+    PolicyOutcome public lastOutcome;
 
     constructor(address lender_, address borrower_) {
         lender = lender_;
@@ -42,8 +44,9 @@ contract KernelV2FacilityMock is IPolicyFacilityV1 {
         asset = value;
     }
 
-    function applyPolicyEffect(uint256, PolicyEffect calldata, uint64) external {
+    function applyPolicyEffect(uint256, PolicyEffect calldata effect, uint64) external {
         ++applyCalls;
+        lastOutcome = effect.outcome;
     }
 }
 
@@ -124,6 +127,7 @@ contract PolicyKernelV2Test is Test {
     }
 
     function test_lowerSourcePositionOnDifferentChainIsAcceptedAndTrackedIndependently() public {
+        assertEq(uint256(kernel.sourceOrderingOf(address(facility), POLICY_ID)), 0);
         _submit(CHAIN_A, 200);
         _submit(CHAIN_B, 100);
 
@@ -146,6 +150,87 @@ contract PolicyKernelV2Test is Test {
         vm.expectRevert(PolicyKernelV2.StaleSourcePosition.selector);
         _submit(CHAIN_A, 199);
         assertFalse(kernel.isProcessed(address(facility), POLICY_ID, olderQuery));
+    }
+
+    function test_laterWeakMultiChainEvidenceCannotCensorEarlierSevereEvidence() public {
+        KernelV2FacilityMock multiFacility = new KernelV2FacilityMock(LENDER, BORROWER);
+        MultiChainEventPolicyV1 multiPolicy = new MultiChainEventPolicyV1(kernel);
+        MultiChainEventPolicyV1.Rule[] memory rules = new MultiChainEventPolicyV1.Rule[](2);
+        rules[0] = _multiChainRule(address(0xA11CE), 1);
+        rules[1] = _multiChainRule(address(0xBEEF), 4);
+        MultiChainEventPolicyV1.Configuration memory configuration = MultiChainEventPolicyV1.Configuration({
+            subject: BORROWER,
+            freshnessPeriod: 1 days,
+            watchThreshold: 1,
+            restrictedThreshold: 2,
+            marginThreshold: 3,
+            breachThreshold: 4,
+            watchEffect: _effect(PolicyOutcome.Watch, 9_000, false),
+            restrictedEffect: _effect(PolicyOutcome.Restricted, 7_000, false),
+            marginEffect: _effect(PolicyOutcome.MarginCalled, 4_000, false),
+            breachEffect: _effect(PolicyOutcome.Breached, 0, true),
+            rules: rules
+        });
+        vm.startPrank(LENDER);
+        multiPolicy.configure(address(multiFacility), POLICY_ID, configuration);
+        kernel.registerPolicy(address(multiFacility), POLICY_ID, multiPolicy);
+        vm.stopPrank();
+        multiFacility.setStatus(FacilityStatus.Active);
+
+        INativeQueryVerifier.MerkleProof memory laterProof;
+        laterProof.root = keccak256("later-weak");
+        verifier.setTxIndexForRoot(laterProof.root, 2);
+        INativeQueryVerifier.MerkleProof memory earlierProof;
+        earlierProof.root = keccak256("earlier-severe");
+        verifier.setTxIndexForRoot(earlierProof.root, 1);
+        INativeQueryVerifier.ContinuityProof memory continuity;
+
+        kernel.submitSingle(
+            address(multiFacility), POLICY_ID, CHAIN_A, 100, _eventTransaction(address(0xA11CE)), laterProof, continuity
+        );
+        kernel.submitSingle(
+            address(multiFacility),
+            POLICY_ID,
+            CHAIN_A,
+            100,
+            _eventTransaction(address(0xBEEF)),
+            earlierProof,
+            continuity
+        );
+
+        assertTrue(kernel.isProcessed(address(multiFacility), POLICY_ID, kernel.queryId(CHAIN_A, 100, 2)));
+        assertTrue(kernel.isProcessed(address(multiFacility), POLICY_ID, kernel.queryId(CHAIN_A, 100, 1)));
+        assertEq(multiPolicy.riskScore(address(multiFacility), POLICY_ID), 5);
+        assertEq(uint256(kernel.sourceOrderingOf(address(multiFacility), POLICY_ID)), 1);
+        assertEq(uint256(multiFacility.lastOutcome()), uint256(PolicyOutcome.Breached));
+        (bool recorded, uint64 height, uint64 index) =
+            kernel.latestSourcePosition(address(multiFacility), POLICY_ID, CHAIN_A);
+        assertTrue(recorded);
+        assertEq(height, 100);
+        assertEq(index, 2);
+
+        uint64[] memory batchHeights = new uint64[](1);
+        batchHeights[0] = 101;
+        bytes[] memory batchTransactions = new bytes[](1);
+        batchTransactions[0] = _eventTransaction(address(0xA11CE));
+        INativeQueryVerifier.MerkleProof[] memory batchProofs = new INativeQueryVerifier.MerkleProof[](1);
+        vm.expectRevert(PolicyKernelV2.InvalidBatch.selector);
+        kernel.submitBatch(
+            address(multiFacility), POLICY_ID, CHAIN_A, batchHeights, batchTransactions, batchProofs, continuity
+        );
+
+        vm.expectRevert(
+            abi.encodeWithSelector(PolicyKernelV2.ProofAlreadyUsed.selector, kernel.queryId(CHAIN_A, 100, 1))
+        );
+        kernel.submitSingle(
+            address(multiFacility),
+            POLICY_ID,
+            CHAIN_A,
+            100,
+            _eventTransaction(address(0xBEEF)),
+            earlierProof,
+            continuity
+        );
     }
 
     function test_queryReplayIdentityIncludesChainKey() public {
@@ -273,6 +358,52 @@ contract PolicyKernelV2Test is Test {
         bytes[] memory chunks = new bytes[](3);
         chunks[2] = abi.encode(uint8(1), uint64(1), logs, bytes(""));
         return abi.encode(uint8(2), chunks);
+    }
+
+    function _eventTransaction(address emitter) private pure returns (bytes memory) {
+        bytes32[] memory topics = new bytes32[](2);
+        topics[0] = keccak256("RiskIncreased(address,uint256)");
+        topics[1] = bytes32(uint256(uint160(BORROWER)));
+        EvmV1Decoder.LogEntryTuple[] memory logs = new EvmV1Decoder.LogEntryTuple[](1);
+        logs[0] = EvmV1Decoder.LogEntryTuple({address_: emitter, topics: topics, data: abi.encode(uint256(1))});
+        bytes[] memory chunks = new bytes[](3);
+        chunks[2] = abi.encode(uint8(1), uint64(1), logs, bytes(""));
+        return abi.encode(uint8(2), chunks);
+    }
+
+    function _multiChainRule(address emitter, uint32 weight)
+        private
+        pure
+        returns (MultiChainEventPolicyV1.Rule memory)
+    {
+        return MultiChainEventPolicyV1.Rule({
+            sourceChain: CHAIN_A,
+            emitter: emitter,
+            eventSignature: keccak256("RiskIncreased(address,uint256)"),
+            startSourceBlock: 1,
+            endSourceBlock: type(uint64).max,
+            topicCount: 2,
+            subjectTopicIndex: 1,
+            dataLength: 32,
+            observedValueOffset: 0,
+            observationKind: ObservationKind.Behaviour,
+            riskWeight: weight
+        });
+    }
+
+    function _effect(PolicyOutcome outcome, uint16 creditLimitBps, bool terminate)
+        private
+        pure
+        returns (PolicyEffect memory)
+    {
+        return PolicyEffect({
+            outcome: outcome,
+            creditLimitBps: creditLimitBps,
+            futureDrawFeeBps: 0,
+            freezePendingDraw: terminate,
+            requireFreshEvidence: terminate,
+            terminate: terminate
+        });
     }
 
     function _encodedProof(uint64 chainKey, uint64 height) private pure returns (bytes memory) {

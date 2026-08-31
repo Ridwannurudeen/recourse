@@ -32,6 +32,10 @@ const EVENT_HISTORY_POLICY_ABI = [
   "function configurationOf(address facility,uint256 policyId) view returns (tuple(uint64 sourceChain,address emitter,bytes32 eventSignature,address subject,uint64 startSourceBlock,uint64 endSourceBlock,uint8 topicCount,uint8 subjectTopicIndex,uint16 dataLength,uint16 observedValueOffset,uint8 observationKind,uint8 evidenceKind,uint64 freshnessPeriod,tuple(uint8 outcome,uint16 creditLimitBps,uint16 futureDrawFeeBps,bool freezePendingDraw,bool requireFreshEvidence,bool terminate) effect))",
 ];
 
+const MULTI_CHAIN_EVENT_POLICY_ABI = [
+  "function configurationOf(address facility,uint256 policyId) view returns (tuple(address subject,uint64 freshnessPeriod,uint32 watchThreshold,uint32 restrictedThreshold,uint32 marginThreshold,uint32 breachThreshold,tuple(uint8 outcome,uint16 creditLimitBps,uint16 futureDrawFeeBps,bool freezePendingDraw,bool requireFreshEvidence,bool terminate) watchEffect,tuple(uint8 outcome,uint16 creditLimitBps,uint16 futureDrawFeeBps,bool freezePendingDraw,bool requireFreshEvidence,bool terminate) restrictedEffect,tuple(uint8 outcome,uint16 creditLimitBps,uint16 futureDrawFeeBps,bool freezePendingDraw,bool requireFreshEvidence,bool terminate) marginEffect,tuple(uint8 outcome,uint16 creditLimitBps,uint16 futureDrawFeeBps,bool freezePendingDraw,bool requireFreshEvidence,bool terminate) breachEffect,tuple(uint64 sourceChain,address emitter,bytes32 eventSignature,uint64 startSourceBlock,uint64 endSourceBlock,uint8 topicCount,uint8 subjectTopicIndex,uint16 dataLength,uint16 observedValueOffset,uint8 observationKind,uint32 riskWeight)[] rules))",
+];
+
 const JOB_STATES = ["Open", "OutcomeReached", "AttemptsExhausted", "Expired"];
 const DEFAULT_CONFIRMATIONS = 12;
 const DEFAULT_CHUNK_SIZE = 2_000;
@@ -305,6 +309,46 @@ function serializeConfiguration(configuration) {
   };
 }
 
+function serializeEffect(effect) {
+  return {
+    outcome: Number(effect.outcome),
+    creditLimitBps: Number(effect.creditLimitBps),
+    futureDrawFeeBps: Number(effect.futureDrawFeeBps),
+    freezePendingDraw: effect.freezePendingDraw,
+    requireFreshEvidence: effect.requireFreshEvidence,
+    terminate: effect.terminate,
+  };
+}
+
+export function serializeMultiChainConfiguration(configuration) {
+  return {
+    kind: "multi-chain-event-v1",
+    subject: getAddress(configuration.subject),
+    freshnessPeriod: bigintString(configuration.freshnessPeriod),
+    watchThreshold: Number(configuration.watchThreshold),
+    restrictedThreshold: Number(configuration.restrictedThreshold),
+    marginThreshold: Number(configuration.marginThreshold),
+    breachThreshold: Number(configuration.breachThreshold),
+    watchEffect: serializeEffect(configuration.watchEffect),
+    restrictedEffect: serializeEffect(configuration.restrictedEffect),
+    marginEffect: serializeEffect(configuration.marginEffect),
+    breachEffect: serializeEffect(configuration.breachEffect),
+    rules: [...configuration.rules].map((rule) => ({
+      sourceChain: bigintString(rule.sourceChain),
+      emitter: getAddress(rule.emitter),
+      eventSignature: rule.eventSignature.toLowerCase(),
+      startSourceBlock: bigintString(rule.startSourceBlock),
+      endSourceBlock: bigintString(rule.endSourceBlock),
+      topicCount: Number(rule.topicCount),
+      subjectTopicIndex: Number(rule.subjectTopicIndex),
+      dataLength: Number(rule.dataLength),
+      observedValueOffset: Number(rule.observedValueOffset),
+      observationKind: Number(rule.observationKind),
+      riskWeight: Number(rule.riskWeight),
+    })),
+  };
+}
+
 async function canonicalBlocks(provider, logs) {
   const heights = new Set(logs.map((log) => log.blockNumber));
   const blocks = new Map();
@@ -331,6 +375,7 @@ async function hydrateJobs(jobsContract, jobIds, stateBlock) {
 async function hydratePolicies(
   kernelContract,
   policyContract,
+  multiChainPolicyContract,
   deployments,
   policyKeys,
   stateBlock,
@@ -350,9 +395,21 @@ async function hydratePolicies(
         configHash: policy.configHash.toLowerCase(),
         manifest: policy.manifestBytes,
       };
-      if (evaluator === getAddress(deployments.eventHistoryPolicy)) {
+      if (
+        deployments.eventHistoryPolicy &&
+        evaluator === getAddress(deployments.eventHistoryPolicy)
+      ) {
         hydrated.configuration = serializeConfiguration(
           await policyContract.configurationOf(facility, policyId, {
+            blockTag: stateBlock,
+          }),
+        );
+      } else if (
+        deployments.multiChainEventPolicy &&
+        evaluator === getAddress(deployments.multiChainEventPolicy)
+      ) {
+        hydrated.configuration = serializeMultiChainConfiguration(
+          await multiChainPolicyContract.configurationOf(facility, policyId, {
             blockTag: stateBlock,
           }),
         );
@@ -387,6 +444,7 @@ export async function discoverProofJobs({
   jobsContract,
   kernelContract,
   policyContract,
+  multiChainPolicyContract,
 }) {
   confirmations = unsignedInteger(confirmations, "confirmation depth", {
     positive: true,
@@ -451,11 +509,22 @@ export async function discoverProofJobs({
     new Contract(deployments.policyKernel, POLICY_KERNEL_ABI, provider);
   const eventHistory =
     policyContract ||
-    new Contract(
-      deployments.eventHistoryPolicy,
-      EVENT_HISTORY_POLICY_ABI,
-      provider,
-    );
+    (deployments.eventHistoryPolicy
+      ? new Contract(
+          deployments.eventHistoryPolicy,
+          EVENT_HISTORY_POLICY_ABI,
+          provider,
+        )
+      : undefined);
+  const multiChainPolicy =
+    multiChainPolicyContract ||
+    (deployments.multiChainEventPolicy
+      ? new Contract(
+          deployments.multiChainEventPolicy,
+          MULTI_CHAIN_EVENT_POLICY_ABI,
+          provider,
+        )
+      : undefined);
   if (end < start) {
     const stateBlock = cursor?.lastScannedBlock ?? null;
     const checkpoint = cursor?.metrics ?? updateMetricCheckpoint(undefined, []);
@@ -541,6 +610,7 @@ export async function discoverProofJobs({
   const refreshedPolicies = await hydratePolicies(
     kernel,
     eventHistory,
+    multiChainPolicy,
     deployments,
     [...missingPolicies.values()],
     end,

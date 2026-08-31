@@ -160,7 +160,7 @@ contract OperatorMarketV1 is ReentrancyGuard {
         emit ServiceSettled(quoteId, agreementId, deliveryDigest);
     }
 
-    function cancelQuote(uint256 quoteId) external {
+    function cancelQuote(uint256 quoteId) external nonReentrant {
         Quote storage quote = quotes[quoteId];
         _requireStatus(quote, QuoteStatus.Open);
         if (msg.sender != quote.operator) revert NotOperator();
@@ -169,7 +169,7 @@ contract OperatorMarketV1 is ReentrancyGuard {
         emit QuoteCancelled(quoteId);
     }
 
-    function expireQuote(uint256 quoteId) external {
+    function expireQuote(uint256 quoteId) external nonReentrant {
         Quote storage quote = quotes[quoteId];
         if (quote.status == QuoteStatus.Open) {
             if (block.timestamp < quote.quoteExpiry) revert InvalidExpiry();

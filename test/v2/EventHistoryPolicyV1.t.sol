@@ -195,6 +195,20 @@ contract EventHistoryPolicyV1Test is Test {
         assertEq(result.freshnessPeriod, 1 days);
     }
 
+    function test_matchingLogValuesSaturateInsteadOfBlockingEvidence() public {
+        _configure();
+        EvmV1Decoder.LogEntryTuple[] memory maximum = _matchingLogs(type(uint256).max);
+        EvmV1Decoder.LogEntryTuple[] memory one = _matchingLogs(1);
+        EvmV1Decoder.LogEntryTuple[] memory combined = new EvmV1Decoder.LogEntryTuple[](2);
+        combined[0] = maximum[0];
+        combined[1] = one[0];
+
+        PolicyResult memory result =
+            context.evaluate(policy, FACILITY, POLICY_ID, _singleProven(START_BLOCK, _receipt(1, combined)));
+
+        assertEq(result.observedValue, type(uint256).max);
+    }
+
     function test_revertedReceiptIsRejectedBeforeLogsAreUsed() public {
         _configure();
         ProvenTransaction[] memory proven = _singleProven(START_BLOCK, _receipt(0, _matchingLogs(25)));

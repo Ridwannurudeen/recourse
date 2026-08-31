@@ -3,6 +3,7 @@ pragma solidity ^0.8.30;
 
 import {Test} from "forge-std/Test.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {OperatorMarketV1} from "../../contracts/v3/OperatorMarketV1.sol";
 import {IOperatorServiceVerifierV1} from "../../contracts/v3/interfaces/IOperatorServiceVerifierV1.sol";
 
@@ -11,6 +12,48 @@ contract MarketToken is ERC20 {
 
     function mint(address account, uint256 amount) external {
         _mint(account, amount);
+    }
+}
+
+contract ReentrantMarketToken is ERC20 {
+    OperatorMarketV1 public market;
+    uint256 public quoteId;
+    address public sponsor;
+    bool public attack;
+
+    constructor() ERC20("Reentrant Market USD", "RMUSD") {}
+
+    function configure(OperatorMarketV1 market_, address sponsor_) external {
+        market = market_;
+        sponsor = sponsor_;
+        _approve(address(this), address(market_), type(uint256).max);
+    }
+
+    function mint(address account, uint256 amount) external {
+        _mint(account, amount);
+    }
+
+    function postQuote(bytes32 requirements, uint256 price, uint256 bond) external {
+        quoteId = market.postQuote(
+            OperatorMarketV1.ServiceKind.ProofConstruction,
+            requirements,
+            price,
+            bond,
+            uint64(block.timestamp + 1 days),
+            1 days
+        );
+    }
+
+    function arm() external {
+        attack = true;
+    }
+
+    function transferFrom(address from, address to, uint256 amount) public override returns (bool) {
+        if (attack && from == sponsor) {
+            attack = false;
+            market.cancelQuote(quoteId);
+        }
+        return super.transferFrom(from, to, amount);
     }
 }
 
@@ -228,6 +271,28 @@ contract OperatorMarketV1Test is Test {
         assertFalse(verifier.callbackSucceeded());
         assertNotEq(verifier.callbackErrorHash(), bytes32(0));
         assertEq(market.claimable(OPERATOR), PRICE + BOND);
+    }
+
+    function test_paymentTokenCannotReenterCancellationDuringAcceptance() public {
+        ReentrantMarketToken reentrantToken = new ReentrantMarketToken();
+        OperatorMarketV1 reentrantMarket = new OperatorMarketV1(reentrantToken, verifier, BOND, 7 days, 7 days);
+        reentrantToken.configure(reentrantMarket, SPONSOR);
+        reentrantToken.mint(address(reentrantToken), BOND);
+        reentrantToken.mint(SPONSOR, PRICE);
+        reentrantToken.postQuote(REQUIREMENTS, PRICE, BOND);
+        vm.prank(SPONSOR);
+        reentrantToken.approve(address(reentrantMarket), PRICE);
+        reentrantToken.arm();
+        uint256 reentrantQuoteId = reentrantToken.quoteId();
+
+        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
+        vm.prank(SPONSOR);
+        reentrantMarket.acceptQuote(reentrantQuoteId);
+
+        OperatorMarketV1.Quote memory quote = reentrantMarket.quoteAt(reentrantQuoteId);
+        assertEq(uint256(quote.status), uint256(OperatorMarketV1.QuoteStatus.Open));
+        assertEq(reentrantMarket.claimable(address(reentrantToken)), 0);
+        assertEq(reentrantToken.balanceOf(address(reentrantMarket)), BOND);
     }
 
     function test_lateAcceptanceStillReceivesFullServiceWindow() public {

@@ -5,6 +5,7 @@ import {EvmV1Decoder} from "@gluwa/usc-contracts/contracts/write-ability/common/
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {IPolicyConfigurationContextV1} from "../v2/interfaces/IPolicyConfigurationContextV1.sol";
 import {IPolicyEvaluatorV1} from "../v2/interfaces/IPolicyEvaluatorV1.sol";
+import {ISourceOrderingPolicyV1} from "./interfaces/ISourceOrderingPolicyV1.sol";
 import {
     EvidenceKind,
     ObservationKind,
@@ -14,7 +15,7 @@ import {
     ProvenTransaction
 } from "../v2/types/RecourseTypesV2.sol";
 
-contract MultiChainEventPolicyV1 is IPolicyEvaluatorV1 {
+contract MultiChainEventPolicyV1 is IPolicyEvaluatorV1, ISourceOrderingPolicyV1 {
     uint256 public constant MAXIMUM_RULES = 16;
 
     struct Rule {
@@ -183,6 +184,10 @@ contract MultiChainEventPolicyV1 is IPolicyEvaluatorV1 {
 
     function policyKind() external pure returns (string memory) {
         return "multi-chain-event-v1";
+    }
+
+    function sourceOrdering() external pure returns (SourceOrdering) {
+        return SourceOrdering.UniqueOnly;
     }
 
     function _match(

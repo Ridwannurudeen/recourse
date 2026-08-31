@@ -326,6 +326,34 @@ export function validateResumeState(state, expected) {
     throw new Error("Invalid incident reason");
   }
 
+  let claimSettlementComplete;
+  if (state.claimSettlementComplete !== undefined) {
+    if (typeof state.claimSettlementComplete !== "boolean") {
+      throw new Error("Invalid claim settlement marker");
+    }
+    if (
+      state.claimSettlementComplete &&
+      state.phase !== "revealed" &&
+      state.phase !== "released"
+    ) {
+      throw new Error("Invalid claim settlement phase");
+    }
+    claimSettlementComplete = state.claimSettlementComplete;
+  }
+  let claimTransactionHash;
+  let claimBlock;
+  if (state.claimTransactionHash !== undefined) {
+    if (state.phase !== "revealed" && state.phase !== "released") {
+      throw new Error("Invalid claim transaction phase");
+    }
+    claimTransactionHash = requireTransactionHash(
+      state.claimTransactionHash,
+      "claim transaction hash",
+    );
+    claimBlock = requireUnsignedInteger(state.claimBlock, "claim block");
+    if (claimBlock === 0) throw new Error("Invalid claim block");
+  }
+
   let pending = null;
   if (state.pending !== undefined && state.pending !== null) {
     const expectedKinds =
@@ -335,7 +363,9 @@ export function validateResumeState(state, expected) {
           ? ["commit"]
           : state.phase === "committed"
             ? ["reveal", "release"]
-            : [];
+            : state.phase === "revealed" || state.phase === "released"
+              ? ["claim"]
+              : [];
     if (!expectedKinds.includes(state.pending.kind)) {
       throw new Error("Invalid pending transaction phase");
     }
@@ -350,6 +380,11 @@ export function validateResumeState(state, expected) {
       throw new Error("Pending transaction hash mismatch");
     }
     pending = { ...state.pending, transactionHash };
+  }
+  if (claimSettlementComplete === true && pending !== null) {
+    throw new Error(
+      "Completed claim settlement cannot retain a pending transaction",
+    );
   }
 
   return {
@@ -371,6 +406,9 @@ export function validateResumeState(state, expected) {
     commitBlock,
     commitTransactionHash,
     revealTransactionHash,
+    claimTransactionHash,
+    claimBlock,
+    claimSettlementComplete,
     pending,
   };
 }

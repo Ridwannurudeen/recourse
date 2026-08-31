@@ -194,7 +194,9 @@ body.observatory-page::after {
 }
 
 .obs-intro h1,
-.obs-state h1 {
+.obs-intro h2,
+.obs-state h1,
+.obs-state h2 {
   max-width: 780px;
   margin: 12px 0 14px;
   font: 400 clamp(38px, 5vw, 68px)/0.98 var(--obs-display);
@@ -487,6 +489,215 @@ body.observatory-page::after {
   text-align: right;
 }
 
+.obs-v3-intro h1 {
+  max-width: 900px;
+}
+
+.obs-truth-stage {
+  margin: 38px 0 24px;
+  overflow: hidden;
+  border: 1px solid var(--obs-line-strong);
+  border-radius: var(--obs-radius);
+  background: var(--obs-surface);
+}
+
+.obs-truth-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.65fr);
+  gap: 40px;
+  align-items: end;
+  padding: 26px;
+}
+
+.obs-truth-heading h1,
+.obs-truth-heading h2,
+.obs-truth-boundary h2 {
+  margin: 7px 0 0;
+  font: 400 clamp(26px, 4vw, 42px)/1.05 var(--obs-display);
+  letter-spacing: -0.035em;
+}
+
+.obs-truth-heading > p {
+  margin: 0;
+  color: var(--obs-soft);
+  font-size: 12px;
+}
+
+.obs-truth-rail {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  border-top: 1px solid var(--obs-line);
+}
+
+.obs-pool-lifecycle {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0;
+  padding: 1px 0 0;
+  background: var(--obs-line);
+  list-style: none;
+}
+
+.obs-pool-lifecycle li {
+  min-width: 0;
+  min-height: 158px;
+  padding: 18px;
+  background: var(--obs-surface);
+}
+
+.obs-pool-lifecycle span {
+  display: block;
+  color: var(--obs-faint);
+  font: 9px/1.35 var(--obs-mono);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.obs-pool-lifecycle strong {
+  display: block;
+  margin-top: 12px;
+  color: var(--obs-text);
+  font: 700 13px/1.2 var(--obs-mono);
+}
+
+.obs-pool-lifecycle p {
+  margin: 10px 0 0;
+  color: var(--obs-soft);
+  font-size: 11px;
+}
+
+.obs-truth-item {
+  min-width: 0;
+  min-height: 126px;
+  display: flex;
+  flex-direction: column;
+  padding: 18px;
+  border-right: 1px solid var(--obs-line);
+}
+
+.obs-truth-item:last-child {
+  border-right: 0;
+}
+
+.obs-truth-item > span,
+.obs-truth-item small,
+.obs-gate-grid span {
+  color: var(--obs-faint);
+  font: 9px/1.35 var(--obs-mono);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.obs-truth-item strong {
+  margin-top: 14px;
+  overflow-wrap: anywhere;
+  color: var(--obs-warn);
+  font: 700 13px/1.2 var(--obs-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.obs-truth-item[data-truth="deployed"] strong,
+.obs-truth-item[data-truth="activated"] strong {
+  color: var(--obs-accent);
+}
+
+.obs-truth-item[data-truth="unavailable"] strong {
+  color: var(--obs-alert);
+}
+
+.obs-truth-item small {
+  margin-top: auto;
+  padding-top: 18px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.obs-capability-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.obs-capability-card {
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid var(--obs-line);
+  border-radius: var(--obs-radius);
+  background: var(--obs-surface);
+  transition:
+    transform 120ms ease,
+    border-color 120ms ease,
+    background 120ms ease;
+}
+
+.obs-capability-card:hover {
+  border-color: var(--obs-line-strong);
+  background: var(--obs-raised);
+  transform: translateY(-1px);
+}
+
+.obs-capability-card h3 {
+  margin: 18px 0 8px;
+  font: 17px/1.2 var(--obs-mono);
+  overflow-wrap: anywhere;
+}
+
+.obs-capability-card p {
+  margin: 0;
+  color: var(--obs-soft);
+  font-size: 12px;
+}
+
+.obs-gate-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0;
+  padding: 1px;
+  background: var(--obs-line);
+  list-style: none;
+}
+
+.obs-gate-grid li {
+  min-height: 104px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 17px;
+  background: var(--obs-surface);
+}
+
+.obs-gate-grid span {
+  color: var(--obs-warn);
+}
+
+.obs-gate-grid strong {
+  font-size: 13px;
+}
+
+.obs-truth-boundary {
+  margin-top: 60px;
+  padding: clamp(28px, 5vw, 52px);
+  border: 1px solid var(--obs-line-strong);
+  border-radius: var(--obs-radius);
+  background: var(--obs-raised);
+}
+
+.obs-truth-boundary > div {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 36px;
+  margin-top: 25px;
+  color: var(--obs-soft);
+}
+
+.obs-truth-boundary p {
+  margin-block: 0;
+}
+
 .obs-footer {
   border-top: 1px solid var(--obs-line);
 }
@@ -527,8 +738,23 @@ body.observatory-page::after {
     border-bottom: 1px solid var(--obs-line);
   }
   .obs-network-grid,
-  .obs-group-grid {
+  .obs-group-grid,
+  .obs-capability-grid,
+  .obs-gate-grid,
+  .obs-pool-lifecycle {
     grid-template-columns: 1fr 1fr;
+  }
+  .obs-truth-rail {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .obs-truth-item {
+    border-bottom: 1px solid var(--obs-line);
+  }
+  .obs-truth-item:nth-child(3) {
+    border-right: 0;
+  }
+  .obs-truth-item:nth-last-child(-n + 2) {
+    border-bottom: 0;
   }
 }
 
@@ -536,11 +762,18 @@ body.observatory-page::after {
   .obs-shell {
     width: min(100% - 28px, 1220px);
   }
+  .obs-brand,
+  .obs-nav a,
+  .obs-button {
+    min-height: 44px;
+  }
   .obs-main {
     padding-block: 38px 64px;
   }
   .obs-intro h1,
-  .obs-state h1 {
+  .obs-intro h2,
+  .obs-state h1,
+  .obs-state h2 {
     font-size: 38px;
   }
   .obs-metrics {
@@ -551,8 +784,30 @@ body.observatory-page::after {
   }
   .obs-network-grid,
   .obs-group-grid,
-  .obs-limitations {
+  .obs-limitations,
+  .obs-capability-grid,
+  .obs-gate-grid,
+  .obs-pool-lifecycle,
+  .obs-truth-rail,
+  .obs-truth-boundary > div,
+  .obs-truth-heading {
     grid-template-columns: 1fr;
+  }
+  .obs-truth-heading {
+    gap: 18px;
+  }
+  .obs-truth-item,
+  .obs-truth-item:nth-child(3),
+  .obs-truth-item:nth-last-child(-n + 2) {
+    min-height: 108px;
+    border-right: 0;
+    border-bottom: 1px solid var(--obs-line);
+  }
+  .obs-truth-item:last-child {
+    border-bottom: 0;
+  }
+  .obs-pool-lifecycle li {
+    min-height: 0;
   }
   .obs-section-heading,
   .obs-footer-inner {

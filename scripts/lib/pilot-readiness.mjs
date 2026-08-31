@@ -83,7 +83,7 @@ function validEvidence(evidence, baseDirectory) {
   );
 }
 
-function inspectRepository(repositoryDirectory) {
+export function inspectDeployableRepository(repositoryDirectory) {
   const options = {
     cwd: repositoryDirectory,
     encoding: "utf8",
@@ -97,6 +97,7 @@ function inspectRepository(repositoryDirectory) {
       "--porcelain",
       "--",
       "contracts",
+      "config",
       "daemon",
       "ops",
       "scripts",
@@ -186,7 +187,7 @@ export function evaluatePilotReadiness(
     throw new Error("Duplicate pilot approval role");
   }
   const repositoryState =
-    suppliedRepositoryState ?? inspectRepository(repositoryDirectory);
+    suppliedRepositoryState ?? inspectDeployableRepository(repositoryDirectory);
   const gates = REQUIRED_GATES.map(([key, label]) =>
     evaluateGate(
       key,

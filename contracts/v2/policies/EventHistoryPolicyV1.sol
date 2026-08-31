@@ -103,7 +103,7 @@ contract EventHistoryPolicyV1 is IPolicyEvaluatorV1 {
             }
 
             relevant = true;
-            observedValue += _wordAt(logEntry.data, configuration.observedValueOffset);
+            observedValue = _saturatingAdd(observedValue, _wordAt(logEntry.data, configuration.observedValueOffset));
         }
 
         if (!relevant) revert IrrelevantEvidence();
@@ -158,6 +158,11 @@ contract EventHistoryPolicyV1 is IPolicyEvaluatorV1 {
             && configuration.effect.outcome != PolicyOutcome.Eligible
             && configuration.effect.outcome != PolicyOutcome.Cured && configuration.effect.creditLimitBps <= 10_000
             && configuration.effect.futureDrawFeeBps <= 10_000;
+    }
+
+    function _saturatingAdd(uint256 first, uint256 second) private pure returns (uint256) {
+        if (second > type(uint256).max - first) return type(uint256).max;
+        return first + second;
     }
 
     function _wordAt(bytes memory data, uint256 offset) private pure returns (uint256 value) {

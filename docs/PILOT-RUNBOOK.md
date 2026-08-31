@@ -27,6 +27,37 @@ The tool can report `evidencePackageComplete`, but it always leaves
 hashes cannot prove the truth or legal effect of their contents, and this command
 does not authorize deployment, funding, or transaction execution.
 
+## Current V3 deployment boundary
+
+`deployments-v3.json` is a historical inactive record. Its kernel, multi-chain
+policy, and policy-set commitment predate the hardened current build, so the
+activation preflight rejects it. Preserve that file. Deploy a reviewed current
+core to a new manifest such as `deployments-v3-current.json`. The deployment
+command is offline by default and does not read an RPC, load a signer, write a
+file, or broadcast. Use `--live-check` for signerless qualification, then
+`--live-check --write-plan <new-path>` to write the exact candidate plan for
+separate human review and approval. That plan binds the clean deployable source
+scope at its exact commit, six pinned artifacts, live anchor, capped fees, and
+exactly six transactions: five creations followed by `setProofJobs`.
+
+An approved plan expires 30 minutes after its chain timestamp. Broadcast
+requires `--live-check --broadcast --approved-plan <exact-path>` with the same
+explicit manifest and can sign only the approved transaction sequence. Before
+each send, the manifest-specific `.v3-deployment-journal.json` durably records
+the raw signed transaction. Recovery checks the recorded hash first and may
+rebroadcast only those same bytes; it requires the configured confirmation depth
+and canonical block rechecks. Preserve that journal. If approval expires during
+partial progress, create and separately approve a new plan bound to the journal
+checkpoint and remaining steps.
+
+Final qualification compares the exact deployed runtimes around compiler
+immutables for all six pinned artifacts, including the constructor-created
+`VerifiedCreditStateV1`, before writing the source-, plan-, transaction-, and
+runtime-evidence-complete manifest. Bind a copied activation config to that exact
+manifest path and lowercase SHA-256. The complete commands and recovery rules
+are documented in `ops/README.md`; deployment and activation broadcasts remain
+separately authorized operations.
+
 ## Read-only operator qualification
 
 The checked-in `daemon/operator-config.example.json` is read-only and allowlists
@@ -56,6 +87,15 @@ commit. Enabled mode also requires PolicyKernelV2's
 only after the readiness evidence has been reviewed by the accountable humans
 and the exact contract scope is authorized.
 
+For V3, the runtime also requires an activation manifest whose digest and
+configuration commitment exactly match the allowlists. Its
+`generation-activation-commitment-v1` namespace isolates every activation from
+Horizon 1 and from later V3 generations, preserving old recovery journals. The
+runtime reads each registered policy's frozen source-ordering mode: strict
+policies reject stale positions, while the cumulative `UniqueOnly` policy keeps
+every distinct unprocessed transaction and uses the latest position only as a
+non-regressing telemetry cursor.
+
 Execution preserves the proof, salt, commitment, and complete intended signed
 transaction binding (chain ID, signer, destination, nonce, calldata hash, value,
 transaction hash, and raw bytes) before broadcast. The signed bytes are checked
@@ -66,6 +106,14 @@ the same signed transaction when necessary and never creates a replacement for
 an uncertain outcome. A nonce advancement or replacement is an incident, not a
 transient retry. Journaled transactions are cleared only after the configured
 confirmation depth and a canonical receipt/block recheck.
+
+The configured transaction policy caps gas limit, per-gas fees, priority fees,
+and total native fee. Those exact fee fields are part of the signed intent and
+journal. Immediately before a first or resumed broadcast, the operator rechecks
+the live job state, expiry/reveal window, commitment ownership, nonce, and the
+approved call binding. A terminal reveal or release is not considered settled
+until the resulting Proof Jobs pull claim is recovered through its own durable
+journal; process restart resumes that claim instead of abandoning earned funds.
 
 Before a new commitment, the operator binds the proof-builder payload to the
 canonical source transaction and receipt, checks the native verifier-derived
@@ -88,8 +136,9 @@ demonstrably dead.
 - Treat an expired reveal window or reverted journaled transaction as an incident;
   do not manually retry with a new nonce before reviewing the on-chain state.
 - Finalized OutcomeReached or AttemptsExhausted jobs with a live commitment are
-  recovered through a journaled `releaseCommit`. Expired live commitments remain
-  explicit incidents and are never retried forever.
+  recovered through a journaled `releaseCommit`, followed by a journaled pull
+  claim when funds are claimable. Expired live commitments remain explicit
+  incidents and are never retried forever.
 - Keep the operator read-only if RPC chain identity, policy configuration,
   allowlists, source cursor canonicality, or discovery report freshness cannot be
   verified.

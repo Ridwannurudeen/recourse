@@ -24,7 +24,10 @@ import {
   encodeKernelProof,
   validateResumeState,
 } from "./horizon1-core.mjs";
-import { recoverHorizon1TargetState } from "./horizon1-recovery.mjs";
+import {
+  assertHorizon1BroadcastStillValid,
+  recoverHorizon1TargetState,
+} from "./horizon1-recovery.mjs";
 import {
   OperatorIncidentError,
   assertCommitReady,
@@ -130,6 +133,7 @@ async function main() {
       executionPolicy.targetConfirmations + executionPolicy.recoveryBlocks,
     receiptPollIntervalMs: 1_000,
     signal: shutdownController.signal,
+    feePolicy: executionPolicy.feePolicy,
   };
   if (BigInt(deployments.chainId) !== EXPECTED_CHAIN_ID) {
     throw new Error(
@@ -232,6 +236,8 @@ async function main() {
       );
     } else if (kind === "release") {
       request = await jobs.releaseCommit.populateTransaction(jobId);
+    } else if (kind === "claim") {
+      request = await jobs.claim.populateTransaction(job.token);
     } else {
       throw new Error(`Unknown transaction journal kind: ${kind}`);
     }
@@ -507,6 +513,7 @@ async function main() {
       state = await prepareJournaledTransaction({
         kind: "approval",
         signer: hunter,
+        feePolicy: executionPolicy.feePolicy,
         request: await token.approve.populateTransaction(
           deployments.proofJobs,
           job.commitBond,
@@ -522,6 +529,15 @@ async function main() {
           kind: "approval",
           successPhase: "approved",
           expectedIntent: await expectedIntentForKind("approval", state),
+          beforeBroadcast: () =>
+            assertHorizon1BroadcastStillValid({
+              kind: "approval",
+              provider,
+              jobsRead,
+              hunter,
+              jobId,
+              state,
+            }),
           ...confirmationPolicy,
         })
       ).state;
@@ -555,6 +571,7 @@ async function main() {
     state = await prepareJournaledTransaction({
       kind: "commit",
       signer: hunter,
+      feePolicy: executionPolicy.feePolicy,
       request: await jobs.commitEvidence.populateTransaction(
         jobId,
         state.evidenceDigest,
@@ -571,6 +588,15 @@ async function main() {
         kind: "commit",
         successPhase: "committed",
         expectedIntent: await expectedIntentForKind("commit", state),
+        beforeBroadcast: () =>
+          assertHorizon1BroadcastStillValid({
+            kind: "commit",
+            provider,
+            jobsRead,
+            hunter,
+            jobId,
+            state,
+          }),
         ...confirmationPolicy,
       })
     ).state;
