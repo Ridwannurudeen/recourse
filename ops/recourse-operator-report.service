@@ -1,0 +1,38 @@
+[Unit]
+Description=Recourse public operator report
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=recourse-report
+Group=recourse-report
+WorkingDirectory=/opt/recourse-operator/current
+EnvironmentFile=/etc/recourse/operator-report-runtime.conf
+Environment=HORIZON1_DISCOVERY_DEPLOYMENTS_FILE=/opt/recourse-operator/current/deployments-horizon1.json
+Environment=HORIZON1_DISCOVERY_CURSOR_FILE=/var/lib/recourse-report/discovery-cursor.json
+ExecStart=/usr/bin/node /opt/recourse-operator/current/daemon/job-discovery.mjs --output /var/lib/recourse-report/discovery-report.json
+ExecStart=/usr/bin/node /opt/recourse-operator/current/daemon/publish-operator-report.mjs --input /var/lib/recourse-report/discovery-report.json --output /var/lib/recourse-report-public/operator-report.json
+StandardOutput=null
+UMask=0027
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectProc=invisible
+ProcSubset=pid
+ReadWritePaths=/var/lib/recourse-report /var/lib/recourse-report-public
+InaccessiblePaths=/var/lib/recourse-operator
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictRealtime=true
+LockPersonality=true

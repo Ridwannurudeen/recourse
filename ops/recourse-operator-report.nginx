@@ -1,0 +1,16 @@
+location = /recourse/operator-report.json {
+    alias /var/lib/recourse-report-public/operator-report.json;
+    default_type application/json;
+    open_file_cache off;
+    etag off;
+
+    limit_except GET {
+        deny all;
+    }
+
+    add_header Cache-Control "no-store, max-age=0" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "geolocation=(), microphone=(), camera=()" always;
+}

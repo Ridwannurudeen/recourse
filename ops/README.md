@@ -283,18 +283,126 @@ sudo systemctl is-enabled recourse-operator.service
 sudo systemctl is-active recourse-operator.service
 ```
 
+## Publish public operator telemetry
+
+The operator page expects `/recourse/operator-report.json`, but nginx must never
+read `/var/lib/recourse-operator`. Publish the report with the separate
+`recourse-operator-report` timer. It reconstructs the same discovery state from
+the public Creditcoin RPC under a dedicated `recourse-report` account and its
+own cursor. The unit explicitly makes `/var/lib/recourse-operator`
+inaccessible, does not read operator configuration or credentials, and writes
+an allowlisted schema projection with raw events and hydrated policy/job fields
+removed.
+
+Provision private discovery state and an exact-file public spool. The setgid
+public directory lets the `www-data` nginx worker read the final mode-`0640`
+file without listing the directory. It grants no access to the protected
+operator account or state:
+
+```sh
+sudo useradd --system --home-dir /var/lib/recourse-report \
+  --shell /usr/sbin/nologin recourse-report 2>/dev/null || \
+  test "$(id -u recourse-report)" -ge 0
+sudo install -d -o recourse-report -g recourse-report -m 0700 \
+  /var/lib/recourse-report
+sudo install -d -o recourse-report -g www-data -m 2710 \
+  /var/lib/recourse-report-public
+```
+
+Create `/etc/recourse/operator-report-runtime.conf` with only the public CC3
+RPC assignment:
+
+```text
+CREDITCOIN_RPC_URL=https://rpc.cc3-testnet.creditcoin.network
+```
+
+Install it as `root:recourse-report` mode `0640`, then install and verify the
+two units from the exact tested release:
+
+```sh
+sudo chown root:recourse-report /etc/recourse/operator-report-runtime.conf
+sudo chmod 0640 /etc/recourse/operator-report-runtime.conf
+sudo install -o root -g root -m 0644 \
+  /opt/recourse-operator/current/ops/recourse-operator-report.service \
+  /etc/systemd/system/recourse-operator-report.service
+sudo install -o root -g root -m 0644 \
+  /opt/recourse-operator/current/ops/recourse-operator-report.timer \
+  /etc/systemd/system/recourse-operator-report.timer
+sudo systemd-analyze verify \
+  /etc/systemd/system/recourse-operator-report.service \
+  /etc/systemd/system/recourse-operator-report.timer
+sudo systemctl daemon-reload
+sudo systemctl start recourse-operator-report.service
+sudo systemctl status --no-pager recourse-operator-report.service
+```
+
+The first command may scan from the Horizon 1 deployment block. It atomically
+replaces the public file only after projection, schema validation, and the
+one-megabyte response cap pass. A failed or unanchored scan leaves the previous
+file unchanged so the browser reports its age instead of accepting partial
+JSON.
+
+Install `ops/recourse-operator-report.nginx` as
+`/etc/nginx/snippets/recourse-operator-report.conf`, then include that snippet
+inside the `ridwan.gudman.xyz` TLS server block. It defines only the exact JSON
+route, permits GET/HEAD, disables caching and ETags, and adds no CORS access:
+
+```sh
+sudo install -o root -g root -m 0644 \
+  /opt/recourse-operator/current/ops/recourse-operator-report.nginx \
+  /etc/nginx/snippets/recourse-operator-report.conf
+sudo test -e \
+  /etc/nginx/sites-available/ridwan.gudman.xyz.conf.pre-operator-report || \
+  sudo cp -a /etc/nginx/sites-available/ridwan.gudman.xyz.conf \
+    /etc/nginx/sites-available/ridwan.gudman.xyz.conf.pre-operator-report
+```
+
+```nginx
+include /etc/nginx/snippets/recourse-operator-report.conf;
+```
+
+Validate permissions and the route before enabling the timer:
+
+```sh
+sudo -u www-data test -r \
+  /var/lib/recourse-report-public/operator-report.json
+sudo -u www-data test ! -r /var/lib/recourse-report/discovery-cursor.json
+sudo -u www-data test ! -x /var/lib/recourse-operator
+sudo nginx -t
+sudo systemctl reload nginx
+curl -fsS -D - -o /dev/null \
+  https://ridwan.gudman.xyz/recourse/operator-report.json
+sudo systemctl enable --now recourse-operator-report.timer
+sudo systemctl is-enabled recourse-operator-report.timer
+```
+
+The public JSON still requires the browser's independent CC3 chain ID,
+ProofJobs address, block-hash, and block-timestamp checks. It is telemetry, not
+operator authority or a value-moving interface.
+
 ## Roll back
 
 Keep the prior release directory. If qualification fails, point `current` back
-to its exact release and restart:
+to its exact release and restart. Before rolling back to a release without the
+public reporter, disable its timer and remove the nginx snippet include so the
+endpoint fails closed with `404`:
 
 ```sh
+sudo systemctl disable --now recourse-operator-report.timer
+sudo systemctl stop recourse-operator-report.service
 sudo systemctl stop recourse-operator.service
 sudo ln -sfn "releases/<previous-tested-commit>" \
   /opt/recourse-operator/next
 sudo mv -Tf /opt/recourse-operator/next /opt/recourse-operator/current
 sudo systemctl start recourse-operator.service
 sudo systemctl status --no-pager recourse-operator.service
+sudo install -o root -g root -m 0644 \
+  /etc/nginx/sites-available/ridwan.gudman.xyz.conf.pre-operator-report \
+  /etc/nginx/sites-available/ridwan.gudman.xyz.conf
+sudo nginx -t
+sudo systemctl reload nginx
+test "$(curl -sS -o /dev/null -w '%{http_code}' \
+  https://ridwan.gudman.xyz/recourse/operator-report.json)" = 404
 ```
 
 Preserve the entire `/var/lib/recourse-operator` tree during rollback so Horizon

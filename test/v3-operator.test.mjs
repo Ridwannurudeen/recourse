@@ -829,3 +829,66 @@ test("systemd template keeps read-only mode and applies the verified isolation b
   assert.equal(config.stateNamespace, "generation-activation-commitment-v1");
   assert.match(unit, /generation\/activation-commitment namespace/);
 });
+
+test("public reporter is independently sandboxed from protected operator state", async () => {
+  const [unit, timer, nginx] = await Promise.all([
+    readFile("ops/recourse-operator-report.service", "utf8"),
+    readFile("ops/recourse-operator-report.timer", "utf8"),
+    readFile("ops/recourse-operator-report.nginx", "utf8"),
+  ]);
+  for (const directive of [
+    "User=recourse-report",
+    "Group=recourse-report",
+    "UMask=0027",
+    "InaccessiblePaths=/var/lib/recourse-operator",
+    "ReadWritePaths=/var/lib/recourse-report /var/lib/recourse-report-public",
+    "CapabilityBoundingSet=",
+    "NoNewPrivileges=true",
+    "ProtectSystem=strict",
+    "ProtectHome=true",
+    "PrivateDevices=true",
+    "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6",
+  ]) {
+    assert.match(unit, new RegExp(`^${directive}$`, "m"));
+  }
+  assert.match(
+    unit,
+    /^EnvironmentFile=\/etc\/recourse\/operator-report-runtime\.conf$/m,
+  );
+  assert.match(
+    unit,
+    /daemon\/job-discovery\.mjs --output \/var\/lib\/recourse-report\/discovery-report\.json/,
+  );
+  assert.match(
+    unit,
+    /daemon\/publish-operator-report\.mjs --input \/var\/lib\/recourse-report\/discovery-report\.json --output \/var\/lib\/recourse-report-public\/operator-report\.json/,
+  );
+  assert.doesNotMatch(unit, /operator\.json|LoadCredential|HUNTER_PRIVATE_KEY/);
+  assert.match(timer, /^OnBootSec=15s$/m);
+  assert.match(timer, /^OnUnitInactiveSec=30s$/m);
+  assert.doesNotMatch(timer, /^Persistent=/m);
+  assert.match(nginx, /^location = \/recourse\/operator-report\.json \{$/m);
+  assert.match(
+    nginx,
+    /^\s+alias \/var\/lib\/recourse-report-public\/operator-report\.json;$/m,
+  );
+  assert.match(nginx, /^\s+limit_except GET \{$/m);
+  assert.match(nginx, /Cache-Control "no-store, max-age=0" always/);
+  assert.match(nginx, /X-Content-Type-Options "nosniff" always/);
+  assert.match(
+    nginx,
+    /Strict-Transport-Security "max-age=31536000; includeSubDomains" always/,
+  );
+  assert.match(
+    nginx,
+    /Referrer-Policy "strict-origin-when-cross-origin" always/,
+  );
+  assert.match(
+    nginx,
+    /Permissions-Policy "geolocation=\(\), microphone=\(\), camera=\(\)" always/,
+  );
+  assert.doesNotMatch(
+    nginx,
+    /recourse-operator|cors|Access-Control-Allow-Origin/i,
+  );
+});

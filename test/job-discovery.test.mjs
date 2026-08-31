@@ -1,8 +1,16 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import test from "node:test";
+import { pathToFileURL } from "node:url";
 import { Interface, getAddress } from "ethers";
 import {
   buildDiscoveryReport,
@@ -17,8 +25,14 @@ import {
 import {
   PROOF_JOBS_ABI,
   discoverProofJobs,
+  isJobDiscoveryMainModule,
   writeDiscoveryReport,
 } from "../daemon/job-discovery.mjs";
+import {
+  projectPublicOperatorReport,
+  writePublicOperatorReport,
+} from "../daemon/publish-operator-report.mjs";
+import { validateOperatorReport } from "../web/operator-core.mjs";
 
 const HASH = (byte) => `0x${byte.repeat(32)}`;
 const JOBS = getAddress("0x0000000000000000000000000000000000000100");
@@ -30,6 +44,34 @@ const SPONSOR = getAddress("0x0000000000000000000000000000000000000600");
 const ALICE = getAddress("0x0000000000000000000000000000000000000a11");
 const BOB = getAddress("0x0000000000000000000000000000000000000b0b");
 const REQUIREMENTS = HASH("aa");
+
+test("discovery entrypoint recognizes a release reached through the current symlink", () => {
+  const releasePath = resolve(
+    join(tmpdir(), "recourse-release", "daemon", "job-discovery.mjs"),
+  );
+  const currentPath = resolve(
+    join(tmpdir(), "recourse-current", "daemon", "job-discovery.mjs"),
+  );
+  const canonicalize = (path) =>
+    resolve(path) === currentPath ? releasePath : resolve(path);
+
+  assert.equal(
+    isJobDiscoveryMainModule(
+      pathToFileURL(releasePath).href,
+      currentPath,
+      canonicalize,
+    ),
+    true,
+  );
+  assert.equal(
+    isJobDiscoveryMainModule(
+      pathToFileURL(releasePath).href,
+      join(tmpdir(), "other.mjs"),
+      canonicalize,
+    ),
+    false,
+  );
+});
 
 function event(
   name,
@@ -622,6 +664,148 @@ test("failed report serialization never replaces the last good discovery artifac
       /circular/i,
     );
     assert.deepEqual(JSON.parse(await readFile(outputPath, "utf8")), good);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("public operator publication projects an exact schema and preserves the last good artifact", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "recourse-public-report-"));
+  const outputPath = join(directory, "operator-report.json");
+  const source = buildDiscoveryReport({
+    chainId: 102031,
+    contractAddress: JOBS,
+    generatedAt: "2026-08-30T12:00:00.000Z",
+    fromBlock: 100,
+    toBlock: 103,
+    stateBlock: 103,
+    stateBlockHash: HASH("ab"),
+    stateBlockTimestamp: 1_788_091_200,
+    historyComplete: true,
+    confirmations: 12,
+    events: [
+      event("JobCreated", 1, undefined, 100, 0, 0, 1_788_091_170),
+      {
+        ...event("EvidenceCommitted", 1, ALICE, 101, 0, 0, 1_788_091_180),
+        commitment: HASH("cd"),
+        evidenceDigest: HASH("ef"),
+      },
+      event("CommitmentReleased", 1, ALICE, 102, 0, 0, 1_788_091_190),
+    ],
+    jobs: [
+      {
+        jobId: "1",
+        sponsor: SPONSOR,
+        token: TOKEN,
+        facility: FACILITY,
+        policyId: "7",
+        requirementsDigest: REQUIREMENTS,
+        expiry: "2000000000",
+        revealWindowBlocks: "18",
+        maxSuccessfulProofs: "3",
+        successfulProofs: "0",
+        proofReimbursement: "25",
+        outcomeReward: "50",
+        commitBond: "10",
+        escrowRemaining: "125",
+        rewardOutcomeThreshold: 3,
+        state: "Open",
+        stateValue: 0,
+      },
+    ],
+    policies: [
+      {
+        facility: FACILITY,
+        policyId: "7",
+        evaluator: POLICY,
+        configHash: REQUIREMENTS,
+        manifest: "0x1234",
+        configuration: { privateSentinel: true },
+      },
+    ],
+  });
+  source.privateState = {
+    salt: HASH("01"),
+    rawTransaction: "0xdeadbeef",
+  };
+  source.limitations.push("PRIVATE_LIMITATION_SENTINEL");
+
+  try {
+    const projected = projectPublicOperatorReport(source);
+    assert.deepEqual(Object.keys(projected), [
+      "schemaVersion",
+      "generatedAt",
+      "chainId",
+      "proofJobs",
+      "scan",
+      "events",
+      "jobs",
+      "policies",
+      "metrics",
+      "limitations",
+    ]);
+    assert.deepEqual(Object.keys(projected.jobs[0]), [
+      "jobId",
+      "facility",
+      "token",
+      "successfulProofs",
+      "maxSuccessfulProofs",
+      "escrowRemaining",
+      "state",
+    ]);
+    assert.deepEqual(Object.keys(projected.policies[0]), [
+      "facility",
+      "evaluator",
+      "policyId",
+    ]);
+    assert.deepEqual(projected.events, []);
+    assert.equal(projected.scan.eventsFromBlock, null);
+    assert.equal(projected.scan.eventsTruncated, true);
+    assert.match(
+      projected.limitations.at(-1),
+      /raw event records are omitted/i,
+    );
+    const serialized = JSON.stringify(projected);
+    for (const privateSentinel of [
+      SPONSOR,
+      REQUIREMENTS,
+      HASH("cd"),
+      HASH("ef"),
+      "0xdeadbeef",
+      "privateSentinel",
+      "PRIVATE_LIMITATION_SENTINEL",
+    ]) {
+      assert.equal(serialized.includes(privateSentinel), false);
+    }
+    assert.equal(
+      validateOperatorReport(projected, {
+        now: Date.parse("2026-08-30T12:01:00.000Z"),
+      }).report,
+      projected,
+    );
+
+    writePublicOperatorReport(outputPath, source);
+    const firstBytes = await readFile(outputPath, "utf8");
+    assert.deepEqual(JSON.parse(firstBytes), projected);
+    assert.deepEqual(await readdir(directory), ["operator-report.json"]);
+    if (process.platform !== "win32") {
+      assert.equal((await stat(outputPath)).mode & 0o777, 0o640);
+    }
+
+    assert.throws(
+      () =>
+        writePublicOperatorReport(outputPath, {
+          ...source,
+          scan: {
+            ...source.scan,
+            stateBlock: null,
+            stateBlockHash: null,
+            stateBlockTimestamp: null,
+          },
+        }),
+      /stateBlock/,
+    );
+    assert.equal(await readFile(outputPath, "utf8"), firstBytes);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

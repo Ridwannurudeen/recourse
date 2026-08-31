@@ -5,15 +5,8 @@ import {
   isHexString,
   solidityPackedKeccak256,
 } from "ethers";
-import {
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  realpathSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { fileURLToPath } from "node:url";
 import { basename, resolve } from "node:path";
 import { discoverProofJobs, writeDiscoveryReport } from "./job-discovery.mjs";
 import { runHorizon1Job } from "./horizon1-runner.mjs";
@@ -29,6 +22,7 @@ import {
   abortableDelay,
   atomicWriteJson,
   eventLogFilter,
+  isMainModule,
   jobAllowed,
   nextBackoff,
   operatorStatus,
@@ -37,6 +31,7 @@ import {
   statePathForJob,
   validateOperatorConfig,
 } from "./operator-core.mjs";
+export { isMainModule as isOperatorMainModule } from "./operator-core.mjs";
 import {
   getAttestedHeight,
   getSourceNetwork,
@@ -1148,17 +1143,6 @@ export function runtimeInputs(environment = process.env) {
   };
 }
 
-export function isOperatorMainModule(
-  moduleUrl,
-  argvPath,
-  canonicalize = realpathSync,
-) {
-  if (!argvPath) return false;
-  return (
-    canonicalize(resolve(argvPath)) === canonicalize(fileURLToPath(moduleUrl))
-  );
-}
-
 async function main() {
   if (!process.env.CREDITCOIN_RPC_URL)
     throw new Error("CREDITCOIN_RPC_URL is required");
@@ -1189,7 +1173,7 @@ async function main() {
   }
 }
 
-if (isOperatorMainModule(import.meta.url, process.argv[1])) {
+if (isMainModule(import.meta.url, process.argv[1])) {
   main().catch((error) => {
     process.stderr.write(`${errorMessage(error)}\n`);
     process.exitCode = 1;

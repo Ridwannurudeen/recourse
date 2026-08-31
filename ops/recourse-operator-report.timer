@@ -1,0 +1,11 @@
+[Unit]
+Description=Refresh Recourse public operator report
+
+[Timer]
+OnBootSec=15s
+OnUnitInactiveSec=30s
+AccuracySec=1s
+Unit=recourse-operator-report.service
+
+[Install]
+WantedBy=timers.target

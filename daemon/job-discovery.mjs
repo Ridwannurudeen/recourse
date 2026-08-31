@@ -1,7 +1,6 @@
 import "dotenv/config";
 import { Contract, Interface, JsonRpcProvider, getAddress } from "ethers";
 import { existsSync, readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import {
   buildDiscoveryReport,
@@ -11,7 +10,8 @@ import {
   sortAndDedupeEvents,
   updateMetricCheckpoint,
 } from "./job-discovery-core.mjs";
-import { atomicWriteJson } from "./operator-core.mjs";
+import { atomicWriteJson, isMainModule } from "./operator-core.mjs";
+export { isMainModule as isJobDiscoveryMainModule } from "./operator-core.mjs";
 
 export const PROOF_JOBS_ABI = [
   "event JobCreated(uint256 indexed jobId,address indexed sponsor,address indexed facility,uint256 policyId,bytes32 requirementsDigest,uint256 escrow)",
@@ -720,10 +720,7 @@ async function main() {
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
 }
 
-if (
-  process.argv[1] &&
-  resolve(process.argv[1]) === fileURLToPath(import.meta.url)
-) {
+if (isMainModule(import.meta.url, process.argv[1])) {
   main().catch((error) => {
     process.stderr.write(`${error?.message || String(error)}\n`);
     process.exitCode = 1;

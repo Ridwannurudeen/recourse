@@ -3,13 +3,16 @@ import { randomUUID } from "node:crypto";
 import {
   closeSync,
   existsSync,
+  fchmodSync,
   fsyncSync,
   openSync,
   readFileSync,
+  realpathSync,
   renameSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
 const UINT256_MAX = (1n << 256n) - 1n;
@@ -244,7 +247,17 @@ function transactionMatchesIntent(transaction, intent) {
   );
 }
 
-export function atomicWriteJson(path, value) {
+export function isMainModule(moduleUrl, argvPath, canonicalize = realpathSync) {
+  if (!argvPath) return false;
+  return (
+    canonicalize(resolve(argvPath)) === canonicalize(fileURLToPath(moduleUrl))
+  );
+}
+
+export function atomicWriteJson(path, value, { mode = 0o600 } = {}) {
+  if (mode !== 0o600 && mode !== 0o640) {
+    throw new Error("Atomic JSON mode must be 0600 or 0640");
+  }
   const target = resolve(path);
   const temporary = `${target}.${process.pid}.tmp`;
   let descriptor;
@@ -255,6 +268,7 @@ export function atomicWriteJson(path, value) {
       `${JSON.stringify(value, (_key, item) => (typeof item === "bigint" ? item.toString() : item), 2)}\n`,
       "utf8",
     );
+    if (process.platform !== "win32") fchmodSync(descriptor, mode);
     fsyncSync(descriptor);
     closeSync(descriptor);
     descriptor = undefined;
