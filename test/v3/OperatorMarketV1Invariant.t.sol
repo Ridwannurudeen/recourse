@@ -58,7 +58,7 @@ contract OperatorMarketV1Handler {
         uint64 serviceDuration = SafeCast.toUint64(1 + (seed >> 64) % 7 days);
         OperatorMarketV1.ServiceKind serviceKind = _serviceKind(seed >> 96);
         bytes32 requirementsDigest = keccak256(abi.encode(seed, quoteCount));
-        address intendedSponsor = ((seed >> 104) & 1) == 0 ? address(0) : actors[(seed >> 112) % actors.length];
+        address intendedSponsor = actors[(seed >> 112) % actors.length];
         if (intendedSponsor == operator) intendedSponsor = actors[((seed >> 112) + 1) % actors.length];
         vm.prank(operator);
         market.postQuote(serviceKind, intendedSponsor, requirementsDigest, price, bond, expiry, serviceDuration);
@@ -71,8 +71,6 @@ contract OperatorMarketV1Handler {
         OperatorMarketV1.Quote memory quote = market.quoteAt(quoteId);
         if (quote.status != OperatorMarketV1.QuoteStatus.Open || block.timestamp >= quote.quoteExpiry) return;
         address sponsor = quote.intendedSponsor;
-        if (sponsor == address(0)) sponsor = actors[(seed >> 16) % actors.length];
-        if (sponsor == quote.operator) sponsor = actors[((seed >> 16) + 1) % actors.length];
         vm.prank(sponsor);
         market.acceptQuote(quoteId);
     }

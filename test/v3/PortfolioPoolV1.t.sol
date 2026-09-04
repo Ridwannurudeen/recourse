@@ -6,6 +6,7 @@ import {EvmV1Decoder} from "@gluwa/usc-contracts/contracts/write-ability/common/
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IPolicyEvaluatorV1} from "../../contracts/v2/interfaces/IPolicyEvaluatorV1.sol";
 import {ProofJobsV1} from "../../contracts/v2/ProofJobsV1.sol";
+import {RecourseFacilityV2} from "../../contracts/v2/RecourseFacilityV2.sol";
 import {
     ActionAdapterDeclaration,
     DeploymentRecord,
@@ -640,6 +641,26 @@ contract PortfolioPoolV1Test is Test {
         assertEq(pool.totalServiceRecovered(), 7);
         assertEq(token.balanceOf(address(proofJobs)), 0);
         assertEq(token.balanceOf(address(pool)), 10);
+    }
+
+    function test_borrowerDrawPauseBlocksFurtherDrawsWithoutBlockingEvidenceAdmission() public {
+        _fundAllocateAndActivate();
+        _draw(1_000);
+        vm.prank(BORROWER);
+        facility.setDrawPaused(true);
+
+        vm.expectRevert(RecourseFacilityV2.DrawPaused.selector);
+        vm.prank(BORROWER);
+        facility.requestDraw(1);
+
+        token.mint(address(pool), 10);
+        ProofJobsV1.JobParams memory params = _jobParams(4, 3, 1);
+        vm.prank(MANAGER);
+        uint256 jobId = pool.createProofJob(params);
+
+        assertTrue(facility.borrowerDrawPaused());
+        assertTrue(pool.isPoolProofJob(jobId));
+        assertEq(proofJobs.getJob(jobId).facility, address(facility));
     }
 
     function test_proofJobMustMatchPolicyAndGrossServiceBudget() public {

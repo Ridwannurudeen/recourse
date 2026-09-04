@@ -59,7 +59,7 @@
     },
     "ProofJobsV1": {
       "path": "out/ProofJobsV1.sol/ProofJobsV1.json",
-      "keccak256": "0x09ded491b1fb8a7c57ec0cebb2c74663430b7980c6e7b13c9da6cbd50a133ae0"
+      "keccak256": "0xeda67d667c184179455f23602482778c92b82fecdcd683751acdf22bdf4a9606"
     },
     "VerifiedCreditStateV1": {
       "path": "out/VerifiedCreditStateV1.sol/VerifiedCreditStateV1.json",

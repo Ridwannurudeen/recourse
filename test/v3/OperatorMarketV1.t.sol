@@ -315,7 +315,16 @@ contract OperatorMarketV1Test is Test {
         assertEq(market.claimable(OPERATOR), PRICE + BOND);
     }
 
-    function test_intendedSponsorPreventsAcceptanceGriefingButPublicQuoteRemainsOpen() public {
+    function test_zeroIntendedSponsorCannotExposeOperatorBondToAcceptanceExpiryTheft() public {
+        vm.expectRevert(OperatorMarketV1.ZeroAddress.selector);
+        _postFor(address(0));
+
+        assertEq(market.quoteCount(), 0);
+        assertEq(token.balanceOf(OPERATOR), 1_000);
+        assertEq(token.balanceOf(address(market)), 0);
+    }
+
+    function test_onlyIntendedSponsorCanAcceptQuote() public {
         uint256 targetedQuote = _post();
         vm.expectRevert(OperatorMarketV1.NotSponsor.selector);
         vm.prank(STRANGER);
@@ -325,13 +334,6 @@ contract OperatorMarketV1Test is Test {
         assertEq(targeted.sponsor, address(0));
         assertEq(uint256(targeted.status), uint256(OperatorMarketV1.QuoteStatus.Open));
         assertEq(token.balanceOf(STRANGER), 1_000);
-
-        uint256 publicQuote = _postFor(address(0));
-        vm.prank(STRANGER);
-        market.acceptQuote(publicQuote);
-        OperatorMarketV1.Quote memory accepted = market.quoteAt(publicQuote);
-        assertEq(accepted.intendedSponsor, address(0));
-        assertEq(accepted.sponsor, STRANGER);
     }
 
     function test_agreementIdBindsTargetSponsorAndAcceptedWindow() public {

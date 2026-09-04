@@ -15,7 +15,7 @@
   "artifacts": {
     "PortfolioPoolV1": {
       "path": "out/PortfolioPoolV1.sol/PortfolioPoolV1.json",
-      "keccak256": "0x1ed3e001344072f0b237935422a15cf42ac36ca437eedc544251b37f512730db"
+      "keccak256": "0x2166d8c76f28ba9aad14e48d25dba1f66648028742fef1e44131ff0253e8b112"
     },
     "CappedPilotFactoryV1": {
       "path": "out/CappedPilotFactoryV1.sol/CappedPilotFactoryV1.json",

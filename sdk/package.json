@@ -1,5 +1,5 @@
 {
-  "name": "@recourse/sdk",
+  "name": "recourse-protocol-sdk",
   "version": "0.1.0",
   "description": "Typed Horizon 1 SDK and deterministic policy tooling for Recourse",
   "license": "MIT",

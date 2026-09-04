@@ -58,7 +58,6 @@ contract ProofJobsV1 is ReentrancyGuard {
 
     error ZeroAddress();
     error InvalidJobConfiguration();
-    error FacilityIncidentPaused();
     error UnauthorizedJobPublisher();
     error UnsupportedTokenTransfer();
     error JobNotFound();
@@ -123,7 +122,6 @@ contract ProofJobsV1 is ReentrancyGuard {
             )) {
             revert UnauthorizedJobPublisher();
         }
-        if (kernel.incidentPaused(params.facility)) revert FacilityIncidentPaused();
 
         uint256 escrow = params.proofReimbursement * params.maxSuccessfulProofs + params.outcomeReward;
         jobId = nextJobId++;

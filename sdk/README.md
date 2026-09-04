@@ -42,7 +42,7 @@ comparison, and can require the encoded bytes to match an expected on-chain
 configuration hash. Registry calldata aggregation remains dry-run only and
 preserves ordered call arrays without accepting a signer.
 
-`@recourse/sdk` is not published to npm. Do not run `npm install @recourse/sdk`;
+`recourse-protocol-sdk` is not published to npm. Do not run `npm install recourse-protocol-sdk`;
 that name is unclaimed, so it would resolve to a package this project does not
 control. Install it from a clone of this repository instead, pointing at the
 `sdk` directory:
@@ -65,7 +65,7 @@ import {
   simulateFacilityPolicyState,
   simulateMultiChainRisk,
   simulatePortfolioPoolDistribution,
-} from "@recourse/sdk";
+} from "recourse-protocol-sdk";
 ```
 
 All transaction helpers return calldata only. The SDK has no signer, private-key,

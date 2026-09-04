@@ -123,11 +123,11 @@ const FACILITY_ABI = [
   "error TransferFailed()",
 ];
 const COVENANT_ABI = [
-  "function accumulated(uint256) view returns (uint256)",
   "function configHash(uint256) view returns (bytes32)",
 ];
 const OUTFLOW_COVENANT_ABI = [
   ...COVENANT_ABI,
+  "function accumulated(uint256) view returns (uint256)",
   "function configure(uint256,uint64,address,address,uint64,uint64,uint256)",
   "error CovenantAlreadyConfigured()",
   "error CovenantAlreadyRegistered()",
@@ -572,12 +572,16 @@ async function readSnapshot() {
     null;
   let covenantId = registration?.args.covenantId ?? null;
   let covenantAddress = registration?.args.covenant ?? null;
-  let covenant = covenantAddress
-    ? new ethers.Contract(covenantAddress, COVENANT_ABI, provider)
-    : null;
   let isOutflow =
     covenantAddress?.toLowerCase() ===
     CONFIG.deployments.outflowCovenant.toLowerCase();
+  let covenant = covenantAddress
+    ? new ethers.Contract(
+        covenantAddress,
+        isOutflow ? OUTFLOW_COVENANT_ABI : COVENANT_ABI,
+        provider,
+      )
+    : null;
   const [availableCredit, lenderClaimable, borrowerClaimable, commitment] =
     await Promise.all([
       facility.availableCredit(facilityId, readOverrides),
@@ -666,10 +670,14 @@ async function readSnapshot() {
       registration = triggerRegistration;
       covenantId = registration.args.covenantId;
       covenantAddress = registration.args.covenant;
-      covenant = new ethers.Contract(covenantAddress, COVENANT_ABI, provider);
       isOutflow =
         covenantAddress.toLowerCase() ===
         CONFIG.deployments.outflowCovenant.toLowerCase();
+      covenant = new ethers.Contract(
+        covenantAddress,
+        isOutflow ? OUTFLOW_COVENANT_ABI : COVENANT_ABI,
+        provider,
+      );
       [accumulated, configHash] = await Promise.all([
         isOutflow ? covenant.accumulated(facilityId, readOverrides) : 0n,
         covenant.configHash(facilityId, readOverrides),

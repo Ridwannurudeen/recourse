@@ -201,25 +201,67 @@ test("portfolio allocation simulation preserves manager, deadline, bond, and man
   );
 });
 
+const distributionInput = {
+  status: PortfolioPoolStatus.Finalized,
+  assetBalance: 10,
+  totalDistributed: 0,
+  totalClaimed: 0,
+  totalSupply: 3,
+  investors: [
+    { account: ADDRESS("721"), shares: 1, claimable: 0 },
+    { account: ADDRESS("722"), shares: 2, claimable: 0 },
+  ],
+};
+
 test("portfolio distribution simulation assigns every available unit by exact share remainder", () => {
   assert.deepEqual(
-    simulatePortfolioPoolDistribution({
-      assetBalance: 10,
-      totalDistributed: 0,
-      totalClaimed: 0,
-      totalSupply: 3,
-      investors: [
-        { account: ADDRESS("721"), shares: 1, claimable: 0 },
-        { account: ADDRESS("722"), shares: 2, claimable: 0 },
-      ],
-    }),
+    simulatePortfolioPoolDistribution(distributionInput),
     {
+      code: PortfolioPoolAllocationCode.Eligible,
       amount: 10n,
       reserved: 0n,
       totalDistributedAfter: 10n,
       investors: [
         { account: ADDRESS("721"), amount: 3n, claimableAfter: 3n },
         { account: ADDRESS("722"), amount: 7n, claimableAfter: 7n },
+      ],
+    },
+  );
+});
+
+test("portfolio distribution simulation rejects a non-finalized pool without changing balances", () => {
+  assert.deepEqual(
+    simulatePortfolioPoolDistribution({
+      ...distributionInput,
+      status: PortfolioPoolStatus.Active,
+    }),
+    {
+      code: PortfolioPoolAllocationCode.WrongStatus,
+      amount: 0n,
+      reserved: 0n,
+      totalDistributedAfter: 0n,
+      investors: [
+        { account: ADDRESS("721"), amount: 0n, claimableAfter: 0n },
+        { account: ADDRESS("722"), amount: 0n, claimableAfter: 0n },
+      ],
+    },
+  );
+});
+
+test("portfolio distribution simulation rejects a zero distributable amount without changing balances", () => {
+  assert.deepEqual(
+    simulatePortfolioPoolDistribution({
+      ...distributionInput,
+      assetBalance: 0,
+    }),
+    {
+      code: PortfolioPoolAllocationCode.InvalidAmount,
+      amount: 0n,
+      reserved: 0n,
+      totalDistributedAfter: 0n,
+      investors: [
+        { account: ADDRESS("721"), amount: 0n, claimableAfter: 0n },
+        { account: ADDRESS("722"), amount: 0n, claimableAfter: 0n },
       ],
     },
   );

@@ -1101,12 +1101,14 @@ export function simulatePortfolioPoolAllocation({
 }
 
 export function simulatePortfolioPoolDistribution({
+  status,
   assetBalance,
   totalDistributed,
   totalClaimed,
   totalSupply,
   investors,
 }) {
+  const poolStatus = Number(integer(status, "status", 4n));
   const balance = integer(assetBalance, "assetBalance", MAX_UINT256);
   const distributed = integer(
     totalDistributed,
@@ -1150,9 +1152,16 @@ export function simulatePortfolioPoolDistribution({
     throw new TypeError("Invalid investors");
   }
   const amount = balance - reserved;
-  if (amount === 0n) {
+  let code = PortfolioPoolAllocationCode.Eligible;
+  if (poolStatus !== PortfolioPoolStatus.Finalized) {
+    code = PortfolioPoolAllocationCode.WrongStatus;
+  } else if (amount === 0n) {
+    code = PortfolioPoolAllocationCode.InvalidAmount;
+  }
+  if (code !== PortfolioPoolAllocationCode.Eligible) {
     return {
-      amount,
+      code,
+      amount: 0n,
       reserved,
       totalDistributedAfter: distributed,
       investors: normalizedInvestors.map(({ account, claimable }) => ({
@@ -1207,6 +1216,7 @@ export function simulatePortfolioPoolDistribution({
     throw new RangeError("Portfolio distribution overflow");
   }
   return {
+    code,
     amount,
     reserved,
     totalDistributedAfter: distributed + amount,

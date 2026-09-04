@@ -484,6 +484,7 @@ export interface PortfolioPoolAllocationSimulationInput {
 }
 
 export interface PortfolioPoolDistributionSimulationInput {
+  status: UintLike;
   assetBalance: UintLike;
   totalDistributed: UintLike;
   totalClaimed: UintLike;
@@ -918,6 +919,7 @@ export declare function simulatePortfolioPoolAllocation(
 export declare function simulatePortfolioPoolDistribution(
   input: PortfolioPoolDistributionSimulationInput,
 ): {
+  code: number;
   amount: bigint;
   reserved: bigint;
   totalDistributedAfter: bigint;

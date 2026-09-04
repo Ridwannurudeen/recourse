@@ -59,7 +59,7 @@ import type {
   simulatePortfolioPoolAllocation,
   simulatePortfolioPoolDistribution,
   validateMultiChainConfiguration,
-} from "@recourse/sdk";
+} from "recourse-protocol-sdk";
 
 declare const facility: FacilityRead;
 

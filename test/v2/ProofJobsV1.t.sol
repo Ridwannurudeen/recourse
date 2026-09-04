@@ -135,12 +135,14 @@ contract MockProofJobsKernel is IProofJobsKernelV1 {
             assertEq(token.balanceOf(address(jobs)), job.escrowRemaining);
         }
 
-        function test_createJobRevertsWhileFacilityIncidentPaused() public {
+        function test_createJobIgnoresFacilityDrawPause() public {
             kernel.setPaused(FACILITY, true);
 
-            vm.prank(SPONSOR);
-            vm.expectRevert(ProofJobsV1.FacilityIncidentPaused.selector);
-            jobs.createJob(_params());
+            uint256 jobId = _createJob();
+
+            assertTrue(kernel.incidentPaused(FACILITY));
+            assertEq(jobs.getJob(jobId).facility, FACILITY);
+            assertEq(token.balanceOf(address(jobs)), REIMBURSEMENT * MAX_ATTEMPTS + OUTCOME_REWARD);
         }
 
         function test_createJobRejectsSponsorWhoIsNotFacilityLender() public {

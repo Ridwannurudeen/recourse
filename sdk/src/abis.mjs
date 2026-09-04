@@ -55,6 +55,27 @@ export const policyKernelV1Abi = [
   "function latestSourcePosition(address facility,uint256 policyId) view returns (bool recorded,uint64 blockHeight,uint64 transactionIndex)",
   "event PolicyRegistered(address indexed facility,uint256 indexed policyId,address indexed evaluator,bytes32 configHash,bytes manifest)",
   "event EvidenceAccepted(address indexed facility,uint256 indexed policyId,bytes32 indexed queryId,address submitter,uint8 outcome)",
+  "error FacilityNotActive()",
+  "error FacilityNotCreated()",
+  "error InvalidBatch()",
+  "error InvalidManifest()",
+  "error InvalidObservation()",
+  "error InvalidPolicyEffect()",
+  "error IrrelevantEvidence()",
+  "error NotLender()",
+  "error NotOwner()",
+  "error NotProofJobs()",
+  "error PolicyAlreadyRegistered()",
+  "error PolicyNotRegistered()",
+  "error ProofAlreadyUsed(bytes32 queryId)",
+  "error ProofJobsAlreadySet()",
+  "error ReentrancyGuardReentrantCall()",
+  "error RequirementsMismatch()",
+  "error StaleSourcePosition()",
+  "error TransactionReverted()",
+  "error UseProofJobs()",
+  "error VerificationFailed()",
+  "error ZeroAddress()",
 ];
 
 export const verifiedCreditStateV1Abi = [
@@ -65,6 +86,11 @@ export const verifiedCreditStateV1Abi = [
   `function latestObservation(address facility,address borrower,uint8 kind) view returns (bool exists,uint256 policyId,${creditObservationTuple} observation)`,
   "function isFresh(address facility,address borrower,uint8 kind) view returns (bool)",
   "event ObservationRecorded(address indexed facility,address indexed borrower,uint256 indexed observationId,uint256 policyId,uint8 kind,bytes32 evidenceDigest)",
+  "error InvalidExpiry()",
+  "error NotKernel()",
+  "error ZeroFacility()",
+  "error ZeroKernel()",
+  "error ZeroSubject()",
 ];
 
 export const proofJobsV1Abi = [
@@ -90,6 +116,26 @@ export const proofJobsV1Abi = [
   "event CommitmentSlashed(uint256 indexed jobId,address indexed hunter,uint256 bond)",
   "event CommitmentReleased(uint256 indexed jobId,address indexed hunter,uint256 bond)",
   "event Claimed(address indexed token,address indexed account,uint256 amount)",
+  "error ActiveCommitment()",
+  "error CommitCannotBeReleased()",
+  "error CommitStillRevealable()",
+  "error CommitmentMismatch()",
+  "error CommitmentNotFound()",
+  "error EvidenceAlreadyReserved()",
+  "error EvidenceDigestMismatch()",
+  "error InvalidJobConfiguration()",
+  "error JobExpired()",
+  "error JobNotExpired()",
+  "error JobNotFound()",
+  "error JobNotOpen()",
+  "error NothingToClaim()",
+  "error ReentrancyGuardReentrantCall()",
+  "error RevealTooEarly()",
+  "error RevealWindowElapsed()",
+  "error SafeERC20FailedOperation(address token)",
+  "error UnauthorizedJobPublisher()",
+  "error UnsupportedTokenTransfer()",
+  "error ZeroAddress()",
 ];
 
 export const recourseFacilityV2Abi = [
@@ -145,6 +191,25 @@ export const recourseFacilityV2Abi = [
   "event LenderFunded(uint256 amount)",
   "event PolicyEffectApplied(uint256 indexed policyId,uint8 indexed outcome,uint16 creditLimitBps,uint16 futureDrawFeeBps)",
   "event Repaid(uint256 amount,uint256 outstandingDebt)",
+  "error DrawNotReady(uint256 readyAtBlock)",
+  "error DrawPaused()",
+  "error EmptyPolicySet()",
+  "error EvidenceExpired(uint64 validUntil)",
+  "error EvidenceRequired()",
+  "error ExceedsFacility(uint256 requested,uint256 available)",
+  "error InvalidBasisPoints()",
+  "error MaturityPassed(uint256 maturityBlock)",
+  "error NotBorrower()",
+  "error NotKernel()",
+  "error NotLender()",
+  "error NotParty()",
+  "error PolicySetMismatch(bytes32 expected,bytes32 actual)",
+  "error ReentrancyGuardReentrantCall()",
+  "error SafeERC20FailedOperation(address token)",
+  "error TransferAmountMismatch()",
+  "error WrongState(uint8 expected,uint8 actual)",
+  "error ZeroAddress()",
+  "error ZeroAmount()",
 ];
 
 export const recourseFacilityFactoryV2Abi = [
@@ -157,6 +222,9 @@ export const recourseFacilityFactoryV2Abi = [
   "function createFacility(address asset,address kernel,address lender,address borrower,uint256 facilityLimit,uint256 bondRequired,uint16 drawFeeBps,uint64 maturityBlock,uint32 drawDelayBlocks) returns (address facility)",
   "event CreationPauseSet(bool paused)",
   "event FacilityCreated(address indexed facility,address indexed lender,address indexed borrower,address asset,address kernel)",
+  "error CreationPaused()",
+  "error NotGuardian()",
+  "error ZeroAddress()",
 ];
 
 export const eventHistoryPolicyV1Abi = [
@@ -169,6 +237,16 @@ export const eventHistoryPolicyV1Abi = [
   "function manifest(address facility,uint256 policyId) view returns (bytes)",
   "function policyKind() pure returns (string)",
   "event PolicyConfigured(address indexed facility,uint256 indexed policyId,bytes32 indexed configurationHash)",
+  "error InvalidConfiguration()",
+  "error IrrelevantEvidence()",
+  "error NotKernel()",
+  "error NotLender()",
+  "error PolicyAlreadyConfigured()",
+  "error PolicyAlreadyRegistered()",
+  "error PolicyNotConfigured()",
+  "error TransactionReverted()",
+  "error WrongTransactionCount()",
+  "error ZeroContext()",
 ];
 
 export const recourseDemoUsdAbi = [
@@ -183,6 +261,13 @@ export const recourseDemoUsdAbi = [
   "function transferFrom(address from,address to,uint256 value) returns (bool)",
   "event Transfer(address indexed from,address indexed to,uint256 value)",
   "event Approval(address indexed owner,address indexed spender,uint256 value)",
+  "error ERC20InsufficientAllowance(address spender,uint256 allowance,uint256 needed)",
+  "error ERC20InsufficientBalance(address sender,uint256 balance,uint256 needed)",
+  "error ERC20InvalidApprover(address approver)",
+  "error ERC20InvalidReceiver(address receiver)",
+  "error ERC20InvalidSender(address sender)",
+  "error ERC20InvalidSpender(address spender)",
+  "error ZeroAddress()",
 ];
 
 export const policyRegistryV1Abi = [
@@ -418,6 +503,17 @@ export const cappedPilotFactoryV1Abi = [
   "function createFacility(uint256 facilityLimit,uint256 bondRequired,uint16 drawFeeBps,uint64 maturityBlock,uint32 drawDelayBlocks) returns (address facility)",
   "event CreationPauseSet(bool paused)",
   "event PilotFacilityCreated(address indexed facility,uint256 facilityLimit,uint256 bondRequired)",
+  "error CreationPaused()",
+  "error FacilityCountExceeded()",
+  "error FacilityLimitExceeded()",
+  "error InvalidBond()",
+  "error InvalidDrawFee()",
+  "error InvalidMaturity()",
+  "error InvalidParameters()",
+  "error NotGuardian()",
+  "error NotLender()",
+  "error TotalLimitExceeded()",
+  "error ZeroAddress()",
 ];
 
 export const recourseFacilityV3Abi = [
@@ -450,6 +546,28 @@ export const policyKernelV2Abi = [
   "event PolicyRegistered(address indexed facility,uint256 indexed policyId,address indexed evaluator,bytes32 configHash,bytes manifest)",
   "event PolicySourceOrderingSet(address indexed facility,uint256 indexed policyId,uint8 sourceOrdering)",
   "event EvidenceAccepted(address indexed facility,uint256 indexed policyId,bytes32 indexed queryId,address submitter,uint8 outcome)",
+  "error FacilityNotActive()",
+  "error FacilityNotCreated()",
+  "error InvalidBatch()",
+  "error InvalidManifest()",
+  "error InvalidObservation()",
+  "error InvalidPolicyEffect()",
+  "error InvalidSourceOrdering()",
+  "error IrrelevantEvidence()",
+  "error NotLender()",
+  "error NotOwner()",
+  "error NotProofJobs()",
+  "error PolicyAlreadyRegistered()",
+  "error PolicyNotRegistered()",
+  "error ProofAlreadyUsed(bytes32 queryId)",
+  "error ProofJobsAlreadySet()",
+  "error ReentrancyGuardReentrantCall()",
+  "error RequirementsMismatch()",
+  "error StaleSourcePosition()",
+  "error TransactionReverted()",
+  "error UseProofJobs()",
+  "error VerificationFailed()",
+  "error ZeroAddress()",
 ];
 
 export const multiChainEventPolicyV1Abi = [
@@ -466,6 +584,17 @@ export const multiChainEventPolicyV1Abi = [
   "function riskScore(address facility,uint256 policyId) view returns (uint32 score)",
   "event PolicyConfigured(address indexed facility,uint256 indexed policyId,bytes32 indexed configurationHash)",
   "event RiskAccumulated(address indexed facility,uint256 indexed policyId,uint256 indexed ruleIndex,uint32 priorScore,uint32 newScore)",
+  "error InvalidConfiguration()",
+  "error IrrelevantEvidence()",
+  "error NotKernel()",
+  "error NotLender()",
+  "error PolicyAlreadyConfigured()",
+  "error PolicyAlreadyRegistered()",
+  "error PolicyNotConfigured()",
+  "error SafeCastOverflowedUintDowncast(uint8 bits,uint256 value)",
+  "error TransactionReverted()",
+  "error WrongTransactionCount()",
+  "error ZeroAddress()",
 ];
 
 export const operatorMarketV1Abi = [
@@ -490,6 +619,18 @@ export const operatorMarketV1Abi = [
   "event QuotePosted(uint256 indexed quoteId,address indexed operator,uint8 indexed serviceKind,address intendedSponsor,bytes32 requirementsDigest,uint256 price,uint256 operatorBond,uint64 quoteExpiry,uint64 serviceDuration)",
   "event ServiceSettled(uint256 indexed quoteId,bytes32 indexed agreementId,bytes32 indexed deliveryDigest)",
   "event Withdrawn(address indexed account,uint256 amount)",
+  "error InvalidAmount()",
+  "error InvalidDigest()",
+  "error InvalidExpiry()",
+  "error NoRuntimeCode()",
+  "error NotOperator()",
+  "error NotSponsor()",
+  "error ReentrancyGuardReentrantCall()",
+  "error SafeERC20FailedOperation(address token)",
+  "error ServiceNotVerified()",
+  "error TransferAmountMismatch()",
+  "error WrongStatus(uint8 expected,uint8 actual)",
+  "error ZeroAddress()",
 ];
 
 export const horizon1Abis = Object.freeze({

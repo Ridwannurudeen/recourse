@@ -106,6 +106,7 @@ contract OperatorMarketV1 is ReentrancyGuard {
         uint64 quoteExpiry,
         uint64 serviceDuration
     ) external nonReentrant returns (uint256 quoteId) {
+        if (intendedSponsor == address(0)) revert ZeroAddress();
         if (intendedSponsor == msg.sender) revert NotSponsor();
         if (requirementsDigest == bytes32(0)) revert InvalidDigest();
         if (price == 0 || operatorBond < minimumOperatorBond) revert InvalidAmount();
@@ -151,9 +152,7 @@ contract OperatorMarketV1 is ReentrancyGuard {
         Quote storage quote = quotes[quoteId];
         _requireStatus(quote, QuoteStatus.Open);
         if (block.timestamp >= quote.quoteExpiry) revert InvalidExpiry();
-        if (
-            msg.sender == quote.operator || (quote.intendedSponsor != address(0) && msg.sender != quote.intendedSponsor)
-        ) revert NotSponsor();
+        if (msg.sender != quote.intendedSponsor) revert NotSponsor();
         if (block.timestamp > type(uint64).max - quote.serviceDuration) revert InvalidExpiry();
         _pull(msg.sender, quote.price);
         uint64 acceptedAt = uint64(block.timestamp);
