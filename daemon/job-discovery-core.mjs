@@ -155,6 +155,7 @@ function emptyMetricState() {
 function emptyMetricOperator(operator) {
   return {
     operator,
+    lastActivityBlock: 0,
     jobsCovered: new Set(),
     commitments: 0,
     acceptedProofs: 0,
@@ -211,6 +212,10 @@ function loadMetricState(checkpoint) {
     }
     state.operators.set(operator, {
       operator,
+      lastActivityBlock:
+        stored.lastActivityBlock === undefined
+          ? 0
+          : count(stored.lastActivityBlock, "operator activity block"),
       jobsCovered,
       commitments: count(stored.commitments, "operator commitments"),
       acceptedProofs: count(stored.acceptedProofs, "operator proofs"),
@@ -257,6 +262,7 @@ function serializeMetricState(state) {
     .sort((left, right) => left.operator.localeCompare(right.operator))
     .map((operator) => ({
       operator: operator.operator,
+      lastActivityBlock: operator.lastActivityBlock,
       jobsCovered: [...operator.jobsCovered].sort((left, right) =>
         BigInt(left) < BigInt(right) ? -1 : 1,
       ),
@@ -341,6 +347,41 @@ export function sortAndDedupeEvents(events) {
   return [...unique.values()].sort(compareEvents);
 }
 
+function comparableLog(log) {
+  const logIndex = Number.isSafeInteger(log?.index)
+    ? log.index
+    : Number.isSafeInteger(log?.logIndex)
+      ? log.logIndex
+      : null;
+  return [
+    log?.blockHash?.toLowerCase() ?? null,
+    log?.transactionHash?.toLowerCase() ?? null,
+    logIndex,
+    Number.isSafeInteger(log?.blockNumber) ? log.blockNumber : null,
+    Number.isSafeInteger(log?.transactionIndex) ? log.transactionIndex : null,
+    log?.address?.toLowerCase() ?? null,
+    Array.isArray(log?.topics)
+      ? log.topics.map((topic) => topic.toLowerCase())
+      : null,
+    log?.data?.toLowerCase() ?? null,
+    log?.removed === true,
+  ];
+}
+
+export function assertMatchingLogSets(primaryLogs, secondaryLogs, label) {
+  if (!Array.isArray(primaryLogs) || !Array.isArray(secondaryLogs)) {
+    throw new Error("RPC log cross-check returned an invalid result");
+  }
+  const compare = (left, right) =>
+    JSON.stringify(left).localeCompare(JSON.stringify(right));
+  const primary = primaryLogs.map(comparableLog).sort(compare);
+  const secondary = secondaryLogs.map(comparableLog).sort(compare);
+  if (JSON.stringify(primary) !== JSON.stringify(secondary)) {
+    throw new Error(`RPC log cross-check mismatch for ${label}`);
+  }
+  return true;
+}
+
 export function updateMetricCheckpoint(checkpoint, inputEvents) {
   const state = loadMetricState(checkpoint);
   const events = sortAndDedupeEvents(inputEvents);
@@ -365,6 +406,10 @@ export function updateMetricCheckpoint(checkpoint, inputEvents) {
         );
       }
       operator = state.operators.get(event.operator);
+      operator.lastActivityBlock = Math.max(
+        operator.lastActivityBlock,
+        event.blockNumber,
+      );
     }
     const job = state.jobs.get(event.jobId);
     if (event.name === "EvidenceCommitted") {
@@ -422,6 +467,66 @@ export function updateMetricCheckpoint(checkpoint, inputEvents) {
   return serializeMetricState(state);
 }
 
+export function pruneMetricCheckpoint(
+  checkpoint,
+  retainedJobIds,
+  operatorLimit,
+) {
+  count(operatorLimit, "operator retention limit");
+  if (operatorLimit === 0) throw new Error("Invalid operator retention limit");
+  const retained = new Set(
+    [...retainedJobIds].map((id) => jobId(id, "retained metric job ID")),
+  );
+  const state = loadMetricState(checkpoint);
+  let jobsPruned = false;
+  for (const id of state.jobs.keys()) {
+    if (retained.has(id)) continue;
+    state.jobs.delete(id);
+    jobsPruned = true;
+  }
+  for (const operator of state.operators.values()) {
+    operator.jobsCovered = new Set(
+      [...operator.jobsCovered].filter((id) => retained.has(id)),
+    );
+  }
+  const orderedOperators = [...state.operators.values()].sort(
+    (left, right) =>
+      right.lastActivityBlock - left.lastActivityBlock ||
+      left.operator.localeCompare(right.operator),
+  );
+  state.operators = new Map(
+    orderedOperators
+      .slice(0, operatorLimit)
+      .map((operator) => [operator.operator, operator]),
+  );
+  const retainedOperators = [...state.operators.values()];
+  state.commitments = retainedOperators.reduce(
+    (total, operator) => total + operator.commitments,
+    0,
+  );
+  state.acceptedProofs = retainedOperators.reduce(
+    (total, operator) => total + operator.acceptedProofs,
+    0,
+  );
+  state.processedProofReleases = retainedOperators.reduce(
+    (total, operator) => total + operator.processedProofReleases,
+    0,
+  );
+  state.slashes = retainedOperators.reduce(
+    (total, operator) => total + operator.slashes,
+    0,
+  );
+  state.releases = retainedOperators.reduce(
+    (total, operator) => total + operator.releases,
+    0,
+  );
+  if (jobsPruned) {
+    state.commitLatencyBlocks = emptyDistributionCheckpoint();
+    state.commitLatencySeconds = emptyDistributionCheckpoint();
+  }
+  return serializeMetricState(state);
+}
+
 export function metricsFromCheckpoint(checkpoint) {
   const state = loadMetricState(checkpoint);
   const jobsCreated = state.jobs.size;
@@ -456,6 +561,7 @@ export function metricsFromCheckpoint(checkpoint) {
           operator.acceptedProofs + operator.processedProofReleases;
         return {
           operator: operator.operator,
+          lastActivityBlock: operator.lastActivityBlock,
           jobsCovered: operator.jobsCovered.size,
           coverage: ratio(operator.jobsCovered.size, jobsCreated),
           commitments: operator.commitments,
@@ -495,6 +601,8 @@ export function buildDiscoveryReport({
   stateBlockTimestamp = null,
   historyComplete = false,
   eventsTruncated = false,
+  stateTruncated = false,
+  rpcLogCrossCheck = false,
   confirmations,
   events,
   jobs,
@@ -516,6 +624,8 @@ export function buildDiscoveryReport({
       stateBlockTimestamp,
       historyComplete,
       eventsTruncated,
+      stateTruncated,
+      rpcLogCrossCheck,
       eventsFromBlock: orderedEvents[0]?.blockNumber ?? null,
       confirmations,
     },
@@ -549,6 +659,16 @@ export function buildDiscoveryReport({
       ...(eventsTruncated
         ? [
             "The events array is a bounded recent event window; cumulative metrics come from the validated checkpoint and include earlier scanned events.",
+          ]
+        : []),
+      ...(stateTruncated
+        ? [
+            "Job, policy, and operator collections retain only the newest 500 relevant entries; bounded checkpoint metrics may include retained-operator activity for omitted jobs and exclude evicted operators.",
+          ]
+        : []),
+      ...(!rpcLogCrossCheck
+        ? [
+            "A single RPC endpoint cannot reveal log withholding; configure an independent secondary endpoint to cross-check every scanned range.",
           ]
         : []),
       "No quotes, costs, reputation, profitability, or operator economics are inferred from these events.",

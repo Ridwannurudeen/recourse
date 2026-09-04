@@ -19,7 +19,7 @@
   "artifacts": {
     "ClosedLoopPolicyV1": {
       "path": "out/ClosedLoopPolicyV1.sol/ClosedLoopPolicyV1.json",
-      "keccak256": "0x0252dae25541e3863c650accf5589e948d920c1639a179dd1cce223c9cff0ebd"
+      "keccak256": "0x5d40f237ee5dd84cabe9f9bc1e3eee84aa531b9732548d0777121bd2fcba20af"
     }
   },
   "transactionPolicy": {

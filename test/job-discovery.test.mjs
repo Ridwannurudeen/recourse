@@ -17,6 +17,7 @@ import {
   deriveOperatorMetrics,
   mapInBatches,
   metricsFromCheckpoint,
+  pruneMetricCheckpoint,
   retainRecentEvents,
   sortAndDedupeEvents,
   summarizeDistribution,
@@ -35,6 +36,8 @@ import {
 import { validateOperatorReport } from "../web/operator-core.mjs";
 
 const HASH = (byte) => `0x${byte.repeat(32)}`;
+const ADDRESS = (value) =>
+  getAddress(`0x${BigInt(value).toString(16).padStart(40, "0")}`);
 const JOBS = getAddress("0x0000000000000000000000000000000000000100");
 const KERNEL = getAddress("0x0000000000000000000000000000000000000200");
 const POLICY = getAddress("0x0000000000000000000000000000000000000300");
@@ -251,6 +254,33 @@ test("recent event retention is bounded and reports truncation honestly", () => 
   );
   assert.deepEqual(retained.events, [committed, accepted]);
   assert.equal(retained.truncated, true);
+});
+
+test("metric checkpoint collections prune to the newest retained state", () => {
+  const events = [];
+  const retainedJobIds = new Set();
+  for (let index = 1; index <= 501; index += 1) {
+    const operator = ADDRESS(index);
+    events.push(
+      event("JobCreated", index, undefined, index * 2, 0, 0, index * 20),
+      event(
+        "EvidenceCommitted",
+        index,
+        operator,
+        index * 2 + 1,
+        0,
+        0,
+        index * 20 + 10,
+      ),
+    );
+    if (index > 1) retainedJobIds.add(String(index));
+  }
+  const checkpoint = updateMetricCheckpoint(undefined, events);
+  const pruned = pruneMetricCheckpoint(checkpoint, retainedJobIds, 500);
+
+  assert.equal(pruned.jobs.length, 500);
+  assert.equal(pruned.operators.length, 500);
+  assert.equal(metricsFromCheckpoint(pruned).jobsCreated, 500);
 });
 
 test("mapInBatches preserves order and caps concurrent hydration", async () => {
@@ -527,25 +557,36 @@ test("discovery scans only the confirmed range, hydrates state, and resumes atom
       blockNumber === 138
         ? { number: blockNumber, hash: HASH("99"), timestamp: 1_380 }
         : canonicalGetBlock(blockNumber);
-    await assert.rejects(
-      discoverProofJobs({
-        provider,
-        deployments: {
-          chainId: 102031,
-          deploymentBlock: 100,
-          proofJobs: JOBS,
-          policyKernel: KERNEL,
-          eventHistoryPolicy: POLICY,
-        },
-        cursorPath,
-        confirmations: 12,
-        chunkSize: 20,
-        jobsContract,
-        kernelContract,
-        policyContract,
-      }),
-      /canonical chain/,
+    ranges.length = 0;
+    const rebuilt = await discoverProofJobs({
+      provider,
+      deployments: {
+        chainId: 102031,
+        deploymentBlock: 100,
+        proofJobs: JOBS,
+        policyKernel: KERNEL,
+        eventHistoryPolicy: POLICY,
+      },
+      cursorPath,
+      confirmations: 12,
+      chunkSize: 20,
+      jobsContract,
+      kernelContract,
+      policyContract,
+    });
+    assert.deepEqual(ranges, [
+      [100, 119],
+      [120, 138],
+    ]);
+    assert.equal(rebuilt.scan.historyComplete, true);
+    assert.equal(rebuilt.scan.stateBlockHash, HASH("99"));
+    assert.equal(rebuilt.metrics.jobsCreated, 1);
+    assert.equal(
+      JSON.parse(await readFile(cursorPath, "utf8")).lastScannedBlockHash,
+      HASH("99"),
     );
+
+    await writeFile(cursorPath, `${JSON.stringify(cursor, null, 2)}\n`, "utf8");
 
     provider.getBlock = canonicalGetBlock;
     provider.getBlockNumber = async () => 160;
@@ -609,8 +650,8 @@ test("discovery scans only the confirmed range, hydrates state, and resumes atom
       value: 1,
     });
     assert.deepEqual(getJobCalls.at(-1), ["1", { blockTag: 148 }]);
-    assert.equal(policyOfCalls.length, policyCallsAfterFirst);
-    assert.equal(configurationOfCalls.length, configurationCallsAfterFirst);
+    assert.equal(policyOfCalls.length, policyCallsAfterFirst + 1);
+    assert.equal(configurationOfCalls.length, configurationCallsAfterFirst + 1);
 
     await assert.rejects(
       discoverProofJobs({
@@ -632,6 +673,52 @@ test("discovery scans only the confirmed range, hydrates state, and resumes atom
       }),
       /must match discovery cursor next block/,
     );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("discovery log cross-check mismatch does not create a cursor", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "recourse-discovery-rpc-"));
+  const cursorPath = join(directory, "cursor.json");
+  const provider = {
+    getNetwork: async () => ({ chainId: 102031n }),
+    getBlockNumber: async () => 120,
+    getBlock: async (number) => ({ number, hash: HASH("ab"), timestamp: 1 }),
+    getLogs: async () => [],
+  };
+  const secondaryProvider = {
+    ...provider,
+    getLogs: async () => [
+      {
+        address: JOBS,
+        blockNumber: 100,
+        blockHash: HASH("ab"),
+        transactionHash: HASH("cd"),
+        transactionIndex: 0,
+        index: 0,
+        topics: [],
+        data: "0x",
+      },
+    ],
+  };
+  try {
+    await assert.rejects(
+      discoverProofJobs({
+        provider,
+        secondaryProvider,
+        deployments: {
+          chainId: 102031,
+          deploymentBlock: 100,
+          proofJobs: JOBS,
+          policyKernel: KERNEL,
+        },
+        cursorPath,
+        confirmations: 12,
+      }),
+      /RPC log cross-check mismatch/,
+    );
+    await assert.rejects(readFile(cursorPath, "utf8"), /ENOENT/);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -765,6 +852,7 @@ test("public operator publication projects an exact schema and preserves the las
       projected.limitations.at(-1),
       /raw event records are omitted/i,
     );
+    assert.match(projected.limitations.join(" "), /log withholding/i);
     const serialized = JSON.stringify(projected);
     for (const privateSentinel of [
       SPONSOR,
@@ -809,4 +897,47 @@ test("public operator publication projects an exact schema and preserves the las
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test("public operator publication truncates excess jobs instead of freezing", () => {
+  const jobs = Array.from({ length: 501 }, (_, index) => ({
+    jobId: String(index + 1),
+    facility: FACILITY,
+    token: TOKEN,
+    successfulProofs: "0",
+    maxSuccessfulProofs: "1",
+    escrowRemaining: "1",
+    state: "Open",
+  }));
+  const source = buildDiscoveryReport({
+    chainId: 102031,
+    contractAddress: JOBS,
+    generatedAt: "2026-08-30T12:00:00.000Z",
+    fromBlock: 100,
+    toBlock: 600,
+    stateBlock: 600,
+    stateBlockHash: HASH("ab"),
+    stateBlockTimestamp: 1_788_091_200,
+    historyComplete: true,
+    confirmations: 12,
+    events: Array.from({ length: 501 }, (_, index) =>
+      event(
+        "JobCreated",
+        index + 1,
+        undefined,
+        100 + index,
+        0,
+        0,
+        1_788_090_000 + index,
+      ),
+    ),
+    jobs,
+    policies: [],
+  });
+
+  const projected = projectPublicOperatorReport(source);
+  assert.equal(projected.jobs.length, 500);
+  assert.equal(projected.jobs[0].jobId, "2");
+  assert.equal(projected.metrics.jobsCreated, 500);
+  assert.match(projected.limitations.join(" "), /newest 500/i);
 });

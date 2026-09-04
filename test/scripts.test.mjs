@@ -5,6 +5,7 @@ import { Interface, keccak256 } from "ethers";
 import { summarizeQualifyingTransfers } from "../scripts/lib/evidence.mjs";
 import {
   assertExactHashMultiset,
+  getAttestationProvider,
   getSourceNetwork,
   getSourceProvider,
 } from "../scripts/lib/proofs.mjs";
@@ -61,6 +62,26 @@ test("CC3 source keys bind exactly to Sepolia and Ethereum mainnet", () => {
     () => getSourceProvider(1, {}),
     /SEPOLIA_RPC_URL is required for source chain key 1/,
   );
+});
+
+test("Attestcoin reads require an RPC independent from transaction confirmation", () => {
+  assert.throws(
+    () => getAttestationProvider({ CREDITCOIN_RPC_URL: "https://cc3.example" }),
+    /CREDITCOIN_ATTESTATION_RPC_URL is required/,
+  );
+  assert.throws(
+    () =>
+      getAttestationProvider({
+        CREDITCOIN_RPC_URL: "https://cc3.example/",
+        CREDITCOIN_ATTESTATION_RPC_URL: "https://cc3.example",
+      }),
+    /must be independent/,
+  );
+  const provider = getAttestationProvider({
+    CREDITCOIN_RPC_URL: "https://cc3.example",
+    CREDITCOIN_ATTESTATION_RPC_URL: "https://attestation.example",
+  });
+  assert.equal(provider._getConnection().url, "https://attestation.example/");
 });
 
 test("summarizeQualifyingTransfers sums every log matching the covenant predicate", () => {
@@ -121,6 +142,11 @@ test("the V3 extension deployment CLI is exposed through the package scripts", (
     packageJson.scripts["deploy:v3-extension"],
     "node scripts/deploy-v3-extension.mjs",
   );
+});
+
+test("the unhardened legacy daemon entrypoint is not shipped as an npm script", () => {
+  const packageJson = JSON.parse(readFileSync("package.json", "utf8"));
+  assert.equal(Object.hasOwn(packageJson.scripts, "daemon"), false);
 });
 
 test("deployment recovery files containing signed intent remain ignored", () => {

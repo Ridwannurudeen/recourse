@@ -36,6 +36,7 @@ import {
   validateV3ExtensionApproval,
   validateV3ExtensionConfig,
   validateV3ExtensionManifest,
+  v3ExtensionApprovalCommitment,
   verifyV3ExtensionApprovalAnchor,
   verifyV3ExtensionTransactions,
 } from "../scripts/lib/v3-extension-deployment.mjs";
@@ -1159,6 +1160,7 @@ test("human approval binds the prerequisite, plan, fees, and qualification and t
   assert.equal(
     validateV3ExtensionApproval({
       approval,
+      expectedApprovalCommitment: approval.approvalCommitment,
       config,
       plan,
       qualification,
@@ -1170,6 +1172,7 @@ test("human approval binds the prerequisite, plan, fees, and qualification and t
     () =>
       validateV3ExtensionApproval({
         approval,
+        expectedApprovalCommitment: approval.approvalCommitment,
         config,
         plan,
         qualification,
@@ -1182,10 +1185,13 @@ test("human approval binds the prerequisite, plan, fees, and qualification and t
     issuedAt: approval.issuedAt + 3_600,
     validUntil: approval.validUntil + 3_600,
   };
+  shiftedWindow.approvalCommitment =
+    v3ExtensionApprovalCommitment(shiftedWindow);
   assert.throws(
     () =>
       validateV3ExtensionApproval({
         approval: shiftedWindow,
+        expectedApprovalCommitment: approval.approvalCommitment,
         config,
         plan,
         qualification,
@@ -1196,7 +1202,21 @@ test("human approval binds the prerequisite, plan, fees, and qualification and t
   assert.throws(
     () =>
       validateV3ExtensionApproval({
+        approval: shiftedWindow,
+        expectedApprovalCommitment: shiftedWindow.approvalCommitment,
+        config,
+        plan,
+        qualification,
+        liveQualification: qualification,
+        now: shiftedWindow.issuedAt + 1,
+      }),
+    /qualification timestamp/i,
+  );
+  assert.throws(
+    () =>
+      validateV3ExtensionApproval({
         approval,
+        expectedApprovalCommitment: approval.approvalCommitment,
         config,
         plan,
         qualification: { ...qualification, blockHash: HASH("f") },
@@ -1216,6 +1236,7 @@ test("human approval binds the prerequisite, plan, fees, and qualification and t
     () =>
       validateV3ExtensionApproval({
         approval,
+        expectedApprovalCommitment: approval.approvalCommitment,
         config,
         plan: changedPlan,
         qualification,
@@ -1307,6 +1328,7 @@ test("expired partial extension approval renews only for the exact journal check
     assert.equal(
       validateV3ExtensionApproval({
         approval: renewedApproval,
+        expectedApprovalCommitment: renewedApproval.approvalCommitment,
         config,
         plan,
         qualification: renewedQualification,
@@ -1322,6 +1344,7 @@ test("expired partial extension approval renews only for the exact journal check
       () =>
         validateV3ExtensionApproval({
           approval: renewedApproval,
+          expectedApprovalCommitment: renewedApproval.approvalCommitment,
           config,
           plan,
           qualification: renewedQualification,
@@ -1336,6 +1359,7 @@ test("expired partial extension approval renews only for the exact journal check
       () =>
         validateV3ExtensionApproval({
           approval: renewedApproval,
+          expectedApprovalCommitment: renewedApproval.approvalCommitment,
           config,
           plan,
           qualification: renewedQualification,
@@ -1896,6 +1920,7 @@ test("V3 extension deployment is offline by default and broadcast requires an ap
       manifestPath: "v3-extension-deployment.json",
       writePlanPath: undefined,
       approvedPlanPath: undefined,
+      approvalCommitment: undefined,
     },
   );
   assert.throws(
@@ -1905,7 +1930,7 @@ test("V3 extension deployment is offline by default and broadcast requires an ap
         "config/v3-closed-loop.example.json",
         "--broadcast",
       ]),
-    /requires --live-check and --approved-plan/,
+    /requires --live-check, --approved-plan, and --approval-commitment/,
   );
   assert.throws(
     () =>
@@ -1916,6 +1941,8 @@ test("V3 extension deployment is offline by default and broadcast requires an ap
         "--live-check",
         "--approved-plan",
         "approval.json",
+        "--approval-commitment",
+        HASH("9"),
         "--write-plan",
         "plan.json",
       ]),

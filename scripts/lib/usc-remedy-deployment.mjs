@@ -24,6 +24,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { resolve } from "node:path";
+import { requireCleanDeployableRepository } from "./pilot-readiness.mjs";
 
 export const USC_CONTRACTS_VERSION = "0.2.0";
 export const USC_REMEDY_GENERATION = "usc-remedy-v1";
@@ -47,6 +48,7 @@ Options:
   --write-plan <path>        Write an expiring, exact live execution plan for review
   --broadcast                Broadcast only the exact approved execution plan
   --approved-plan <path>     Reviewed plan required with --broadcast
+  --approval-commitment <h>  Externally recorded approval digest required by --broadcast
   --qualify-deployed         Read-only final route and transaction qualification
 
 Safety boundary: this tool deploys a dedicated Inbox last, after the receiver
@@ -205,6 +207,13 @@ function bytes32(value, label) {
 function digest(value, label) {
   if (!/^0x[0-9a-fA-F]{64}$/.test(value ?? "") || /^0x0{64}$/i.test(value)) {
     throw new Error(`${label} must be a nonzero keccak256 digest`);
+  }
+  return value.toLowerCase();
+}
+
+function sourceCommit(value) {
+  if (typeof value !== "string" || !/^[0-9a-fA-F]{40}$/.test(value)) {
+    throw new Error("sourceCommit must be a 40-hex Git commit");
   }
   return value.toLowerCase();
 }
@@ -450,13 +459,21 @@ export function parseUscRemedyDeploymentArguments(args) {
     manifestPath: "usc-remedy-deployment.json",
     writePlanPath: undefined,
     approvedPlanPath: undefined,
+    approvalCommitment: undefined,
   };
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
     if (argument === "--help" || argument === "-h") parsed.help = true;
     else if (argument === "--broadcast") parsed.broadcast = true;
     else if (argument === "--live-check") parsed.liveCheck = true;
-    else if (argument === "--qualify-deployed") {
+    else if (argument === "--approval-commitment") {
+      const value = args[index + 1];
+      if (!value || value.startsWith("--")) {
+        throw new Error("--approval-commitment requires a digest");
+      }
+      parsed.approvalCommitment = digest(value, "approval commitment");
+      index += 1;
+    } else if (argument === "--qualify-deployed") {
       parsed.qualifyDeployed = true;
       parsed.liveCheck = true;
     } else if (
@@ -476,8 +493,15 @@ export function parseUscRemedyDeploymentArguments(args) {
       index += 1;
     } else throw new Error(`Unknown argument: ${argument}`);
   }
-  if (parsed.broadcast && (!parsed.liveCheck || !parsed.approvedPlanPath)) {
-    throw new Error("--broadcast requires --live-check and --approved-plan");
+  if (
+    parsed.broadcast &&
+    (!parsed.liveCheck ||
+      !parsed.approvedPlanPath ||
+      !parsed.approvalCommitment)
+  ) {
+    throw new Error(
+      "--broadcast requires --live-check, --approved-plan, and --approval-commitment",
+    );
   }
   if (parsed.writePlanPath && !parsed.liveCheck) {
     throw new Error("--write-plan requires --live-check");
@@ -487,11 +511,17 @@ export function parseUscRemedyDeploymentArguments(args) {
   }
   if (
     parsed.qualifyDeployed &&
-    (parsed.broadcast || parsed.writePlanPath || parsed.approvedPlanPath)
+    (parsed.broadcast ||
+      parsed.writePlanPath ||
+      parsed.approvedPlanPath ||
+      parsed.approvalCommitment)
   ) {
     throw new Error(
       "--qualify-deployed cannot broadcast or create/use an approval plan",
     );
+  }
+  if (!parsed.broadcast && parsed.approvalCommitment) {
+    throw new Error("--approval-commitment requires --broadcast");
   }
   return parsed;
 }
@@ -1111,7 +1141,11 @@ export function readUscRemedyArtifacts(config, rootDirectory = process.cwd()) {
   );
 }
 
-export async function buildUscRemedyDeploymentPlan({ config, artifacts }) {
+export async function buildUscRemedyDeploymentPlan({
+  config,
+  artifacts,
+  repositoryState,
+}) {
   const sourceTransport = getCreateAddress({
     from: config.source.deployer,
     nonce: config.source.expectedStartingNonce,
@@ -1238,6 +1272,12 @@ export async function buildUscRemedyDeploymentPlan({ config, artifacts }) {
   const plan = {
     schemaVersion: 1,
     generation: USC_REMEDY_GENERATION,
+    ...(repositoryState
+      ? {
+          sourceCommit: sourceCommit(repositoryState.head),
+          deployableScopeClean: repositoryState.deployableScopeClean === true,
+        }
+      : {}),
     configCommitment: config.configCommitment,
     uscContractsVersion: USC_CONTRACTS_VERSION,
     predictedContracts: {
@@ -1678,7 +1718,14 @@ export async function qualifyUscRemedyDependencies({
   deploymentProgress,
   contractFactory = (addressValue, abi, provider) =>
     new Contract(addressValue, abi, provider),
+  repositoryState,
 }) {
+  if (plan.sourceCommit !== undefined) {
+    const sourceState = requireCleanDeployableRepository(repositoryState);
+    if (sourceState.head !== plan.sourceCommit) {
+      throw new Error("USC remedy deployment source commit changed");
+    }
+  }
   if (deploymentComplete && deploymentProgress !== undefined) {
     throw new Error(
       "Completed deployment qualification cannot use partial progress",
@@ -1708,8 +1755,10 @@ export async function qualifyUscRemedyDependencies({
   if (
     !Number.isSafeInteger(sourceBlock?.number) ||
     !isHexString(sourceBlock?.hash, 32) ||
+    !Number.isSafeInteger(sourceBlock?.timestamp) ||
     !Number.isSafeInteger(destinationBlock?.number) ||
-    !isHexString(destinationBlock?.hash, 32)
+    !isHexString(destinationBlock?.hash, 32) ||
+    !Number.isSafeInteger(destinationBlock?.timestamp)
   ) {
     throw new Error("Live qualification block anchors are unavailable");
   }
@@ -2402,6 +2451,7 @@ export async function qualifyUscRemedyDependencies({
       pendingNonce: sourceNonce,
       blockNumber: sourceBlock.number,
       blockHash: sourceBlock.hash.toLowerCase(),
+      blockTimestamp: sourceBlock.timestamp,
       coreFee: BigInt(coreFee).toString(),
     },
     destination: {
@@ -2409,8 +2459,15 @@ export async function qualifyUscRemedyDependencies({
       pendingNonce: destinationNonce,
       blockNumber: destinationBlock.number,
       blockHash: destinationBlock.hash.toLowerCase(),
+      blockTimestamp: destinationBlock.timestamp,
     },
     dependencies,
+    ...(plan.sourceCommit
+      ? {
+          sourceCommit: plan.sourceCommit,
+          deployableScopeClean: true,
+        }
+      : {}),
     outboxConstructor: {
       ...constructor,
       defaultRateLimit: constructor.defaultRateLimit.toString(),
@@ -2471,6 +2528,12 @@ function uscQualificationSecurityState(qualification) {
   );
   return canonicalJson({
     planCommitment: qualification.planCommitment,
+    ...(qualification.sourceCommit
+      ? {
+          sourceCommit: qualification.sourceCommit,
+          deployableScopeClean: qualification.deployableScopeClean,
+        }
+      : {}),
     source: {
       chainId: qualification.source?.chainId,
       coreFee: qualification.source?.coreFee,
@@ -2599,8 +2662,19 @@ export function createUscRemedyApproval({
 }) {
   validateUscRemedyLiveExecutionPlan({ config, plan, executionPlan });
   const issuedAt = integer(now, "approval issue time");
+  if (
+    issuedAt !==
+    integer(
+      qualification.source?.blockTimestamp,
+      "qualification source block timestamp",
+    )
+  ) {
+    throw new Error(
+      "USC remedy approval issue time must equal its qualification timestamp",
+    );
+  }
   const securityQualification = uscQualificationSecurityState(qualification);
-  return {
+  const approval = {
     schemaVersion: 2,
     generation: USC_REMEDY_GENERATION,
     configCommitment: plan.configCommitment,
@@ -2618,10 +2692,23 @@ export function createUscRemedyApproval({
       ? {}
       : { renewal: createUscRemedyRenewalBinding(journal) }),
   };
+  approval.approvalCommitment = uscRemedyApprovalCommitment(approval);
+  return approval;
+}
+
+export function uscRemedyApprovalCommitment(approval) {
+  return commitment(
+    Object.fromEntries(
+      Object.entries(approval ?? {}).filter(
+        ([key]) => key !== "approvalCommitment",
+      ),
+    ),
+  );
 }
 
 export function validateUscRemedyApproval({
   approval,
+  expectedApprovalCommitment,
   config,
   plan,
   qualification,
@@ -2629,6 +2716,16 @@ export function validateUscRemedyApproval({
   now,
   journal,
 }) {
+  const expectedCommitment = digest(
+    expectedApprovalCommitment,
+    "expected approval commitment",
+  );
+  if (
+    approval?.approvalCommitment !== expectedCommitment ||
+    approval.approvalCommitment !== uscRemedyApprovalCommitment(approval)
+  ) {
+    throw new Error("Approved USC remedy approval commitment mismatch");
+  }
   if (
     approval?.schemaVersion !== 2 ||
     approval.generation !== USC_REMEDY_GENERATION ||
@@ -2660,6 +2757,15 @@ export function validateUscRemedyApproval({
   const issuedAt = integer(approval.issuedAt, "approval issue time");
   const validUntil = integer(approval.validUntil, "approval expiry");
   const currentTime = integer(now, "approval validation time");
+  if (
+    issuedAt !==
+    integer(
+      liveQualification?.source?.blockTimestamp,
+      "live qualification source block timestamp",
+    )
+  ) {
+    throw new Error("Approved USC remedy qualification timestamp changed");
+  }
   if (
     validUntil !== issuedAt + USC_PLAN_VALIDITY_SECONDS ||
     currentTime < issuedAt ||
@@ -2722,8 +2828,11 @@ export async function verifyUscApprovalAnchors({
   if (
     !sourceBlock?.hash ||
     sourceBlock.hash.toLowerCase() !== approval.sourceAnchor.blockHash ||
+    sourceBlock.timestamp !== approval.sourceAnchor.blockTimestamp ||
     !destinationBlock?.hash ||
-    destinationBlock.hash.toLowerCase() !== approval.destinationAnchor.blockHash
+    destinationBlock.hash.toLowerCase() !==
+      approval.destinationAnchor.blockHash ||
+    destinationBlock.timestamp !== approval.destinationAnchor.blockTimestamp
   ) {
     throw new Error("Approved USC remedy chain anchor is no longer canonical");
   }
@@ -3203,6 +3312,8 @@ export function validateUscRemedyDeploymentManifest({
     manifest.uscContractsVersion !== USC_CONTRACTS_VERSION ||
     manifest.configCommitment !== plan.configCommitment ||
     manifest.planCommitment !== plan.planCommitment ||
+    manifest.sourceCommit !== plan.sourceCommit ||
+    manifest.deployableScopeClean !== plan.deployableScopeClean ||
     manifest.sourceChainId !== config.source.chainId ||
     manifest.destinationChainId !== config.destination.chainId ||
     JSON.stringify(manifest.contracts) !==
@@ -3257,6 +3368,7 @@ export async function finalizeUscRemedyDeployment({
   qualifyDependencies = qualifyUscRemedyDependencies,
   verifyRoute = verifyDeployedUscRemedyRoute,
   verifyTransactions = verifyUscRemedyDeploymentTransactions,
+  repositoryState,
 }) {
   if (journal.steps.some(({ status }) => status !== "confirmed")) {
     throw new Error("Cannot finalize a USC deployment with unfinished steps");
@@ -3279,6 +3391,12 @@ export async function finalizeUscRemedyDeployment({
     uscContractsVersion: installedPackage.version,
     configCommitment: plan.configCommitment,
     planCommitment: plan.planCommitment,
+    ...(plan.sourceCommit
+      ? {
+          sourceCommit: plan.sourceCommit,
+          deployableScopeClean: plan.deployableScopeClean,
+        }
+      : {}),
     executionPlan: journal.executionPlan,
     executionPlanCommitment: journal.executionPlan.commitment,
     sourceChainId: config.source.chainId,
@@ -3294,6 +3412,7 @@ export async function finalizeUscRemedyDeployment({
     sourceProvider,
     destinationProvider,
     deploymentComplete: true,
+    repositoryState,
   });
   const routeQualification = await verifyRoute({
     config,

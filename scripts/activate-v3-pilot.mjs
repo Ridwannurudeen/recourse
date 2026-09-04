@@ -40,6 +40,11 @@ import {
 } from "./lib/v3-activation.mjs";
 import { readCoreInterfaceArtifacts } from "./lib/v3-deployment.mjs";
 import { getAttestedHeight } from "./lib/proofs.mjs";
+import {
+  inspectDeployableRepository,
+  inspectTrackedRepositoryFile,
+  requireCleanDeployableRepository,
+} from "./lib/pilot-readiness.mjs";
 
 const ASSET_ABI = [
   "function allowance(address owner,address spender) view returns (uint256)",
@@ -90,6 +95,9 @@ if (options.help) {
   process.stdout.write(`${V3_ACTIVATION_USAGE}\n`);
   process.exit(0);
 }
+const repositoryState = inspectDeployableRepository(process.cwd());
+inspectTrackedRepositoryFile(process.cwd(), options.configPath);
+inspectTrackedRepositoryFile(process.cwd(), options.coreManifestPath);
 const { config } = readV3ActivationInputs(
   options.configPath,
   options.coreManifestPath,
@@ -99,6 +107,7 @@ const activationArtifacts = readV3ActivationArtifacts(config);
 const offlinePlan = buildV3OfflineActivationPlan({
   config,
   activationArtifacts,
+  repositoryState,
 });
 
 if (!options.liveCheck) {
@@ -119,6 +128,8 @@ if (!options.liveCheck) {
   );
   process.exit(0);
 }
+
+requireCleanDeployableRepository(repositoryState);
 
 const coreArtifacts = readCoreInterfaceArtifacts();
 const provider = new JsonRpcProvider(environment("CREDITCOIN_RPC_URL"));
@@ -381,6 +392,7 @@ if (options.broadcast) {
   if (!approvalBlock)
     throw new Error("Approval validation block is unavailable");
   validateApprovedV3ActivationPlan(approvedPlan, {
+    expectedApprovalCommitment: options.approvalCommitment,
     configCommitment: commitments.configCommitment,
     planCommitment,
     predictedFacility: preflight.predictedFacility,
@@ -391,6 +403,7 @@ if (options.broadcast) {
     feePolicy: config.transactionPolicy.feePolicy,
     journal: existingJournal,
     now: approvalBlock.timestamp,
+    repositoryState,
   });
   liveExecutionPlan = approvedPlan.executionPlan;
 } else if (existingJournal) {
@@ -512,6 +525,8 @@ if (!options.broadcast) {
         config.proofJob.expiry - 3_600,
       ),
       renewal,
+      sourceCommit: repositoryState.head,
+      deployableScopeClean: repositoryState.deployableScopeClean,
     });
     atomicWriteV3ActivationJson(options.writePlanPath, writtenPlan);
   }
@@ -626,6 +641,7 @@ async function assertApprovalCurrent(label) {
     throw new Error(`${label}: latest CC3 block is unavailable`);
   try {
     validateApprovedV3ActivationPlan(approvedPlan, {
+      expectedApprovalCommitment: options.approvalCommitment,
       configCommitment: commitments.configCommitment,
       planCommitment,
       predictedFacility: preflight.predictedFacility,
@@ -636,6 +652,7 @@ async function assertApprovalCurrent(label) {
       feePolicy: config.transactionPolicy.feePolicy,
       journal,
       now: latestBlock.timestamp,
+      repositoryState,
     });
   } catch (error) {
     throw new Error(`${label}: ${error.message}`);
@@ -1132,6 +1149,8 @@ const manifest = {
   },
   configCommitment: commitments.configCommitment,
   planCommitment,
+  sourceCommit: repositoryState.head,
+  deployableScopeClean: repositoryState.deployableScopeClean,
   approvedPlan: {
     targetBlock: approvedPlan.targetBlock,
     sourceStates: approvedPlan.sourceStates,

@@ -25,6 +25,10 @@ import {
   verifyUscRemedyDeploymentTransactions,
   verifyUscApprovalAnchors,
 } from "./lib/usc-remedy-deployment.mjs";
+import {
+  inspectDeployableRepository,
+  inspectTrackedRepositoryFile,
+} from "./lib/pilot-readiness.mjs";
 
 function requiredEnvironment(name) {
   const value = process.env[name];
@@ -58,11 +62,17 @@ if (options.help) {
   process.exit(0);
 }
 const installedPackage = verifyInstalledUscContracts020();
+const repositoryState = inspectDeployableRepository(process.cwd());
+inspectTrackedRepositoryFile(process.cwd(), options.configPath);
 const config = validateUscRemedyDeploymentConfig(
   JSON.parse(readFileSync(resolve(options.configPath), "utf8")),
 );
 const artifacts = readUscRemedyArtifacts(config);
-const plan = await buildUscRemedyDeploymentPlan({ config, artifacts });
+const plan = await buildUscRemedyDeploymentPlan({
+  config,
+  artifacts,
+  repositoryState,
+});
 
 const safetyBoundary = {
   dedicatedInboxRequired: true,
@@ -95,6 +105,7 @@ async function qualifyDeploymentManifest(manifest) {
     sourceProvider,
     destinationProvider,
     deploymentComplete: true,
+    repositoryState,
   });
   const route = await verifyDeployedUscRemedyRoute({
     config,
@@ -164,6 +175,7 @@ const qualification = await qualifyUscRemedyDependencies({
   sourceProvider,
   destinationProvider,
   deploymentProgress: resumedJournal?.steps,
+  repositoryState,
 });
 const approvalQualification =
   approval?.renewal === undefined && resumedJournal
@@ -176,11 +188,12 @@ const hasRemainingTransactions =
 if (options.broadcast && hasRemainingTransactions) {
   validateUscRemedyApproval({
     approval,
+    expectedApprovalCommitment: options.approvalCommitment,
     config,
     plan,
     qualification: approvalQualification,
     liveQualification: qualification,
-    now: Math.floor(Date.now() / 1_000),
+    now: qualification.source.blockTimestamp,
     journal: resumedJournal,
   });
   executionPlan = approval.executionPlan;
@@ -221,7 +234,7 @@ if (options.writePlanPath) {
     plan,
     qualification,
     executionPlan,
-    now: Math.floor(Date.now() / 1_000),
+    now: qualification.source.blockTimestamp,
     journal: resumedJournal,
   });
   atomicWriteUscJson(options.writePlanPath, approval);
@@ -273,6 +286,7 @@ async function assertApprovalCurrent(step, journal) {
   }
   validateUscRemedyApproval({
     approval,
+    expectedApprovalCommitment: options.approvalCommitment,
     config,
     plan,
     qualification: approvalQualification,
@@ -362,6 +376,7 @@ try {
       sourceProvider,
       destinationProvider,
       safetyBoundary,
+      repositoryState,
     });
     print({
       mode: "deployed-dedicated-inbox-route",

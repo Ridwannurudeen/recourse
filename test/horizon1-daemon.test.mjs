@@ -11,7 +11,11 @@ import {
   encodeKernelProof,
   validateResumeState,
 } from "../daemon/horizon1-core.mjs";
-import { recoverHorizon1TargetState } from "../daemon/horizon1-recovery.mjs";
+import {
+  assertHorizon1BroadcastStillValid,
+  recoverHorizon1TargetState,
+} from "../daemon/horizon1-recovery.mjs";
+import { OperatorIncidentError } from "../daemon/operator-core.mjs";
 import { runHorizon1Job } from "../daemon/horizon1-runner.mjs";
 
 const HASH = (byte) => `0x${byte.repeat(32)}`;
@@ -443,6 +447,81 @@ test("Horizon 1 runtime signs with the systemd credential, not a raw environment
   const source = await readFile("daemon/horizon1.mjs", "utf8");
   assert.match(source, /loadHunterPrivateKey\(\), provider\)/);
   assert.doesNotMatch(source, /process\.env\.HUNTER_PRIVATE_KEY/);
+});
+
+test("commit pre-broadcast rejects an evidence digest reserved by another hunter", async () => {
+  const state = resumeFixture();
+  const input = {
+    kind: "commit",
+    provider: {
+      getBlock: async () => ({ number: 10, timestamp: 100 }),
+    },
+    jobsRead: {
+      getJob: async () => ({ state: 0n, expiry: 200n }),
+      getCommitment: async () => ({ bond: 0n }),
+      evidenceReservedBy: async () => FACILITY,
+    },
+    hunter: { address: HUNTER },
+    jobId: 1n,
+    state,
+  };
+  await assert.rejects(
+    assertHorizon1BroadcastStillValid(input),
+    /evidence digest is reserved by another hunter/i,
+  );
+  input.jobsRead.evidenceReservedBy = async () =>
+    "0x0000000000000000000000000000000000000000";
+  assert.equal(await assertHorizon1BroadcastStillValid(input), true);
+});
+
+test("every mined transaction revert retires its journal into a durable incident", async () => {
+  for (const kind of ["approval", "commit", "reveal", "release", "claim"]) {
+    const state = {
+      ...resumeFixture(),
+      phase:
+        kind === "approval"
+          ? "prepared"
+          : kind === "commit"
+            ? "approved"
+            : kind === "claim"
+              ? "revealed"
+              : "committed",
+      pending: { kind, transactionHash: HASH("90") },
+    };
+    let written;
+    const reverted = new OperatorIncidentError(`${kind} transaction reverted`);
+    reverted.receipt = { status: 0, blockNumber: 5_377_801 };
+    reverted.revert = {
+      data: "0x08c379a0",
+      name: "Error",
+      reason: "reservation lost",
+    };
+    await assert.rejects(
+      recoverHorizon1TargetState({
+        provider: {},
+        jobsRead: {},
+        jobs: {},
+        hunter: { address: HUNTER },
+        jobId: 1n,
+        state,
+        statePath: "unused.json",
+        expectedState: EXPECTED,
+        confirmationPolicy: {},
+        assertCanStartTransaction: () => {},
+        reconcileTransaction: async () => {
+          throw reverted;
+        },
+        writeState: (_path, next) => {
+          written = next;
+        },
+      }),
+      OperatorIncidentError,
+    );
+    assert.equal(written.phase, "incident");
+    assert.equal(written.pending, null);
+    assert.equal(written.incident.transaction.kind, kind);
+    assert.deepEqual(written.incident.revert, reverted.revert);
+  }
 });
 
 test("runner forwards abort to the child and reports a durable-boundary stop", async () => {

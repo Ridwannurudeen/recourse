@@ -171,6 +171,9 @@ contract V3ClosedLoopIntegrationTest is Test {
         assertEq(uint256(facility.policyOutcome()), uint256(PolicyOutcome.Cured));
         assertEq(facility.creditLimitBps(), 10_000);
         assertEq(target.calls(), 1);
+
+        vm.warp(block.timestamp + 365 days);
+        assertEq(facility.availableCredit(), 1_000);
     }
 
     function test_delayedOldExecutionReplacementAcknowledgementAndStableCureCloseLoopOnce() public {
@@ -282,7 +285,7 @@ contract V3ClosedLoopIntegrationTest is Test {
             eventSignature: CURE_SIG,
             subject: address(target),
             startSourceBlock: 500,
-            endSourceBlock: 600,
+            endSourceBlock: type(uint64).max,
             topicCount: 4,
             subjectTopicIndex: 1,
             dataLength: 64,
@@ -294,7 +297,7 @@ contract V3ClosedLoopIntegrationTest is Test {
                 eventRule: cure, intentTopicIndex: 2, executionTopicIndex: 3, actionDigestOffset: 32
             }),
             observationKind: ObservationKind.Liability,
-            freshnessPeriod: 1 days,
+            freshnessPeriod: type(uint64).max,
             remedyDuration: 2 days,
             destinationChain: CURE_CHAIN_KEY,
             receiver: address(receiver),

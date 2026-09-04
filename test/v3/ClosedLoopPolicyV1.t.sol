@@ -174,7 +174,7 @@ contract ClosedLoopPolicyV1Test is Test {
         bytes[] memory chunks = new bytes[](3);
         chunks[2] = abi.encode(uint8(1), uint64(1), logs, bytes(""));
 
-        PolicyResult memory result = _evaluate(_proven(abi.encode(uint8(2), chunks)));
+        PolicyResult memory result = _evaluate(_provenAt(END_BLOCK + 1, abi.encode(uint8(2), chunks)));
 
         assertEq(result.observedValue, 100);
         assertEq(uint256(coordinator.intentStatus(intentId)), uint256(IRemedyCoordinatorV1.IntentStatus.Cured));
@@ -315,6 +315,16 @@ contract ClosedLoopPolicyV1Test is Test {
         configuration.adverseRule.dataLength = configuration.cureRule.eventRule.dataLength;
         configuration.adverseRule.endSourceBlock = 150;
         configuration.cureRule.eventRule.startSourceBlock = 150;
+        configuration.cureRule.eventRule.endSourceBlock = type(uint64).max;
+
+        context.setRegistered(false);
+        vm.expectRevert(ClosedLoopPolicyV1.InvalidConfiguration.selector);
+        vm.prank(LENDER);
+        policy.configure(FACILITY, POLICY_ID + 1, configuration);
+    }
+
+    function test_finiteCureWindowIsRejected() public {
+        ClosedLoopPolicyV1.Configuration memory configuration = _configuration();
         configuration.cureRule.eventRule.endSourceBlock = 200;
 
         context.setRegistered(false);
@@ -323,21 +333,37 @@ contract ClosedLoopPolicyV1Test is Test {
         policy.configure(FACILITY, POLICY_ID + 1, configuration);
     }
 
-    function test_identicalAdverseAndCurePredicatesCanUseDisjointWindows() public {
+    function test_cureWindowBeforeAdverseWindowOnSameChainIsRejected() public {
         ClosedLoopPolicyV1.Configuration memory configuration = _configuration();
-        configuration.adverseRule.emitter = configuration.cureRule.eventRule.emitter;
-        configuration.adverseRule.eventSignature = configuration.cureRule.eventRule.eventSignature;
-        configuration.adverseRule.subject = configuration.cureRule.eventRule.subject;
-        configuration.adverseRule.topicCount = configuration.cureRule.eventRule.topicCount;
-        configuration.adverseRule.dataLength = configuration.cureRule.eventRule.dataLength;
-        configuration.adverseRule.endSourceBlock = 149;
-        configuration.cureRule.eventRule.startSourceBlock = 150;
-        configuration.cureRule.eventRule.endSourceBlock = 200;
+        configuration.cureRule.eventRule.sourceChain = configuration.adverseRule.sourceChain;
+        configuration.destinationChain = configuration.adverseRule.sourceChain;
+        configuration.cureRule.eventRule.startSourceBlock = 1;
+        configuration.adverseRule.startSourceBlock = 100;
 
         context.setRegistered(false);
+        vm.expectRevert(ClosedLoopPolicyV1.InvalidConfiguration.selector);
         vm.prank(LENDER);
         policy.configure(FACILITY, POLICY_ID + 1, configuration);
-        assertTrue(policy.isConfigured(FACILITY, POLICY_ID + 1));
+    }
+
+    function test_finiteFreshnessPeriodIsRejectedBecauseCureEvidenceCannotBeRefreshed() public {
+        ClosedLoopPolicyV1.Configuration memory configuration = _configuration();
+        configuration.freshnessPeriod = 1 days;
+
+        context.setRegistered(false);
+        vm.expectRevert(ClosedLoopPolicyV1.InvalidConfiguration.selector);
+        vm.prank(LENDER);
+        policy.configure(FACILITY, POLICY_ID + 1, configuration);
+    }
+
+    function test_cureEffectCannotRequireFreshEvidence() public {
+        ClosedLoopPolicyV1.Configuration memory configuration = _configuration();
+        configuration.cureEffect.requireFreshEvidence = true;
+
+        context.setRegistered(false);
+        vm.expectRevert(ClosedLoopPolicyV1.InvalidConfiguration.selector);
+        vm.prank(LENDER);
+        policy.configure(FACILITY, POLICY_ID + 1, configuration);
     }
 
     function test_terminatingAdverseEffectIsRejectedBecauseItCannotBeCured() public {
@@ -387,8 +413,8 @@ contract ClosedLoopPolicyV1Test is Test {
             emitter: RECEIVER,
             eventSignature: CURE_SIG,
             subject: TARGET,
-            startSourceBlock: START_BLOCK,
-            endSourceBlock: END_BLOCK,
+            startSourceBlock: END_BLOCK + 1,
+            endSourceBlock: type(uint64).max,
             topicCount: 4,
             subjectTopicIndex: 1,
             dataLength: 64,
@@ -400,7 +426,7 @@ contract ClosedLoopPolicyV1Test is Test {
                 eventRule: cureEvent, intentTopicIndex: 2, executionTopicIndex: 3, actionDigestOffset: 32
             }),
             observationKind: ObservationKind.Liability,
-            freshnessPeriod: 1 days,
+            freshnessPeriod: type(uint64).max,
             remedyDuration: 2 days,
             destinationChain: CHAIN_KEY,
             receiver: RECEIVER,
@@ -443,13 +469,21 @@ contract ClosedLoopPolicyV1Test is Test {
         topics[1] = bytes32(uint256(uint160(TARGET)));
         topics[2] = intentId;
         topics[3] = executionId;
-        proven = _proven(_receipt(RECEIVER, topics, abi.encode(bytes32(value), actionDigest)));
+        proven = _provenAt(END_BLOCK + 1, _receipt(RECEIVER, topics, abi.encode(bytes32(value), actionDigest)));
     }
 
     function _proven(bytes memory encodedTransaction) private pure returns (ProvenTransaction[] memory proven) {
+        return _provenAt(START_BLOCK + 1, encodedTransaction);
+    }
+
+    function _provenAt(uint64 blockHeight, bytes memory encodedTransaction)
+        private
+        pure
+        returns (ProvenTransaction[] memory proven)
+    {
         proven = new ProvenTransaction[](1);
         proven[0] = ProvenTransaction({
-            chainKey: CHAIN_KEY, blockHeight: START_BLOCK + 1, txIndex: 3, encodedTransaction: encodedTransaction
+            chainKey: CHAIN_KEY, blockHeight: blockHeight, txIndex: 3, encodedTransaction: encodedTransaction
         });
     }
 

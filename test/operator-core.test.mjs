@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { Transaction, Wallet, getAddress, id } from "ethers";
+import { Interface, Transaction, Wallet, getAddress, id } from "ethers";
 import {
   OperatorIncidentError,
   acquireProcessLock,
@@ -726,6 +726,79 @@ test("receipt reconciliation after a crash never rebroadcasts an already-mined t
   await rm(join(tmpdir(), `recourse-prepared-${process.pid}.json`), {
     force: true,
   });
+});
+
+test("a mined revert retains decoded replay data for incident handling", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "recourse-revert-data-"));
+  const statePath = join(directory, "job.json");
+  const wallet = Wallet.createRandom();
+  const rawTransaction = await wallet.signTransaction({
+    to: TOKEN,
+    nonce: 3,
+    chainId: 102031,
+    type: 0,
+    gasLimit: 100_000,
+    gasPrice: 1,
+  });
+  const prepared = await prepareJournaledTransaction({
+    kind: "commit",
+    signer: {
+      populateTransaction: async () => ({
+        to: TOKEN,
+        nonce: 3,
+        chainId: 102031,
+        type: 0,
+        gasLimit: 100_000,
+        gasPrice: 1,
+      }),
+      signTransaction: async () => rawTransaction,
+      getAddress: async () => wallet.address,
+    },
+    request: {},
+    feePolicy: FEE_POLICY,
+    state: { schemaVersion: 2, phase: "approved" },
+    statePath,
+  });
+  const revertData = new Interface(["error Error(string)"]).encodeErrorResult(
+    "Error",
+    ["reservation lost"],
+  );
+  try {
+    await assert.rejects(
+      reconcileJournaledTransaction({
+        provider: {
+          getNetwork: async () => ({ chainId: 102031n }),
+          getTransactionReceipt: async () => ({
+            hash: prepared.pending.transactionHash,
+            status: 0,
+            blockNumber: 45,
+            blockHash: `0x${"46".repeat(32)}`,
+          }),
+          call: async (request) => {
+            assert.equal(request.blockTag, 45);
+            throw { data: revertData };
+          },
+        },
+        state: prepared,
+        statePath,
+        kind: "commit",
+        successPhase: "committed",
+        feePolicy: FEE_POLICY,
+      }),
+      (error) => {
+        assert.equal(error instanceof OperatorIncidentError, true);
+        assert.deepEqual(error.revert, {
+          data: revertData,
+          name: "Error",
+          args: ["reservation lost"],
+          reason: "reservation lost",
+        });
+        return true;
+      },
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("journal reconciliation waits for target confirmations and detects a shallow reorg", async () => {

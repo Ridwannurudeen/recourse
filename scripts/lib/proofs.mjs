@@ -31,6 +31,37 @@ export function getProvider() {
   return new JsonRpcProvider(process.env.CREDITCOIN_RPC_URL);
 }
 
+export function getAttestationProvider(environment = process.env) {
+  const primaryUrl = environment.CREDITCOIN_RPC_URL;
+  const attestationUrl = environment.CREDITCOIN_ATTESTATION_RPC_URL;
+  if (typeof primaryUrl !== "string" || primaryUrl.length === 0) {
+    throw new Error("CREDITCOIN_RPC_URL is required");
+  }
+  if (typeof attestationUrl !== "string" || attestationUrl.length === 0) {
+    throw new Error("CREDITCOIN_ATTESTATION_RPC_URL is required");
+  }
+  let primary;
+  let attestation;
+  try {
+    primary = new URL(primaryUrl);
+    attestation = new URL(attestationUrl);
+  } catch {
+    throw new Error("Invalid Creditcoin RPC URL");
+  }
+  if (
+    !["https:", "http:"].includes(primary.protocol) ||
+    !["https:", "http:"].includes(attestation.protocol)
+  ) {
+    throw new Error("Invalid Creditcoin RPC URL protocol");
+  }
+  if (primary.href === attestation.href) {
+    throw new Error(
+      "CREDITCOIN_ATTESTATION_RPC_URL must be independent from CREDITCOIN_RPC_URL",
+    );
+  }
+  return new JsonRpcProvider(attestation.href);
+}
+
 export function getSourceProvider(chainKey, environment = process.env) {
   const network = getSourceNetwork(chainKey);
   const url = environment[network.rpcUrlEnvironment];
@@ -53,13 +84,18 @@ export function getSourceProvider(chainKey, environment = process.env) {
   return new JsonRpcProvider(url);
 }
 
-export async function getAttestedHeight(chainKey) {
-  return Number((await getLatestAttestation(chainKey)).height);
+export async function getAttestedHeight(chainKey, environment = process.env) {
+  return Number((await getLatestAttestation(chainKey, environment)).height);
 }
 
-export async function getLatestAttestation(chainKey) {
+export async function getLatestAttestation(
+  chainKey,
+  environment = process.env,
+) {
   const network = getSourceNetwork(chainKey);
-  const info = new chainInfo.PrecompileChainInfoProvider(getProvider());
+  const info = new chainInfo.PrecompileChainInfoProvider(
+    getAttestationProvider(environment),
+  );
   return info.getLatestAttestedHeightAndHash(network.chainKey);
 }
 

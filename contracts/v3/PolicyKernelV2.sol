@@ -18,7 +18,12 @@ import {
     ProvenTransaction
 } from "../v2/types/RecourseTypesV2.sol";
 
+interface IPolicyFacilityKernelView {
+    function kernel() external view returns (address);
+}
+
 contract PolicyKernelV2 is ReentrancyGuard, IPolicyConfigurationContextV1, IProofJobsKernelV1 {
+    error FacilityKernelMismatch();
     error FacilityNotCreated();
     error FacilityNotActive();
     error InvalidManifest();
@@ -95,6 +100,7 @@ contract PolicyKernelV2 is ReentrancyGuard, IPolicyConfigurationContextV1, IProo
         IPolicyFacilityV1 facilityContract = IPolicyFacilityV1(facility);
         if (facilityContract.status() != FacilityStatus.Created) revert FacilityNotCreated();
         if (msg.sender != facilityContract.lender()) revert NotLender();
+        if (IPolicyFacilityKernelView(facility).kernel() != address(this)) revert FacilityKernelMismatch();
         if (address(evaluator) == address(0)) revert ZeroAddress();
         if (address(policies[facility][policyId].evaluator) != address(0)) revert PolicyAlreadyRegistered();
 
@@ -237,6 +243,7 @@ contract PolicyKernelV2 is ReentrancyGuard, IPolicyConfigurationContextV1, IProo
         IPolicyFacilityV1 facilityContract = IPolicyFacilityV1(facility);
         PolicyRegistration storage registration = policies[facility][policyId];
         return facilityContract.status() == FacilityStatus.Active && sponsor == facilityContract.lender()
+            && IPolicyFacilityKernelView(facility).kernel() == address(this)
             && token == address(facilityContract.asset()) && address(registration.evaluator) != address(0)
             && requirementsDigest == registration.configHash;
     }
@@ -280,6 +287,9 @@ contract PolicyKernelV2 is ReentrancyGuard, IPolicyConfigurationContextV1, IProo
         address submitter,
         bool allowProcessed
     ) private returns (PolicyOutcome outcome, bool accepted) {
+        if (allowProcessed && IPolicyFacilityV1(facility).status() != FacilityStatus.Active) {
+            return (PolicyOutcome.Eligible, false);
+        }
         if (!verifier.verify(chainKey, height, encodedTransaction, merkleProof, continuityProof)) {
             revert VerificationFailed();
         }
@@ -414,6 +424,7 @@ contract PolicyKernelV2 is ReentrancyGuard, IPolicyConfigurationContextV1, IProo
     }
 
     function _expiry(uint64 proofTime, uint64 freshnessPeriod) private pure returns (uint64) {
+        if (freshnessPeriod == type(uint64).max) return type(uint64).max;
         if (freshnessPeriod > type(uint64).max - proofTime) revert InvalidObservation();
         return proofTime + freshnessPeriod;
     }

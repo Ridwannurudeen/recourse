@@ -43,7 +43,7 @@
   "artifacts": {
     "PolicyKernelV2": {
       "path": "out/PolicyKernelV2.sol/PolicyKernelV2.json",
-      "keccak256": "0x442c379c26e2c6e7034ea5d4e821c0a555348c1e5c917d4ba471a0e7c8fe7b37"
+      "keccak256": "0x69ecf29daa08414aaa96b5a7cd7d97c44b1f2eccd725399575ad54af52b0a225"
     },
     "PolicyRegistryV1": {
       "path": "out/PolicyRegistryV1.sol/PolicyRegistryV1.json",
@@ -59,7 +59,7 @@
     },
     "ProofJobsV1": {
       "path": "out/ProofJobsV1.sol/ProofJobsV1.json",
-      "keccak256": "0xeda67d667c184179455f23602482778c92b82fecdcd683751acdf22bdf4a9606"
+      "keccak256": "0xa21b76c21b43f904646cc3e60cbbf244c67594182b184a4c5649f9ca4c275b48"
     },
     "VerifiedCreditStateV1": {
       "path": "out/VerifiedCreditStateV1.sol/VerifiedCreditStateV1.json",

@@ -235,7 +235,10 @@ contract ProofJobsV1 is ReentrancyGuard {
 
     function releaseCommit(uint256 jobId) external nonReentrant {
         Job storage job = _job(jobId);
-        if (job.state != JobState.OutcomeReached && job.state != JobState.AttemptsExhausted) {
+        if (
+            job.state != JobState.OutcomeReached && job.state != JobState.AttemptsExhausted
+                && job.state != JobState.Expired
+        ) {
             revert CommitCannotBeReleased();
         }
         Commitment memory commitment = _commitments[jobId][msg.sender];

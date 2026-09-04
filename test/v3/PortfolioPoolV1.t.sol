@@ -888,7 +888,7 @@ contract PortfolioPoolV1Test is Test {
                 eventRule: cureEventRule, intentTopicIndex: 2, executionTopicIndex: 3, actionDigestOffset: 32
             }),
             observationKind: ObservationKind.Liability,
-            freshnessPeriod: 1 days,
+            freshnessPeriod: type(uint64).max,
             remedyDuration: 1 days,
             destinationChain: 1,
             receiver: REMEDY_RECEIVER,

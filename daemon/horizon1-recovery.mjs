@@ -11,6 +11,7 @@ const OUTCOME_REACHED_JOB_STATE = 1n;
 const ATTEMPTS_EXHAUSTED_JOB_STATE = 2n;
 const EXPIRED_JOB_STATE = 3n;
 const REVEAL_GAS_LIMIT = 1_500_000n;
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
 export async function assertHorizon1BroadcastStillValid({
   kind,
@@ -33,7 +34,17 @@ export async function assertHorizon1BroadcastStillValid({
       );
     }
     if (kind === "commit") {
-      const commitment = await jobsRead.getCommitment(jobId, hunter.address);
+      const [commitment, reservedBy] = await Promise.all([
+        jobsRead.getCommitment(jobId, hunter.address),
+        jobsRead.evidenceReservedBy(jobId, state.evidenceDigest),
+      ]);
+      if (reservedBy.toLowerCase() !== ZERO_ADDRESS) {
+        throw new OperatorIncidentError(
+          reservedBy.toLowerCase() === hunter.address.toLowerCase()
+            ? "Commit evidence digest is already reserved"
+            : "Commit evidence digest is reserved by another hunter",
+        );
+      }
       if (
         commitment.bond !== 0n &&
         (commitment.digest !== state.commitment ||
@@ -87,7 +98,32 @@ export async function assertHorizon1BroadcastStillValid({
   throw new Error(`Unknown proof-job transaction kind: ${kind}`);
 }
 
-function incident(statePath, state, reason, writeState) {
+function lifecycleRevert(error, jobs) {
+  const revert = error?.revert;
+  if (!revert?.data || typeof jobs?.interface?.parseError !== "function") {
+    return revert;
+  }
+  try {
+    const parsed = jobs.interface.parseError(revert.data);
+    if (!parsed) return revert;
+    const args = [...parsed.args].map((value) =>
+      typeof value === "bigint" ? value.toString() : value,
+    );
+    return {
+      ...revert,
+      name: parsed.name,
+      args,
+      reason: `${parsed.name}(${args.join(", ")})`,
+    };
+  } catch {
+    return revert;
+  }
+}
+
+function incident(statePath, state, error, writeState, jobs) {
+  const reason = error instanceof Error ? error.message : error;
+  const revert = lifecycleRevert(error, jobs);
+  const receipt = error?.receipt;
   const incidentState = {
     ...state,
     phase: "incident",
@@ -96,10 +132,23 @@ function incident(statePath, state, reason, writeState) {
       reason,
       recordedAt: new Date().toISOString(),
       transaction: state.pending ?? null,
+      ...(receipt
+        ? {
+            receipt: {
+              transactionHash: receipt.hash ?? null,
+              blockNumber: receipt.blockNumber,
+              blockHash: receipt.blockHash ?? null,
+              status: receipt.status,
+            },
+          }
+        : {}),
+      ...(revert ? { revert } : {}),
     },
   };
   writeState(statePath, incidentState);
-  throw new OperatorIncidentError(reason);
+  const incidentError = new OperatorIncidentError(reason);
+  incidentError.terminalIncident = true;
+  throw incidentError;
 }
 
 export async function recoverHorizon1TargetState({
@@ -118,6 +167,20 @@ export async function recoverHorizon1TargetState({
   reconcileTransaction = reconcileJournaledTransaction,
   writeState = atomicWriteJson,
 }) {
+  const reconcileSafely = async (input) => {
+    try {
+      return await reconcileTransaction(input);
+    } catch (error) {
+      if (
+        error instanceof OperatorIncidentError &&
+        error.receipt &&
+        error.receipt?.status !== 1
+      ) {
+        incident(statePath, input.state, error, writeState, jobs);
+      }
+      throw error;
+    }
+  };
   if (state.pending) {
     const kind = state.pending.kind;
     const successPhase = {
@@ -128,7 +191,7 @@ export async function recoverHorizon1TargetState({
       claim: state.phase,
     }[kind];
     try {
-      const reconciled = await reconcileTransaction({
+      const reconciled = await reconcileSafely({
         provider,
         state,
         statePath,
@@ -150,6 +213,7 @@ export async function recoverHorizon1TargetState({
       });
       state = validateResumeState(reconciled.state, expectedState);
     } catch (error) {
+      if (error.terminalIncident === true) throw error;
       if (kind !== "reveal" || !(error instanceof OperatorIncidentError)) {
         throw error;
       }
@@ -162,7 +226,7 @@ export async function recoverHorizon1TargetState({
           liveJob.state !== ATTEMPTS_EXHAUSTED_JOB_STATE) ||
         liveCommitment.bond === 0n
       ) {
-        incident(statePath, state, error.message, writeState);
+        incident(statePath, state, error, writeState, jobs);
       }
       state = {
         ...state,
@@ -200,7 +264,7 @@ export async function recoverHorizon1TargetState({
       statePath,
     });
     state = (
-      await reconcileTransaction({
+      await reconcileSafely({
         provider,
         state,
         statePath,
@@ -275,7 +339,7 @@ export async function recoverHorizon1TargetState({
       statePath,
     });
     state = (
-      await reconcileTransaction({
+      await reconcileSafely({
         provider,
         state,
         statePath,
@@ -320,6 +384,7 @@ export async function recoverHorizon1TargetState({
       state,
       `Proof job ${jobId} expired with a live commitment`,
       writeState,
+      jobs,
     );
   }
   if (liveJob.state !== OPEN_JOB_STATE) {
@@ -328,6 +393,7 @@ export async function recoverHorizon1TargetState({
       state,
       `Proof job ${jobId} finalized in an unsupported state with a live commitment`,
       writeState,
+      jobs,
     );
   }
   if (
@@ -341,6 +407,7 @@ export async function recoverHorizon1TargetState({
       state,
       "Stored resume state does not match the live commitment",
       writeState,
+      jobs,
     );
   }
   const blockNumber = await provider.getBlockNumber();
@@ -350,6 +417,7 @@ export async function recoverHorizon1TargetState({
       state,
       "Commitment reveal window elapsed; bond requires incident handling",
       writeState,
+      jobs,
     );
   }
   if (blockNumber < state.commitBlock + 1) {
@@ -374,7 +442,7 @@ export async function recoverHorizon1TargetState({
   });
   try {
     state = (
-      await reconcileTransaction({
+      await reconcileSafely({
         provider,
         state,
         statePath,
@@ -413,6 +481,7 @@ export async function recoverHorizon1TargetState({
       writeState,
     });
   } catch (error) {
+    if (error.terminalIncident === true) throw error;
     if (!(error instanceof OperatorIncidentError)) throw error;
     const [finalJob, finalCommitment] = await Promise.all([
       jobsRead.getJob(jobId),
@@ -423,7 +492,7 @@ export async function recoverHorizon1TargetState({
         finalJob.state !== ATTEMPTS_EXHAUSTED_JOB_STATE) ||
       finalCommitment.bond === 0n
     ) {
-      incident(statePath, state, error.message, writeState);
+      incident(statePath, state, error, writeState, jobs);
     }
     state = {
       ...state,

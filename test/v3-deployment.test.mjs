@@ -19,6 +19,7 @@ import {
   getAddress,
   getCreateAddress,
   keccak256,
+  toUtf8Bytes,
 } from "ethers";
 import { applyArtifactImmutables } from "../scripts/lib/v3-activation.mjs";
 import {
@@ -44,6 +45,7 @@ import {
   validateV3DeploymentLiveExecutionPlan,
   validateV3DeploymentManifest,
   validateV3DeploymentRenewalBinding,
+  v3DeploymentApprovalCommitment,
   verifyV3RuntimeArtifacts,
   verifyV3Deployment,
   verifyV3DeploymentTransactions,
@@ -241,6 +243,7 @@ test("V3 deployment arguments are dry-run by default and require an explicit bro
     manifestPath: "deployments-v3.json",
     writePlanPath: undefined,
     approvedPlanPath: undefined,
+    approvalCommitment: undefined,
   });
   assert.deepEqual(
     parseV3DeploymentArguments([
@@ -248,6 +251,8 @@ test("V3 deployment arguments are dry-run by default and require an explicit bro
       "--broadcast",
       "--approved-plan",
       "approved.json",
+      "--approval-commitment",
+      HASH("9"),
       "--config",
       "pilot.json",
       "--manifest",
@@ -261,11 +266,12 @@ test("V3 deployment arguments are dry-run by default and require an explicit bro
       manifestPath: "record.json",
       writePlanPath: undefined,
       approvedPlanPath: "approved.json",
+      approvalCommitment: HASH("9"),
     },
   );
   assert.throws(
     () => parseV3DeploymentArguments(["--broadcast"]),
-    /requires --live-check and --approved-plan/,
+    /requires --live-check, --approved-plan, and --approval-commitment/,
   );
   assert.throws(
     () => parseV3DeploymentArguments(["--write-plan", "plan.json"]),
@@ -280,6 +286,8 @@ test("V3 deployment arguments are dry-run by default and require an explicit bro
         "--broadcast",
         "--approved-plan",
         "approved.json",
+        "--approval-commitment",
+        HASH("9"),
       ]),
     /cannot be combined with --broadcast/,
   );
@@ -390,6 +398,75 @@ test("V3 deployment config requires separated roles and coherent pilot bounds", 
   );
 });
 
+test("V3 deployment config is confined to a clean tracked Git blob", async (t) => {
+  const directory = mkdtempSync(join(tmpdir(), "recourse-v3-config-source-"));
+  const repository = join(directory, "repository");
+  const configDirectory = join(repository, "config");
+  const configPath = join(configDirectory, "deployment.json");
+  const outsidePath = join(directory, "outside.json");
+  const rawConfig = fixtureConfig(ADDRESS("d01"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  mkdirSync(configDirectory, { recursive: true });
+  writeFileSync(configPath, `${JSON.stringify(rawConfig, null, 2)}\n`);
+  writeFileSync(outsidePath, `${JSON.stringify(rawConfig, null, 2)}\n`);
+  for (const args of [
+    ["init"],
+    ["config", "user.email", "release-test@example.invalid"],
+    ["config", "user.name", "Release Test"],
+    ["add", "config/deployment.json"],
+    ["commit", "-m", "track deployment config"],
+  ]) {
+    const result = spawnSync("git", args, {
+      cwd: repository,
+      encoding: "utf8",
+      windowsHide: true,
+    });
+    assert.equal(result.status, 0, result.stderr);
+  }
+
+  const config = readV3DeploymentConfig("config/deployment.json", repository);
+  assert.deepEqual(config.configSource, {
+    path: "config/deployment.json",
+    blobHash: spawnSync("git", ["rev-parse", "HEAD:config/deployment.json"], {
+      cwd: repository,
+      encoding: "utf8",
+      windowsHide: true,
+    }).stdout.trim(),
+  });
+  const plan = await buildV3DeploymentPlan({
+    config,
+    artifacts: artifacts(rawConfig),
+    startingNonce: STARTING_NONCE,
+    sourceCommit: SOURCE_COMMIT,
+  });
+  assert.equal(
+    plan.configCommitment,
+    keccak256(
+      toUtf8Bytes(JSON.stringify({ gitBlob: config.configSource.blobHash })),
+    ),
+  );
+  assert.throws(
+    () => readV3DeploymentConfig(outsidePath, repository),
+    /inside the repository/,
+  );
+  writeFileSync(
+    join(configDirectory, "untracked.json"),
+    `${JSON.stringify(rawConfig)}\n`,
+  );
+  assert.throws(
+    () => readV3DeploymentConfig("config/untracked.json", repository),
+    /tracked by Git/,
+  );
+  writeFileSync(
+    configPath,
+    `${JSON.stringify({ ...rawConfig, roles: { ...rawConfig.roles, guardian: ADDRESS("bad") } })}\n`,
+  );
+  assert.throws(
+    () => readV3DeploymentConfig("config/deployment.json", repository),
+    /clean in Git/,
+  );
+});
+
 test("V3 artifact loading verifies all six configured artifact byte hashes", (t) => {
   const directory = mkdtempSync(join(tmpdir(), "recourse-v3-artifacts-"));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
@@ -425,7 +502,9 @@ test("V3 artifact loading verifies all six configured artifact byte hashes", (t)
 });
 
 test("V3 runtime qualification compares all six executable runtimes around compiler-declared immutables", () => {
-  const config = readV3DeploymentConfig("config/v3-cc3.json");
+  const config = validateV3DeploymentConfig(
+    JSON.parse(readFileSync("config/v3-cc3.json", "utf8")),
+  );
   const loaded = readCoreArtifacts(config);
   const runtimeCodes = Object.fromEntries(
     CORE_ARTIFACT_NAMES.map((name) => {
@@ -460,7 +539,9 @@ test("V3 runtime qualification compares all six executable runtimes around compi
 });
 
 test("V3 postdeployment qualification pins every runtime and getter to one canonical block", async () => {
-  const config = readV3DeploymentConfig("config/v3-cc3.json");
+  const config = validateV3DeploymentConfig(
+    JSON.parse(readFileSync("config/v3-cc3.json", "utf8")),
+  );
   const loaded = readCoreArtifacts(config);
   const plan = await buildV3DeploymentPlan({
     config,
@@ -783,6 +864,7 @@ test("V3 deployment approval expires and binds the chain anchor, source commit, 
   assert.equal(
     validateV3DeploymentApproval({
       approval: fixture.approval,
+      expectedApprovalCommitment: fixture.approval.approvalCommitment,
       config: fixture.config,
       plan: fixture.plan,
       qualification: fixture.qualification,
@@ -806,10 +888,13 @@ test("V3 deployment approval expires and binds the chain anchor, source commit, 
     issuedAt: fixture.approval.issuedAt + 1,
     validUntil: fixture.approval.validUntil + 1,
   };
+  shiftedApproval.approvalCommitment =
+    v3DeploymentApprovalCommitment(shiftedApproval);
   assert.throws(
     () =>
       validateV3DeploymentApproval({
         approval: shiftedApproval,
+        expectedApprovalCommitment: shiftedApproval.approvalCommitment,
         config: fixture.config,
         plan: fixture.plan,
         qualification: fixture.qualification,
@@ -821,6 +906,7 @@ test("V3 deployment approval expires and binds the chain anchor, source commit, 
     () =>
       validateV3DeploymentApproval({
         approval: fixture.approval,
+        expectedApprovalCommitment: fixture.approval.approvalCommitment,
         config: fixture.config,
         plan: fixture.plan,
         qualification: fixture.qualification,
@@ -844,6 +930,7 @@ test("V3 deployment approval expires and binds the chain anchor, source commit, 
       () =>
         validateV3DeploymentApproval({
           approval: fixture.approval,
+          expectedApprovalCommitment: fixture.approval.approvalCommitment,
           config: fixture.config,
           plan: fixture.plan,
           qualification,
@@ -896,15 +983,32 @@ test("V3 live qualification requires the reviewed clean commit, exact nonce, emp
     (fixture.approval.validUntil - fixture.approval.issuedAt);
   forgedTimestampApproval.qualification.blockTimestamp =
     forgedTimestampApproval.issuedAt;
-  assert.equal(
-    validateV3DeploymentApproval({
-      approval: forgedTimestampApproval,
-      config: fixture.config,
-      plan: fixture.plan,
-      qualification: forgedTimestampApproval.qualification,
-      now: forgedTimestampApproval.issuedAt,
-    }),
+  forgedTimestampApproval.approvalCommitment = v3DeploymentApprovalCommitment(
     forgedTimestampApproval,
+  );
+  assert.throws(
+    () =>
+      validateV3DeploymentApproval({
+        approval: forgedTimestampApproval,
+        expectedApprovalCommitment: fixture.approval.approvalCommitment,
+        config: fixture.config,
+        plan: fixture.plan,
+        qualification: forgedTimestampApproval.qualification,
+        now: forgedTimestampApproval.issuedAt,
+      }),
+    /approval commitment/i,
+  );
+  assert.throws(
+    () =>
+      validateV3DeploymentApproval({
+        approval: forgedTimestampApproval,
+        expectedApprovalCommitment: forgedTimestampApproval.approvalCommitment,
+        config: fixture.config,
+        plan: fixture.plan,
+        qualification,
+        now: forgedTimestampApproval.issuedAt,
+      }),
+    /qualification timestamp/i,
   );
   await assert.rejects(
     () =>
@@ -1174,6 +1278,7 @@ test("an expired partial V3 deployment requires renewal bound to the exact journ
   assert.equal(
     validateV3DeploymentApproval({
       approval: fixture.approval,
+      expectedApprovalCommitment: fixture.approval.approvalCommitment,
       config: fixture.config,
       plan: fixture.plan,
       qualification: fixture.qualification,
@@ -1186,6 +1291,7 @@ test("an expired partial V3 deployment requires renewal bound to the exact journ
     () =>
       validateV3DeploymentApproval({
         approval: fixture.approval,
+        expectedApprovalCommitment: fixture.approval.approvalCommitment,
         config: fixture.config,
         plan: fixture.plan,
         qualification: fixture.qualification,
@@ -1215,6 +1321,7 @@ test("an expired partial V3 deployment requires renewal bound to the exact journ
   assert.equal(
     validateV3DeploymentApproval({
       approval: renewedApproval,
+      expectedApprovalCommitment: renewedApproval.approvalCommitment,
       config: fixture.config,
       plan: fixture.plan,
       qualification: newQualification,
@@ -1435,13 +1542,19 @@ test("V3 manifest construction preserves activation compatibility and records co
       }),
     /block hash|qualified plan/i,
   );
+  const approvalWithoutQualification = {
+    ...fixture.approval,
+    qualification: undefined,
+  };
+  approvalWithoutQualification.approvalCommitment =
+    v3DeploymentApprovalCommitment(approvalWithoutQualification);
   assert.throws(
     () =>
       buildV3DeploymentManifest({
         config: fixture.config,
         plan: fixture.plan,
         journal,
-        approval: { ...fixture.approval, qualification: undefined },
+        approval: approvalWithoutQualification,
         verification,
         canonicalTransactions,
       }),

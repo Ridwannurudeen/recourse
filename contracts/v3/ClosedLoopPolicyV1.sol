@@ -280,13 +280,17 @@ contract ClosedLoopPolicyV1 is IPolicyEvaluatorV1, ISourceOrderingPolicyV1 {
         EventRule calldata adverse = configuration.adverseRule;
         CureRule calldata cure = configuration.cureRule;
         return _validRule(adverse) && _validRule(cure.eventRule) && !_predicatesOverlap(adverse, cure.eventRule)
+            && cure.eventRule.endSourceBlock == type(uint64).max
+            && (adverse.sourceChain != cure.eventRule.sourceChain
+                || cure.eventRule.startSourceBlock > adverse.endSourceBlock)
             && cure.eventRule.sourceChain == configuration.destinationChain
             && cure.eventRule.emitter == configuration.receiver
             && cure.eventRule.eventSignature == REMEDY_EXECUTION_CONFIRMED_EVENT_SIGNATURE
             && cure.eventRule.subject == configuration.target && cure.eventRule.topicCount == 4
             && cure.eventRule.subjectTopicIndex == 1 && cure.intentTopicIndex == 2 && cure.executionTopicIndex == 3
             && cure.eventRule.dataLength == 64 && cure.eventRule.observedValueOffset == 0
-            && cure.actionDigestOffset == 32 && configuration.freshnessPeriod > 0 && configuration.remedyDuration > 0
+            && cure.actionDigestOffset == 32 && configuration.freshnessPeriod == type(uint64).max
+            && configuration.remedyDuration > 0
             && configuration.destinationChain > 0 && configuration.receiver != address(0)
             && configuration.target != address(0) && configuration.actionKind != bytes32(0)
             && configuration.actionDataHash != bytes32(0) && _validAdverseEffect(configuration.adverseEffect)
@@ -316,7 +320,7 @@ contract ClosedLoopPolicyV1 is IPolicyEvaluatorV1, ISourceOrderingPolicyV1 {
 
     function _validCureEffect(PolicyEffect calldata effect) private pure returns (bool) {
         return effect.outcome == PolicyOutcome.Cured && effect.creditLimitBps <= 10_000
-            && effect.futureDrawFeeBps <= 10_000 && !effect.terminate;
+            && effect.futureDrawFeeBps <= 10_000 && !effect.requireFreshEvidence && !effect.terminate;
     }
 
     function _saturatingAdd(uint256 first, uint256 second) private pure returns (uint256) {

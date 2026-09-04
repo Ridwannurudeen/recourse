@@ -24,6 +24,10 @@ import {
   verifyV3ExtensionTransactions,
 } from "./lib/v3-extension-deployment.mjs";
 import { atomicWriteJson } from "./lib/v3-deployment.mjs";
+import {
+  inspectDeployableRepository,
+  inspectTrackedRepositoryFile,
+} from "./lib/pilot-readiness.mjs";
 
 function requiredEnvironment(name) {
   const value = process.env[name];
@@ -79,6 +83,7 @@ async function qualifyExistingManifest({
   plan,
   artifacts,
   provider,
+  repositoryState,
 }) {
   const finalQualification = await qualifyV3ExtensionDeployment({
     provider,
@@ -87,6 +92,7 @@ async function qualifyExistingManifest({
     artifacts,
     deploymentComplete: true,
     blockTag: manifest?.finalQualification?.blockNumber,
+    repositoryState,
   });
   const canonicalTransactions = await verifyV3ExtensionTransactions({
     manifest,
@@ -111,9 +117,18 @@ async function main() {
     return;
   }
 
+  const repositoryState = inspectDeployableRepository(process.cwd());
+  inspectTrackedRepositoryFile(process.cwd(), options.configPath);
   const { config } = readV3ExtensionInputs(options.configPath);
+  for (const prerequisite of Object.values(config.prerequisites)) {
+    inspectTrackedRepositoryFile(process.cwd(), prerequisite.path);
+  }
   const artifacts = readV3ExtensionArtifacts(config);
-  const plan = await buildV3ExtensionDeploymentPlan({ config, artifacts });
+  const plan = await buildV3ExtensionDeploymentPlan({
+    config,
+    artifacts,
+    repositoryState,
+  });
 
   if (!options.liveCheck) {
     print({
@@ -148,6 +163,7 @@ async function main() {
       plan,
       artifacts,
       provider,
+      repositoryState,
     });
     print({
       mode: "deployed-qualified-read-only",
@@ -178,6 +194,7 @@ async function main() {
         plan,
         artifacts,
         provider,
+        repositoryState,
       });
       const recoveredJournal = journal?.phase === "deploying";
       if (recoveredJournal) {
@@ -206,6 +223,7 @@ async function main() {
       plan,
       artifacts,
       deploymentProgress: journal?.steps,
+      repositoryState,
     });
     let executionPlan;
     if (journal) {
@@ -265,6 +283,7 @@ async function main() {
       !journal || journal.steps.some(({ status }) => status !== "confirmed");
     validateV3ExtensionApproval({
       approval,
+      expectedApprovalCommitment: options.approvalCommitment,
       config,
       plan,
       qualification: approval.qualification,
@@ -283,10 +302,12 @@ async function main() {
         plan,
         artifacts,
         deploymentProgress: currentJournal.steps,
+        repositoryState,
       });
       await verifyV3ExtensionApprovalAnchor({ approval, provider });
       validateV3ExtensionApproval({
         approval,
+        expectedApprovalCommitment: options.approvalCommitment,
         config,
         plan,
         qualification: approval.qualification,
@@ -370,6 +391,7 @@ async function main() {
       artifacts,
       deploymentComplete: true,
       deploymentProgress: journal.steps,
+      repositoryState,
     });
     const transactions = transactionEvidence(journal);
     const canonicalTransactions = await verifyV3ExtensionTransactions({

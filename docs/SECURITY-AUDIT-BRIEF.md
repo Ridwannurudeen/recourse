@@ -194,18 +194,19 @@ npm --prefix sdk run pack:check
 git diff --check
 ```
 
-The release baseline is 355 Forge tests, 199 root Node tests (198 passes and one
-Windows symlink-permission skip), and 37 SDK tests followed by strict declaration
+The release baseline is 375 Forge tests, 214 root Node tests (213 passes and one
+Windows symlink-permission skip), and 39 SDK tests followed by strict declaration
 type-checking. Each of eight invariant properties completes 256 runs totaling
 128,000 calls, with zero handler reverts. A different count, unexpected skip,
 stale artifact pin, dirty submodule, or warning promoted to the selected
 high/medium lint threshold must be investigated.
 
-The dependency audits currently report zero known vulnerabilities. Slither was
-not available during the internal release pass, so there is no Slither-pass
-claim. An independent reviewer should use additional static, symbolic, and
-manual techniques appropriate to the scope rather than treating the repository
-test suite as an audit substitute.
+The dependency audits currently report zero known vulnerabilities. The
+[September 2026 internal security review](SECURITY-REVIEW-2026-09.md) used
+Slither 0.11.5, but that internal work is not an independent Slither-pass claim.
+An independent reviewer should use additional static, symbolic, and manual
+techniques appropriate to the scope rather than treating the repository test
+suite or internal review as an audit substitute.
 
 ## Deployment and product exclusions
 

@@ -25,6 +25,7 @@ import {MockVerifier} from "../mocks/MockVerifier.sol";
 contract KernelV2FacilityMock is IPolicyFacilityV1 {
     address public immutable lender;
     address public immutable borrower;
+    address public kernel;
     IERC20 public asset = IERC20(address(0x99));
     FacilityStatus public status;
     bool public incidentPaused;
@@ -42,6 +43,10 @@ contract KernelV2FacilityMock is IPolicyFacilityV1 {
 
     function setAsset(IERC20 value) external {
         asset = value;
+    }
+
+    function setKernel(address value) external {
+        kernel = value;
     }
 
     function applyPolicyEffect(uint256, PolicyEffect calldata effect, uint64) external {
@@ -120,6 +125,7 @@ contract PolicyKernelV2Test is Test {
         verifier = new MockVerifier();
         kernel = new PolicyKernelV2(verifier);
         facility = new KernelV2FacilityMock(LENDER, BORROWER);
+        facility.setKernel(address(kernel));
         evaluator = new KernelV2EvaluatorMock(BORROWER);
         vm.prank(LENDER);
         kernel.registerPolicy(address(facility), POLICY_ID, evaluator);
@@ -154,6 +160,7 @@ contract PolicyKernelV2Test is Test {
 
     function test_laterWeakMultiChainEvidenceCannotCensorEarlierSevereEvidence() public {
         KernelV2FacilityMock multiFacility = new KernelV2FacilityMock(LENDER, BORROWER);
+        multiFacility.setKernel(address(kernel));
         MultiChainEventPolicyV1 multiPolicy = new MultiChainEventPolicyV1(kernel);
         MultiChainEventPolicyV1.Rule[] memory rules = new MultiChainEventPolicyV1.Rule[](2);
         rules[0] = _multiChainRule(address(0xA11CE), 1);
@@ -345,6 +352,71 @@ contract PolicyKernelV2Test is Test {
         assertEq(kernel.creditState().observationCount(address(facility), BORROWER), 1);
         assertFalse(kernel.isProcessed(address(facility), POLICY_ID, kernel.queryId(CHAIN_A, 100, 0)));
         assertEq(jobs.getCommitment(jobId, olderHunter).bond, 0);
+    }
+
+    function test_proofJobReleasesBondWhenFacilityLeavesActive() public {
+        address hunter = address(0xC3);
+        KernelV2Token token = new KernelV2Token();
+        facility.setAsset(token);
+        ProofJobsV1 jobs = new ProofJobsV1(kernel);
+        kernel.setProofJobs(address(jobs));
+
+        token.mint(LENDER, 100);
+        token.mint(hunter, 10);
+        vm.prank(LENDER);
+        token.approve(address(jobs), type(uint256).max);
+        vm.prank(hunter);
+        token.approve(address(jobs), type(uint256).max);
+
+        ProofJobsV1.JobParams memory params = ProofJobsV1.JobParams({
+            token: token,
+            facility: address(facility),
+            policyId: POLICY_ID,
+            requirementsDigest: evaluator.configHash(address(facility), POLICY_ID),
+            expiry: uint64(block.timestamp + 1 days),
+            revealWindowBlocks: 10,
+            maxSuccessfulProofs: 1,
+            proofReimbursement: 5,
+            outcomeReward: 10,
+            commitBond: 2,
+            rewardOutcomeThreshold: 4
+        });
+        vm.prank(LENDER);
+        uint256 jobId = jobs.createJob(params);
+
+        bytes memory proof = _encodedProof(CHAIN_A, 100);
+        bytes32 digest = keccak256(proof);
+        bytes32 salt = keccak256("inactive facility");
+        bytes32 commitment = jobs.computeCommitment(jobId, hunter, digest, salt);
+        vm.prank(hunter);
+        jobs.commitEvidence(jobId, digest, commitment);
+        facility.setStatus(FacilityStatus.Repaid);
+        vm.roll(block.number + 1);
+
+        vm.prank(hunter);
+        jobs.revealEvidence(jobId, digest, salt, proof);
+
+        assertEq(jobs.getCommitment(jobId, hunter).bond, 0);
+        assertEq(jobs.claimable(address(token), hunter), 2);
+        assertEq(jobs.claimable(address(token), LENDER), 0);
+        assertEq(jobs.getJob(jobId).successfulProofs, 0);
+        assertEq(facility.applyCalls(), 0);
+    }
+
+    function test_registerPolicyRejectsFacilityBoundToAnotherKernelAndStaleBindingCannotPublish() public {
+        KernelV2FacilityMock otherFacility = new KernelV2FacilityMock(LENDER, BORROWER);
+        otherFacility.setKernel(address(0xBAD));
+
+        vm.expectRevert(PolicyKernelV2.FacilityKernelMismatch.selector);
+        vm.prank(LENDER);
+        kernel.registerPolicy(address(otherFacility), POLICY_ID, evaluator);
+
+        facility.setKernel(address(0xBAD));
+        assertFalse(
+            kernel.canPublishJob(
+                address(facility), LENDER, address(facility.asset()), POLICY_ID, keccak256("v2-manifest")
+            )
+        );
     }
 
     function _submit(uint64 chainKey, uint64 height) private {

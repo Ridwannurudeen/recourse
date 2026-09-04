@@ -31,5 +31,12 @@
     "policyIds": ["1"],
     "tokens": ["0x3c6eF93E1d2C539c5EFefbBc51cc6a1E120fBf77"],
     "sourceChains": ["3"]
+  },
+  "sourceNetworks": {
+    "3": {
+      "evmChainId": 1,
+      "rpcUrlEnvironment": "ETH_MAINNET_RPC_URL",
+      "secondaryRpcUrlEnvironment": "ETH_MAINNET_RPC_URL_SECONDARY"
+    }
   }
 }

@@ -53,7 +53,7 @@ Non-reveal bonds become slashable after the deadline. Invalid or irrelevant proo
 
 `RecourseFacilityV2` uses exact-balance `SafeERC20` pulls and rejects fee-on-transfer or rebasing behavior. Transfers follow checks-effects-interactions, and payouts use repeatable pull claims.
 
-The lender and borrower have independent draw-pause flags. Neither can clear the other's pause. Pauses cancel pending draws but never block repayment or claims. The factory guardian can pause only new creation; it cannot alter policy, seize assets, stop repayment, or stop withdrawals.
+The lender and borrower have independent draw-pause flags. Neither can clear the other's pause. Pauses cancel pending draws but never block evidence admission, repayment, or claims. The factory guardian can pause only new creation; it cannot alter policy, seize assets, stop repayment, or stop withdrawals.
 
 ## SDK, registry, hosted console, and discovery foundations
 

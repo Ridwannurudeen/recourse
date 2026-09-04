@@ -9,7 +9,7 @@ import {
   readFileSync,
   realpathSync,
 } from "node:fs";
-import { relative, resolve } from "node:path";
+import { isAbsolute, relative, resolve } from "node:path";
 
 const REQUIRED_GATES = [
   ["designPartner", "Signed design partner"],
@@ -118,6 +118,71 @@ export function inspectDeployableRepository(repositoryDirectory) {
   return {
     head: head.stdout.trim().toLowerCase(),
     deployableScopeClean: status.stdout.trim() === "",
+  };
+}
+
+export function inspectTrackedRepositoryFile(repositoryDirectory, filePath) {
+  const root = realpathSync(resolve(repositoryDirectory));
+  const candidate = resolve(root, filePath);
+  const pathFromRoot = relative(root, candidate);
+  if (
+    pathFromRoot.length === 0 ||
+    pathFromRoot.startsWith("..") ||
+    isAbsolute(pathFromRoot)
+  ) {
+    throw new Error("Deployment input must stay inside the repository");
+  }
+  const metadata = lstatSync(candidate);
+  if (metadata.isSymbolicLink() || !metadata.isFile()) {
+    throw new Error("Deployment input must be a regular repository file");
+  }
+  const canonicalPath = realpathSync(candidate);
+  const canonicalFromRoot = relative(root, canonicalPath);
+  if (canonicalFromRoot.startsWith("..") || isAbsolute(canonicalFromRoot)) {
+    throw new Error("Deployment input must stay inside the repository");
+  }
+  const trackedPath = canonicalFromRoot.replaceAll("\\", "/");
+  const options = {
+    cwd: root,
+    encoding: "utf8",
+    windowsHide: true,
+  };
+  const tracked = spawnSync(
+    "git",
+    ["ls-files", "--error-unmatch", "--", trackedPath],
+    options,
+  );
+  const status = spawnSync(
+    "git",
+    ["status", "--porcelain", "--", trackedPath],
+    options,
+  );
+  const blob = spawnSync("git", ["rev-parse", `HEAD:${trackedPath}`], options);
+  if (tracked.status !== 0 || status.status !== 0 || blob.status !== 0) {
+    throw new Error("Deployment input must be tracked by Git");
+  }
+  if (status.stdout.trim() !== "") {
+    throw new Error("Deployment input must be clean in Git");
+  }
+  const blobHash = blob.stdout.trim().toLowerCase();
+  if (!/^[0-9a-f]{40,64}$/.test(blobHash)) {
+    throw new Error("Deployment input Git blob hash is invalid");
+  }
+  return { path: trackedPath, blobHash };
+}
+
+export function requireCleanDeployableRepository(repositoryState) {
+  if (
+    !repositoryState ||
+    typeof repositoryState.head !== "string" ||
+    !/^[0-9a-fA-F]{40}$/.test(repositoryState.head) ||
+    repositoryState.deployableScopeClean !== true
+  ) {
+    throw new Error("Deployable Git scope must be clean at a valid commit");
+  }
+  return {
+    head: repositoryState.head.toLowerCase(),
+    deployableScopeClean: true,
   };
 }
 

@@ -234,19 +234,29 @@ sudo install -o root -g recourse -m 0640 \
 Verify that `/etc/recourse/operator.json` still has `execution` set to
 `read-only` and that its exact facility, policy, token, source-chain, and economic
 bounds are approved for observation. Create
-`/etc/recourse/operator-runtime.conf` with only these two assignments:
+`/etc/recourse/operator-runtime.conf` with only public RPC assignments. The
+three Creditcoin URLs must be independent endpoints, and the two source-chain
+URLs must be independent endpoints:
 
 ```text
 CREDITCOIN_RPC_URL=https://rpc.cc3-testnet.creditcoin.network
+CREDITCOIN_RPC_URL_SECONDARY=https://REPLACE_WITH_INDEPENDENT_CC3_LOG_RPC
+CREDITCOIN_ATTESTATION_RPC_URL=https://REPLACE_WITH_INDEPENDENT_CC3_ATTESTATION_RPC
 ETH_MAINNET_RPC_URL=https://eth.drpc.org
+ETH_MAINNET_RPC_URL_SECONDARY=https://rpc.flashbots.net
 ```
 
-The primary endpoint above and the verified fallback
-`https://rpc.flashbots.net` both served the operator's exact five historical
-`eth_getLogs` chunks during VPS qualification. Re-probe the configured endpoint
-before each release because public RPC capabilities can change. Install the file
-as `root:recourse` mode `0640`, then activate the immutable release symlink and
-unit:
+The two Ethereum endpoints above served the operator's exact five historical
+`eth_getLogs` chunks during VPS qualification. Re-probe every configured
+endpoint before each release because public RPC capabilities can change. The
+daemon compares the complete log result from both endpoints before advancing a
+cursor; any mismatch fails the cycle without writing the new cursor. The
+attestation endpoint is separate from the endpoint used for transaction
+confirmation and broadcast. Execution mode refuses to start without all three
+independent endpoint roles. Read-only mode may run with a single log endpoint,
+but log withholding is then structurally undetectable and the discovery report
+records that accepted limitation. Install the file as `root:recourse` mode
+`0640`, then activate the immutable release symlink and unit:
 
 ```sh
 sudo chown root:recourse /etc/recourse/operator-runtime.conf
@@ -309,11 +319,12 @@ sudo install -d -o recourse-report -g www-data -m 2710 \
   /var/lib/recourse-report-public
 ```
 
-Create `/etc/recourse/operator-report-runtime.conf` with only the public CC3
-RPC assignment:
+Create `/etc/recourse/operator-report-runtime.conf` with two independent public
+CC3 log RPC assignments:
 
 ```text
 CREDITCOIN_RPC_URL=https://rpc.cc3-testnet.creditcoin.network
+CREDITCOIN_RPC_URL_SECONDARY=https://REPLACE_WITH_INDEPENDENT_CC3_LOG_RPC
 ```
 
 Install it as `root:recourse-report` mode `0640`, then install and verify the
@@ -341,6 +352,16 @@ replaces the public file only after projection, schema validation, and the
 one-megabyte response cap pass. A failed or unanchored scan leaves the previous
 file unchanged so the browser reports its age instead of accepting partial
 JSON.
+
+If the saved discovery block is no longer canonical, discovery automatically
+replays from the cursor's persisted `historyFromBlock` and rebuilds the event,
+job, policy, and metric checkpoint state against the new canonical chain. The
+old cursor remains in place unless the complete replay succeeds. Use an archive
+RPC that still serves that history if the normal endpoint has pruned it; never
+delete the cursor as a reorg recovery step. Retained job, policy, and operator
+collections are bounded to the newest 500 relevant entries, and the public
+artifact states that older entries may be omitted instead of freezing at entry
+501.
 
 Install `ops/recourse-operator-report.nginx` as
 `/etc/nginx/snippets/recourse-operator-report.conf`, then include that snippet

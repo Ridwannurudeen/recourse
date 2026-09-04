@@ -38,6 +38,7 @@ import {
   validateUscRemedyApproval,
   validateUscRemedyDeploymentConfig,
   validateUscRemedyDeploymentManifest,
+  uscRemedyApprovalCommitment,
   verifyDeployedUscRemedyRoute,
   verifyInstalledUscContracts020,
   verifyUscRemedyDeploymentTransactions,
@@ -401,14 +402,14 @@ function restartQualificationInputs(
     getLogs: async () => [acknowledgementTrustedInboxLog()],
     getBlock: async (block) =>
       block === "latest"
-        ? { number: 100, hash: HASH("c") }
+        ? { number: 100, hash: HASH("c"), timestamp: 1_000 }
         : block === 90
-          ? { number: 90, hash: HASH("ee") }
+          ? { number: 90, hash: HASH("ee"), timestamp: 900 }
           : block === 91
-            ? { number: 91, hash: HASH("ed") }
+            ? { number: 91, hash: HASH("ed"), timestamp: 910 }
             : block === 100
-              ? { number: 100, hash: HASH("c") }
-              : { number: 44, hash: HASH("dd") },
+              ? { number: 100, hash: HASH("c"), timestamp: 1_000 }
+              : { number: 44, hash: HASH("dd"), timestamp: 440 },
   };
   const destinationProvider = {
     getNetwork: async () => ({ chainId: 1n }),
@@ -434,8 +435,8 @@ function restartQualificationInputs(
     getLogs: async () => [registryUpdaterLog()],
     getBlock: async (block) =>
       block === 190
-        ? { number: 190, hash: HASH("dc") }
-        : { number: 200, hash: HASH("d") },
+        ? { number: 190, hash: HASH("dc"), timestamp: 950 }
+        : { number: 200, hash: HASH("d"), timestamp: 1_000 },
   };
   const contractFactory = (contractAddress) =>
     contractAddress === OUTBOX
@@ -509,7 +510,7 @@ async function runRestartWorker() {
       plan,
       qualification,
       executionPlan,
-      now: Math.floor(Date.now() / 1_000),
+      now: qualification.source.blockTimestamp,
     });
     let { path, journal } = initializeUscRemedyJournal({
       manifestPath,
@@ -593,6 +594,7 @@ async function runRestartWorker() {
     try {
       validateUscRemedyApproval({
         approval: expiredApproval,
+        expectedApprovalCommitment: expiredApproval.approvalCommitment,
         config,
         plan,
         qualification: journal.qualification,
@@ -604,16 +606,18 @@ async function runRestartWorker() {
       if (!/expired/.test(error.message)) throw error;
       expiredRejected = true;
     }
+    qualification.source.blockTimestamp = expiredApproval.validUntil + 10;
     const renewedApproval = createUscRemedyApproval({
       config,
       plan,
       qualification,
       executionPlan: journal.executionPlan,
-      now: expiredApproval.validUntil + 10,
+      now: qualification.source.blockTimestamp,
       journal,
     });
     validateUscRemedyApproval({
       approval: renewedApproval,
+      expectedApprovalCommitment: renewedApproval.approvalCommitment,
       config,
       plan,
       qualification,
@@ -673,6 +677,7 @@ async function runRestartWorker() {
         beforeBroadcast: async () =>
           validateUscRemedyApproval({
             approval: renewedApproval,
+            expectedApprovalCommitment: renewedApproval.approvalCommitment,
             config,
             plan,
             qualification,
@@ -707,10 +712,11 @@ async function runRestartWorker() {
   });
   validateUscRemedyApproval({
     approval,
+    expectedApprovalCommitment: approval.approvalCommitment,
     config,
     plan,
     qualification: journal.qualification,
-    now: Math.floor(Date.now() / 1_000),
+    now: approval.issuedAt + 1,
   });
   const transaction = Transaction.from(journal.steps[0].intent.rawTransaction);
   const runtime = restartQualificationInputs(config, plan, {
@@ -837,10 +843,11 @@ test("USC remedy deployment is offline by default and broadcast requires an appr
     manifestPath: "usc-remedy-deployment.json",
     writePlanPath: undefined,
     approvedPlanPath: undefined,
+    approvalCommitment: undefined,
   });
   assert.throws(
     () => parseUscRemedyDeploymentArguments(["--broadcast"]),
-    /requires --live-check and --approved-plan/,
+    /requires --live-check, --approved-plan, and --approval-commitment/,
   );
   const help = spawnSync(
     process.execPath,
@@ -1068,7 +1075,7 @@ test("artifact loading pins hashes and exact route constructors", async () => {
   }
 });
 
-test("USC CLI offline planning needs no RPC or signer and writes no deployment state", async () => {
+test("USC CLI rejects an untracked external config before RPC or signing", async () => {
   const directory = await mkdtemp(join(tmpdir(), "recourse-usc-cli-"));
   const rawConfig = input();
   const configPath = join(directory, "config.json");
@@ -1095,15 +1102,8 @@ test("USC CLI offline planning needs no RPC or signer and writes no deployment s
       ],
       { cwd: process.cwd(), encoding: "utf8", env: {} },
     );
-    assert.equal(result.status, 0, result.stderr);
-    const output = JSON.parse(result.stdout);
-    assert.equal(output.mode, "offline-dry-run");
-    assert.equal(output.transactionsBroadcast, 0);
-    assert.equal(output.safetyBoundary.dedicatedInboxRequired, true);
-    assert.equal(
-      output.safetyBoundary.setMessageDispatcherCalledByThisTool,
-      false,
-    );
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /inside the repository/);
     await assert.rejects(access(manifestPath), /ENOENT/);
     await assert.rejects(
       access(`${manifestPath}.usc-deployment-journal.json`),
@@ -1231,12 +1231,12 @@ test("live qualification binds bytecode, APIs, constructor evidence, fees, nonce
     getLogs: async () => acknowledgementLogs,
     getBlock: async (block) =>
       block === "latest"
-        ? { number: 100, hash: HASH("c") }
+        ? { number: 100, hash: HASH("c"), timestamp: 1_000 }
         : block === 90
-          ? { number: 90, hash: HASH("ee") }
+          ? { number: 90, hash: HASH("ee"), timestamp: 900 }
           : block === 91
-            ? { number: 91, hash: HASH("ed") }
-            : { number: 100, hash: HASH("c") },
+            ? { number: 91, hash: HASH("ed"), timestamp: 910 }
+            : { number: 100, hash: HASH("c"), timestamp: 1_000 },
   };
   const destinationProvider = {
     getNetwork: async () => ({ chainId: 1n }),
@@ -1262,8 +1262,8 @@ test("live qualification binds bytecode, APIs, constructor evidence, fees, nonce
     getLogs: async () => registryLogs,
     getBlock: async (block) =>
       block === 190
-        ? { number: 190, hash: HASH("dc") }
-        : { number: 200, hash: HASH("d") },
+        ? { number: 190, hash: HASH("dc"), timestamp: 950 }
+        : { number: 200, hash: HASH("d"), timestamp: 1_000 },
   };
   let trustedInbox = true;
   let voteThreshold = 3n;
@@ -1406,6 +1406,7 @@ test("live qualification binds bytecode, APIs, constructor evidence, fees, nonce
   assert.equal(
     validateUscRemedyApproval({
       approval,
+      expectedApprovalCommitment: approval.approvalCommitment,
       config,
       plan,
       qualification,
@@ -1413,10 +1414,43 @@ test("live qualification binds bytecode, APIs, constructor evidence, fees, nonce
     }),
     approval,
   );
+  const forgedApproval = structuredClone(approval);
+  forgedApproval.issuedAt += 86_400;
+  forgedApproval.validUntil += 86_400;
+  forgedApproval.sourceAnchor.blockTimestamp = forgedApproval.issuedAt;
+  forgedApproval.approvalCommitment =
+    uscRemedyApprovalCommitment(forgedApproval);
+  assert.throws(
+    () =>
+      validateUscRemedyApproval({
+        approval: forgedApproval,
+        expectedApprovalCommitment: approval.approvalCommitment,
+        config,
+        plan,
+        qualification: forgedApproval,
+        liveQualification: qualification,
+        now: forgedApproval.issuedAt,
+      }),
+    /approval commitment/i,
+  );
+  assert.throws(
+    () =>
+      validateUscRemedyApproval({
+        approval: forgedApproval,
+        expectedApprovalCommitment: forgedApproval.approvalCommitment,
+        config,
+        plan,
+        qualification,
+        liveQualification: qualification,
+        now: forgedApproval.issuedAt,
+      }),
+    /qualification timestamp/i,
+  );
   assert.throws(
     () =>
       validateUscRemedyApproval({
         approval,
+        expectedApprovalCommitment: approval.approvalCommitment,
         config,
         plan,
         qualification,
@@ -1537,7 +1571,7 @@ test("USC deployment journal survives a crash after signing and never rebroadcas
       config,
       plan,
       qualification: {
-        source: {},
+        source: { blockTimestamp: 1_000 },
         destination: {},
         dependencies: {},
       },
@@ -1613,7 +1647,11 @@ test("a resumed prepared USC step rechecks approval before first broadcast", asy
     const approval = createUscRemedyApproval({
       config,
       plan,
-      qualification: { source: {}, destination: {}, dependencies: {} },
+      qualification: {
+        source: { blockTimestamp: 1_000 },
+        destination: {},
+        dependencies: {},
+      },
       executionPlan,
       now: 1_000,
     });

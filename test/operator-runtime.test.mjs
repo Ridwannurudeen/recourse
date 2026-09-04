@@ -201,6 +201,31 @@ test("job scanning persists exact qualified evidence and rejects a changed sourc
   }
 });
 
+test("source log withholding mismatch fails without advancing the evidence cursor", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "recourse-operator-rpc-"));
+  const statePath = join(directory, "job.json");
+  try {
+    await assert.rejects(
+      scanJobEvidence({
+        sourceProvider: sourceProvider(),
+        secondarySourceProvider: {
+          ...sourceProvider(),
+          getLogs: async () => [],
+        },
+        job: JOB,
+        policy: POLICY,
+        statePath,
+        attestedHeight: 100,
+        maxSourceBlocks: 50,
+      }),
+      /RPC log cross-check mismatch/,
+    );
+    await assert.rejects(readFile(statePath, "utf8"), /ENOENT/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("multi-rule scanning keeps one chain cursor and hydrates a matching transaction once", async () => {
   const directory = await mkdtemp(join(tmpdir(), "recourse-operator-rules-"));
   const statePath = join(directory, "job-source-3.json");

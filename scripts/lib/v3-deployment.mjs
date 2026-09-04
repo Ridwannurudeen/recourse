@@ -20,7 +20,10 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { inspectDeployableRepository } from "./pilot-readiness.mjs";
+import {
+  inspectDeployableRepository,
+  inspectTrackedRepositoryFile,
+} from "./pilot-readiness.mjs";
 import { verifyPinnedArtifactRuntime } from "./v3-activation.mjs";
 
 export const EXPECTED_V3_CHAIN_ID = 102031;
@@ -49,7 +52,8 @@ Options:
   --live-check               Qualify live chain state and populate capped fees
   --write-plan <path>        Write an expiring exact plan for human approval
   --broadcast                Broadcast only an exact approved live plan
-  --approved-plan <path>     Human-approved plan required by --broadcast`;
+  --approved-plan <path>     Human-approved plan required by --broadcast
+  --approval-commitment <h>  Externally recorded approval digest required by --broadcast`;
 
 const ROLE_NAMES = ["deployer", "lender", "borrower", "guardian"];
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
@@ -349,6 +353,7 @@ export function parseV3DeploymentArguments(args) {
     manifestPath: "deployments-v3.json",
     writePlanPath: undefined,
     approvedPlanPath: undefined,
+    approvalCommitment: undefined,
   };
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
@@ -358,6 +363,13 @@ export function parseV3DeploymentArguments(args) {
       parsed.liveCheck = true;
     } else if (argument === "--broadcast") {
       parsed.broadcast = true;
+    } else if (argument === "--approval-commitment") {
+      const value = args[index + 1];
+      if (!value || value.startsWith("--")) {
+        throw new Error("--approval-commitment requires a digest");
+      }
+      parsed.approvalCommitment = digest(value, "approval commitment");
+      index += 1;
     } else if (
       argument === "--config" ||
       argument === "--manifest" ||
@@ -376,8 +388,15 @@ export function parseV3DeploymentArguments(args) {
       throw new Error(`Unknown argument: ${argument}`);
     }
   }
-  if (parsed.broadcast && (!parsed.liveCheck || !parsed.approvedPlanPath)) {
-    throw new Error("--broadcast requires --live-check and --approved-plan");
+  if (
+    parsed.broadcast &&
+    (!parsed.liveCheck ||
+      !parsed.approvedPlanPath ||
+      !parsed.approvalCommitment)
+  ) {
+    throw new Error(
+      "--broadcast requires --live-check, --approved-plan, and --approval-commitment",
+    );
   }
   if (parsed.writePlanPath && !parsed.liveCheck)
     throw new Error("--write-plan requires --live-check");
@@ -385,6 +404,8 @@ export function parseV3DeploymentArguments(args) {
     throw new Error("--write-plan cannot be combined with --broadcast");
   if (parsed.approvedPlanPath && !parsed.broadcast)
     throw new Error("--approved-plan requires --broadcast");
+  if (parsed.approvalCommitment && !parsed.broadcast)
+    throw new Error("--approval-commitment requires --broadcast");
   return parsed;
 }
 
@@ -526,8 +547,25 @@ export function validateV3DeploymentConfig(input) {
   };
 }
 
-export function readV3DeploymentConfig(path) {
-  return validateV3DeploymentConfig(JSON.parse(readFileSync(path, "utf8")));
+export function readV3DeploymentConfig(
+  path,
+  repositoryDirectory = process.cwd(),
+) {
+  const configSource = inspectTrackedRepositoryFile(repositoryDirectory, path);
+  return {
+    ...validateV3DeploymentConfig(
+      JSON.parse(
+        readFileSync(resolve(repositoryDirectory, configSource.path), "utf8"),
+      ),
+    ),
+    configSource,
+  };
+}
+
+function v3DeploymentConfigCommitment(config) {
+  return config.configSource
+    ? commitment({ gitBlob: config.configSource.blobHash })
+    : commitment(config);
 }
 
 export function readCoreArtifacts(config, rootDirectory = process.cwd()) {
@@ -679,7 +717,8 @@ export async function buildV3DeploymentPlan({
     generation: config.generation,
     chainId: config.chainId,
     sourceCommit: normalizedCommit,
-    configCommitment: commitment(config),
+    ...(config.configSource ? { configSource: config.configSource } : {}),
+    configCommitment: v3DeploymentConfigCommitment(config),
     startingNonce: nonce,
     predictedContracts,
     artifactHashes: Object.fromEntries(
@@ -697,7 +736,7 @@ function validateV3DeploymentPlan(config, plan) {
     plan?.schemaVersion !== 1 ||
     plan.generation !== config.generation ||
     plan.chainId !== config.chainId ||
-    plan.configCommitment !== commitment(config) ||
+    plan.configCommitment !== v3DeploymentConfigCommitment(config) ||
     sourceCommit(plan.sourceCommit) !== plan.sourceCommit ||
     !Array.isArray(plan.steps) ||
     plan.steps.length !== CORE_CONTRACT_NAMES.length + 1
@@ -1021,7 +1060,7 @@ export function createV3DeploymentApproval({
   ) {
     throw new Error("V3 deployment qualification does not match its plan");
   }
-  return {
+  const approval = {
     schemaVersion: 2,
     generation: config.generation,
     configCommitment: plan.configCommitment,
@@ -1037,16 +1076,39 @@ export function createV3DeploymentApproval({
       ? {}
       : { renewal: createV3DeploymentRenewalBinding(journal) }),
   };
+  approval.approvalCommitment = v3DeploymentApprovalCommitment(approval);
+  return approval;
+}
+
+export function v3DeploymentApprovalCommitment(approval) {
+  return commitment(
+    Object.fromEntries(
+      Object.entries(approval ?? {}).filter(
+        ([key]) => key !== "approvalCommitment",
+      ),
+    ),
+  );
 }
 
 export function validateV3DeploymentApproval({
   approval,
+  expectedApprovalCommitment,
   config,
   plan,
   qualification,
   now,
   journal,
 }) {
+  const normalizedExpectedApprovalCommitment = digest(
+    expectedApprovalCommitment,
+    "expected approval commitment",
+  );
+  if (
+    approval?.approvalCommitment !== normalizedExpectedApprovalCommitment ||
+    approval.approvalCommitment !== v3DeploymentApprovalCommitment(approval)
+  ) {
+    throw new Error("Approved V3 deployment approval commitment mismatch");
+  }
   if (
     approval?.schemaVersion !== 2 ||
     approval.generation !== config.generation ||
@@ -1753,6 +1815,7 @@ export function buildV3DeploymentManifest({
   }
   validateV3DeploymentApproval({
     approval,
+    expectedApprovalCommitment: approval?.approvalCommitment,
     config,
     plan,
     qualification: approval?.qualification,
@@ -1843,6 +1906,7 @@ export function buildV3DeploymentManifest({
     generation: config.generation,
     chainId: config.chainId,
     sourceCommit: plan.sourceCommit,
+    ...(plan.configSource ? { configSource: plan.configSource } : {}),
     configCommitment: plan.configCommitment,
     planCommitment: plan.planCommitment,
     verifier: config.verifier,
@@ -2015,6 +2079,7 @@ export function validateV3DeploymentManifest({
     manifest.generation !== config.generation ||
     manifest.chainId !== config.chainId ||
     manifest.sourceCommit !== plan.sourceCommit ||
+    canonicalText(manifest.configSource) !== canonicalText(plan.configSource) ||
     manifest.configCommitment !== plan.configCommitment ||
     manifest.planCommitment !== plan.planCommitment ||
     manifest.verifier !== config.verifier ||

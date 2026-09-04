@@ -406,6 +406,22 @@ contract MockProofJobsKernel is IProofJobsKernelV1 {
             );
         }
 
+        function test_hunterCanReleaseBondAfterJobExpires() public {
+            uint256 jobId = _createJob();
+            bytes32 digest = keccak256(hex"1234");
+            _commit(jobId, HUNTER, digest, keccak256("salt"));
+            ProofJobsV1.Job memory beforeExpiry = jobs.getJob(jobId);
+
+            vm.warp(beforeExpiry.expiry + 1);
+            jobs.finalizeExpired(jobId);
+            vm.prank(HUNTER);
+            jobs.releaseCommit(jobId);
+
+            assertEq(jobs.getCommitment(jobId, HUNTER).bond, 0);
+            assertEq(jobs.claimable(address(token), HUNTER), COMMIT_BOND);
+            assertEq(jobs.claimable(address(token), SPONSOR), REIMBURSEMENT * MAX_ATTEMPTS + OUTCOME_REWARD);
+        }
+
         function test_otherHunterCanRecoverBondWhenOutcomeFinalizesJob() public {
             uint256 jobId = _createJob();
             bytes32 digest = keccak256(hex"1234");

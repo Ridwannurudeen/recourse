@@ -23,6 +23,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { requireCleanDeployableRepository } from "./pilot-readiness.mjs";
 
 export const EXPECTED_V3_ACTIVATION_CHAIN_ID = 102031;
 export const ACTIVATION_TRANSACTION_COUNT = 13;
@@ -48,6 +49,7 @@ Options:
   --write-plan <path>         Write an expiring live plan for human approval
   --broadcast                 Broadcast only an exact approved live plan
   --approved-plan <path>      Human-approved live plan required by --broadcast
+  --approval-commitment <h>   Externally recorded approval digest required by --broadcast
   --help, -h                  Show this help and exit`;
 const SOURCE_NETWORKS = Object.freeze({
   1: Object.freeze({
@@ -133,6 +135,13 @@ function bytes32(value, label) {
   const normalized = value.toLowerCase();
   if (normalized === ZERO_BYTES32) throw new Error(`${label} must not be zero`);
   return normalized;
+}
+
+function gitCommit(value) {
+  if (typeof value !== "string" || !/^[0-9a-fA-F]{40}$/.test(value)) {
+    throw new Error("sourceCommit must be a 40-hex Git commit");
+  }
+  return value.toLowerCase();
 }
 
 function sha256Digest(value, label) {
@@ -581,6 +590,7 @@ export function parseV3ActivationArguments(args) {
     activationManifestPath: "activation-v3.json",
     writePlanPath: undefined,
     approvedPlanPath: undefined,
+    approvalCommitment: undefined,
   };
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
@@ -594,6 +604,15 @@ export function parseV3ActivationArguments(args) {
     }
     if (argument === "--live-check") {
       parsed.liveCheck = true;
+      continue;
+    }
+    if (argument === "--approval-commitment") {
+      const value = args[index + 1];
+      if (!value || value.startsWith("--")) {
+        throw new Error("--approval-commitment requires a digest");
+      }
+      parsed.approvalCommitment = bytes32(value, "approval commitment");
+      index += 1;
       continue;
     }
     const keys = {
@@ -612,14 +631,24 @@ export function parseV3ActivationArguments(args) {
     index += 1;
   }
   if (parsed.help) return parsed;
-  if (parsed.broadcast && (!parsed.liveCheck || !parsed.approvedPlanPath)) {
-    throw new Error("--broadcast requires --live-check and --approved-plan");
+  if (
+    parsed.broadcast &&
+    (!parsed.liveCheck ||
+      !parsed.approvedPlanPath ||
+      !parsed.approvalCommitment)
+  ) {
+    throw new Error(
+      "--broadcast requires --live-check, --approved-plan, and --approval-commitment",
+    );
   }
   if (parsed.broadcast && parsed.writePlanPath) {
     throw new Error("--write-plan cannot be combined with --broadcast");
   }
   if (!parsed.liveCheck && parsed.writePlanPath) {
     throw new Error("--write-plan requires --live-check");
+  }
+  if (!parsed.broadcast && parsed.approvalCommitment) {
+    throw new Error("--approval-commitment requires --broadcast");
   }
   return parsed;
 }
@@ -1390,11 +1419,14 @@ export function v3ActivationPlanCommitment({
   configCommitment,
   predictedFacility,
   transactionPlan,
+  sourceCommit,
+  deployableScopeClean,
 }) {
   return keccak256(
     toUtf8Bytes(
       canonicalText({
         configCommitment,
+        ...(sourceCommit ? { sourceCommit, deployableScopeClean } : {}),
         predictedFacility: getAddress(predictedFacility),
         transactionPlan,
       }),
@@ -1402,7 +1434,11 @@ export function v3ActivationPlanCommitment({
   );
 }
 
-export function buildV3OfflineActivationPlan({ config, activationArtifacts }) {
+export function buildV3OfflineActivationPlan({
+  config,
+  activationArtifacts,
+  repositoryState,
+}) {
   for (const name of REQUIRED_ARTIFACTS) {
     if (activationArtifacts[name]?.hash !== config.artifacts[name].keccak256) {
       throw new Error(`${name} artifact hash mismatch`);
@@ -1431,15 +1467,23 @@ export function buildV3OfflineActivationPlan({ config, activationArtifacts }) {
     deploymentId: commitments.deploymentId,
     assetSymbol: config.assetSymbol,
   });
+  const sourceState = repositoryState
+    ? {
+        sourceCommit: gitCommit(repositoryState.head),
+        deployableScopeClean: repositoryState.deployableScopeClean === true,
+      }
+    : {};
   return {
     mode: "offline-plan",
     chainId: config.chainId,
     predictedFacility,
     commitments,
+    ...sourceState,
     planCommitment: v3ActivationPlanCommitment({
       configCommitment: commitments.configCommitment,
       predictedFacility,
       transactionPlan,
+      ...sourceState,
     }),
     transactionPlan,
     freshness: assessV3ActivationFreshness({ config }),
@@ -1626,11 +1670,19 @@ export function createV3LivePlanReceipt({
   validUntil,
   executionPlan,
   renewal,
+  sourceCommit,
+  deployableScopeClean,
 }) {
   const target = object(targetBlock, "targetBlock");
   const receipt = {
     schemaVersion: 2,
     kind: "recourse-v3-live-activation-plan",
+    ...(sourceCommit
+      ? {
+          sourceCommit: gitCommit(sourceCommit),
+          deployableScopeClean: deployableScopeClean === true,
+        }
+      : {}),
     configCommitment: bytes32(configCommitment, "configCommitment"),
     planCommitment: bytes32(planCommitment, "planCommitment"),
     predictedFacility: address(predictedFacility, "predictedFacility"),
@@ -1651,12 +1703,28 @@ export function createV3LivePlanReceipt({
       "Live activation plan validity must extend past its target block",
     );
   }
+  receipt.approvalCommitment = v3ActivationApprovalCommitment(receipt);
   return receipt;
+}
+
+export function v3ActivationApprovalCommitment(receipt) {
+  return keccak256(
+    toUtf8Bytes(
+      canonicalText(
+        Object.fromEntries(
+          Object.entries(receipt ?? {}).filter(
+            ([key]) => key !== "approvalCommitment",
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 export function validateApprovedV3ActivationPlan(
   receipt,
   {
+    expectedApprovalCommitment,
     configCommitment,
     planCommitment,
     predictedFacility,
@@ -1667,8 +1735,19 @@ export function validateApprovedV3ActivationPlan(
     feePolicy,
     journal,
     now = Math.floor(Date.now() / 1_000),
+    repositoryState,
   },
 ) {
+  const expectedCommitment = bytes32(
+    expectedApprovalCommitment,
+    "expected approval commitment",
+  );
+  if (
+    receipt?.approvalCommitment !== expectedCommitment ||
+    receipt.approvalCommitment !== v3ActivationApprovalCommitment(receipt)
+  ) {
+    throw new Error("Approved V3 activation approval commitment mismatch");
+  }
   if (
     receipt?.schemaVersion !== 2 ||
     receipt.kind !== "recourse-v3-live-activation-plan"
@@ -1680,6 +1759,15 @@ export function validateApprovedV3ActivationPlan(
   }
   if (receipt.planCommitment !== planCommitment) {
     throw new Error("Approved activation plan commitment mismatch");
+  }
+  if (repositoryState) {
+    const sourceState = requireCleanDeployableRepository(repositoryState);
+    if (
+      receipt.sourceCommit !== sourceState.head ||
+      receipt.deployableScopeClean !== true
+    ) {
+      throw new Error("Approved activation source commit changed");
+    }
   }
   sameAddress(
     receipt.predictedFacility,

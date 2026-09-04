@@ -8,7 +8,6 @@
   "scripts": {
     "balances": "node scripts/balances.mjs",
     "build:usc-contracts-020": "forge build node_modules/@gluwa/usc-contracts/contracts/write-ability/Inbox.sol --force --out out-usc-contracts-020 --cache-path cache-usc-contracts-020 --remappings @openzeppelin/contracts/=node_modules/@gluwa/usc-contracts/node_modules/@openzeppelin/contracts/",
-    "daemon": "node daemon/index.mjs",
     "daemon:horizon1": "node daemon/horizon1.mjs",
     "activate:v3": "node scripts/activate-v3-pilot.mjs",
     "deploy:usc-remedy": "node scripts/deploy-usc-remedy.mjs",

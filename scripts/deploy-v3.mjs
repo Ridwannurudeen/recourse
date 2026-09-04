@@ -212,19 +212,21 @@ const hasRemainingTransactions =
 if (hasRemainingTransactions) {
   validateV3DeploymentApproval({
     approval,
+    expectedApprovalCommitment: options.approvalCommitment,
     config,
     plan,
-    qualification: approval.qualification,
+    qualification,
     now: qualification.blockTimestamp,
     journal,
   });
 } else {
   validateV3DeploymentApproval({
     approval,
+    expectedApprovalCommitment: options.approvalCommitment,
     config,
     plan,
-    qualification: approval.qualification,
-    now: approval.issuedAt,
+    qualification,
+    now: qualification.blockTimestamp,
     journal,
   });
 }
@@ -240,9 +242,10 @@ async function assertApprovalCurrent(currentJournal) {
   await verifyV3DeploymentApprovalAnchor({ approval, provider });
   validateV3DeploymentApproval({
     approval,
+    expectedApprovalCommitment: options.approvalCommitment,
     config,
     plan,
-    qualification: approval.qualification,
+    qualification,
     now: qualification.blockTimestamp,
     journal: currentJournal,
   });

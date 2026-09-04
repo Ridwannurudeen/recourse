@@ -1,4 +1,10 @@
-import { Transaction, getAddress, isHexString, keccak256 } from "ethers";
+import {
+  Interface,
+  Transaction,
+  getAddress,
+  isHexString,
+  keccak256,
+} from "ethers";
 import { randomUUID } from "node:crypto";
 import {
   closeSync,
@@ -17,12 +23,71 @@ import { dirname, resolve } from "node:path";
 
 const UINT256_MAX = (1n << 256n) - 1n;
 const DEFAULT_BLOCK_TIME_MS = 15_000;
+const REVERT_INTERFACE = new Interface([
+  "error Error(string)",
+  "error Panic(uint256)",
+]);
 
 export class OperatorIncidentError extends Error {
   constructor(message) {
     super(message);
     this.name = "OperatorIncidentError";
   }
+}
+
+function revertData(error) {
+  const candidates = [
+    error?.data,
+    error?.error?.data,
+    error?.info?.error?.data,
+  ];
+  for (const candidate of candidates) {
+    const value = typeof candidate === "string" ? candidate : candidate?.data;
+    if (typeof value === "string" && isHexString(value)) return value;
+  }
+  return null;
+}
+
+async function replayRevertedTransaction(provider, pending, receipt) {
+  let callError;
+  if (typeof provider.call === "function") {
+    const transaction = Transaction.from(pending.rawTransaction);
+    try {
+      await provider.call({
+        from: pending.from,
+        to: pending.to,
+        data: transaction.data,
+        value: pending.value,
+        blockTag: receipt.blockNumber,
+      });
+    } catch (error) {
+      callError = error;
+    }
+  }
+  const data = revertData(callError);
+  let parsed;
+  if (data) {
+    try {
+      parsed = REVERT_INTERFACE.parseError(data);
+    } catch {
+      parsed = undefined;
+    }
+  }
+  const args = parsed
+    ? [...parsed.args].map((value) =>
+        typeof value === "bigint" ? value.toString() : value,
+      )
+    : [];
+  return {
+    data,
+    name: parsed?.name ?? null,
+    args,
+    reason:
+      (parsed?.name === "Error" ? args[0] : undefined) ??
+      callError?.reason ??
+      callError?.shortMessage ??
+      null,
+  };
 }
 
 function unsignedInteger(value, label) {
@@ -883,6 +948,11 @@ export async function reconcileJournaledTransaction({
           `${kind} transaction ${pending.transactionHash} reverted`,
         );
         error.receipt = receipt;
+        error.revert = await replayRevertedTransaction(
+          provider,
+          pending,
+          receipt,
+        );
         throw error;
       }
       const confirmedThrough = await provider.getBlockNumber();

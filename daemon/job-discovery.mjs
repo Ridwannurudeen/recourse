@@ -3,9 +3,11 @@ import { Contract, Interface, JsonRpcProvider, getAddress } from "ethers";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import {
+  assertMatchingLogSets,
   buildDiscoveryReport,
   mapInBatches,
   metricsFromCheckpoint,
+  pruneMetricCheckpoint,
   retainRecentEvents,
   sortAndDedupeEvents,
   updateMetricCheckpoint,
@@ -42,6 +44,8 @@ const DEFAULT_CHUNK_SIZE = 2_000;
 const DEFAULT_CURSOR_PATH = "daemon/job-discovery-cursor.json";
 const HYDRATION_BATCH_SIZE = 25;
 const EVENT_RETENTION_LIMIT = 1_000;
+const STATE_RETENTION_LIMIT = 500;
+const FINALIZED_RETENTION_BLOCKS = 100_000;
 const EVENT_NAMES = new Set([
   "JobCreated",
   "EvidenceCommitted",
@@ -148,11 +152,14 @@ function readCursor(path, deployments, confirmations) {
     throw new Error("Invalid discovery cursor events");
   if (
     typeof cursor.eventsTruncated !== "boolean" ||
+    (cursor.stateTruncated !== undefined &&
+      typeof cursor.stateTruncated !== "boolean") ||
     !Array.isArray(cursor.jobs) ||
     !Array.isArray(cursor.policies)
   ) {
     throw new Error("Invalid discovery cursor retained state");
   }
+  cursor.stateTruncated ??= false;
   cursor.events = sortAndDedupeEvents(cursor.events);
   if (
     cursor.events.some(
@@ -180,7 +187,10 @@ function readCursor(path, deployments, confirmations) {
     );
     if (
       !Number.isSafeInteger(job.stateValue) ||
-      JOB_STATES[job.stateValue] !== job.state
+      JOB_STATES[job.stateValue] !== job.state ||
+      (job.finalizedAtBlock !== undefined &&
+        (!Number.isSafeInteger(job.finalizedAtBlock) ||
+          job.finalizedAtBlock < 0))
     ) {
       throw new Error("Invalid discovery cursor job state");
     }
@@ -435,6 +445,7 @@ function mergeRecords(existing, updated, key) {
 
 export async function discoverProofJobs({
   provider,
+  secondaryProvider,
   deployments,
   cursorPath,
   fromBlock,
@@ -456,8 +467,21 @@ export async function discoverProofJobs({
       `Refusing chain ${network.chainId}; expected ${deployments.chainId}`,
     );
   }
+  if (secondaryProvider) {
+    const secondaryNetwork = await secondaryProvider.getNetwork();
+    if (secondaryNetwork.chainId !== network.chainId) {
+      throw new Error(
+        `Refusing secondary chain ${secondaryNetwork.chainId}; expected ${network.chainId}`,
+      );
+    }
+  }
   const resolvedCursorPath = resolve(cursorPath || DEFAULT_CURSOR_PATH);
-  const cursor = readCursor(resolvedCursorPath, deployments, confirmations);
+  const storedCursor = readCursor(
+    resolvedCursorPath,
+    deployments,
+    confirmations,
+  );
+  let cursor = storedCursor;
   let cursorBlock;
   if (cursor) {
     cursorBlock = await provider.getBlock(cursor.lastScannedBlock);
@@ -466,7 +490,8 @@ export async function discoverProofJobs({
       cursorBlock.hash.toLowerCase() !==
         cursor.lastScannedBlockHash.toLowerCase()
     ) {
-      throw new Error("Discovery cursor is no longer on the canonical chain");
+      cursor = undefined;
+      cursorBlock = undefined;
     }
   }
 
@@ -481,21 +506,25 @@ export async function discoverProofJobs({
       ? undefined
       : unsignedInteger(fromBlock, "from block");
   if (
-    cursor &&
+    storedCursor &&
     explicitFromBlock !== undefined &&
-    explicitFromBlock !== cursor.nextBlock
+    explicitFromBlock !== storedCursor.nextBlock
   ) {
     throw new Error(
       "Explicit from block must match discovery cursor next block",
     );
   }
   const start = unsignedInteger(
-    explicitFromBlock ?? cursor?.nextBlock ?? deploymentBlock,
+    cursor
+      ? (explicitFromBlock ?? cursor.nextBlock)
+      : (storedCursor?.historyFromBlock ??
+          explicitFromBlock ??
+          deploymentBlock),
     "from block",
   );
-  const historyFromBlock = cursor?.historyFromBlock ?? start;
+  const historyFromBlock = storedCursor?.historyFromBlock ?? start;
   const historyComplete =
-    cursor?.historyComplete ?? historyFromBlock <= deploymentBlock;
+    storedCursor?.historyComplete ?? historyFromBlock <= deploymentBlock;
   const requestedEnd =
     toBlock === undefined
       ? confirmedHead
@@ -539,6 +568,8 @@ export async function discoverProofJobs({
       stateBlockTimestamp: cursorBlock?.timestamp ?? null,
       historyComplete,
       eventsTruncated: cursor?.eventsTruncated ?? false,
+      stateTruncated: cursor?.stateTruncated ?? false,
+      rpcLogCrossCheck: secondaryProvider !== undefined,
       confirmations,
       events: cursor?.events ?? [],
       jobs: cursor?.jobs ?? [],
@@ -555,13 +586,29 @@ export async function discoverProofJobs({
   };
   let checkpoint = cursor?.metrics;
   const changedJobIds = new Set();
+  const finalizedBlocks = new Map(
+    (cursor?.jobs ?? [])
+      .filter(({ finalizedAtBlock }) => finalizedAtBlock !== undefined)
+      .map(({ jobId, finalizedAtBlock }) => [jobId, finalizedAtBlock]),
+  );
   for (let chunkStart = start; chunkStart <= end; chunkStart += chunkSize) {
     const chunkEnd = Math.min(end, chunkStart + chunkSize - 1);
-    const logs = await provider.getLogs({
+    const filter = {
       address: deployments.proofJobs,
       fromBlock: chunkStart,
       toBlock: chunkEnd,
-    });
+    };
+    const [logs, secondaryLogs] = await Promise.all([
+      provider.getLogs(filter),
+      secondaryProvider?.getLogs(filter),
+    ]);
+    if (secondaryProvider) {
+      assertMatchingLogSets(
+        logs,
+        secondaryLogs,
+        `Creditcoin blocks ${chunkStart}..${chunkEnd}`,
+      );
+    }
     const blocks = await canonicalBlocks(provider, logs);
     const events = [];
     for (const log of logs) {
@@ -587,18 +634,62 @@ export async function discoverProofJobs({
       retained.truncated,
     );
     checkpoint = updateMetricCheckpoint(checkpoint, windowEvents);
-    for (const { jobId } of windowEvents) changedJobIds.add(jobId);
+    for (const event of windowEvents) {
+      changedJobIds.add(event.jobId);
+      if (event.name === "JobFinalized") {
+        finalizedBlocks.set(event.jobId, event.blockNumber);
+      }
+    }
   }
   const cachedJobs = cursor?.jobs ?? [];
   const orderedChangedJobIds = [...changedJobIds].sort((left, right) =>
     BigInt(left) < BigInt(right) ? -1 : 1,
   );
   const refreshedJobs = await hydrateJobs(jobs, orderedChangedJobIds, end);
+  for (const job of refreshedJobs) {
+    const finalizedAtBlock = finalizedBlocks.get(job.jobId);
+    if (job.state !== "Open" && finalizedAtBlock !== undefined) {
+      job.finalizedAtBlock = finalizedAtBlock;
+    }
+  }
   const allJobs = mergeRecords(cachedJobs, refreshedJobs, jobRecordKey);
+  const relevantJobs = allJobs.filter(
+    (job) =>
+      job.state === "Open" ||
+      (job.finalizedAtBlock ?? finalizedBlocks.get(job.jobId) ?? -1) >=
+        end - FINALIZED_RETENTION_BLOCKS,
+  );
+  const retainedJobs = relevantJobs
+    .sort((left, right) =>
+      BigInt(left.jobId) === BigInt(right.jobId)
+        ? 0
+        : BigInt(left.jobId) < BigInt(right.jobId)
+          ? 1
+          : -1,
+    )
+    .slice(0, STATE_RETENTION_LIMIT);
+  const retainedJobIds = new Set(retainedJobs.map(({ jobId }) => jobId));
+  const operatorsPruned =
+    (checkpoint?.operators?.length ?? 0) > STATE_RETENTION_LIMIT;
+  const stateTruncated =
+    storedCursor?.stateTruncated === true ||
+    retainedJobs.length < allJobs.length ||
+    operatorsPruned;
+  if (retained.events.some(({ jobId }) => !retainedJobIds.has(jobId))) {
+    retained = {
+      events: retained.events.filter(({ jobId }) => retainedJobIds.has(jobId)),
+      truncated: true,
+    };
+  }
+  checkpoint = pruneMetricCheckpoint(
+    checkpoint,
+    retainedJobIds,
+    STATE_RETENTION_LIMIT,
+  );
   const cachedPolicies = cursor?.policies ?? [];
   const cachedPolicyKeys = new Set(cachedPolicies.map(policyRecordKey));
   const missingPolicies = new Map();
-  for (const job of allJobs) {
+  for (const job of retainedJobs) {
     const key = `${job.facility.toLowerCase()}:${job.policyId}`;
     if (!cachedPolicyKeys.has(key)) {
       missingPolicies.set(key, {
@@ -619,6 +710,12 @@ export async function discoverProofJobs({
     cachedPolicies,
     refreshedPolicies,
     policyRecordKey,
+  ).filter((policy) =>
+    retainedJobs.some(
+      (job) =>
+        job.facility.toLowerCase() === policy.facility.toLowerCase() &&
+        job.policyId === policy.policyId,
+    ),
   );
   const finalBlock = await provider.getBlock(end);
   if (
@@ -640,9 +737,11 @@ export async function discoverProofJobs({
     stateBlockTimestamp: finalBlock.timestamp,
     historyComplete,
     eventsTruncated: retained.truncated,
+    stateTruncated,
+    rpcLogCrossCheck: secondaryProvider !== undefined,
     confirmations,
     events: retained.events,
-    jobs: allJobs,
+    jobs: retainedJobs,
     policies: allPolicies,
     metrics: metricsFromCheckpoint(checkpoint),
   });
@@ -658,6 +757,7 @@ export async function discoverProofJobs({
     lastScannedBlockTimestamp: finalBlock.timestamp,
     confirmations,
     eventsTruncated: retained.truncated,
+    stateTruncated,
     events: report.events,
     jobs: report.jobs,
     policies: report.policies,
@@ -670,6 +770,28 @@ function optionalBlock(value, label) {
   return value === undefined || value === ""
     ? undefined
     : unsignedInteger(value, label);
+}
+
+function secondaryCreditcoinProvider(environment) {
+  const secondaryUrl = environment.CREDITCOIN_RPC_URL_SECONDARY;
+  if (!secondaryUrl) return undefined;
+  let primary;
+  let secondary;
+  try {
+    primary = new URL(environment.CREDITCOIN_RPC_URL);
+    secondary = new URL(secondaryUrl);
+  } catch {
+    throw new Error("Invalid Creditcoin RPC URL");
+  }
+  if (
+    !["https:", "http:"].includes(secondary.protocol) ||
+    primary.href === secondary.href
+  ) {
+    throw new Error(
+      "CREDITCOIN_RPC_URL_SECONDARY must be an independent HTTP RPC endpoint",
+    );
+  }
+  return new JsonRpcProvider(secondary.href);
 }
 
 export function writeDiscoveryReport(path, report) {
@@ -703,6 +825,7 @@ async function main() {
   }
   const report = await discoverProofJobs({
     provider: new JsonRpcProvider(process.env.CREDITCOIN_RPC_URL),
+    secondaryProvider: secondaryCreditcoinProvider(process.env),
     deployments,
     cursorPath: resolve(
       process.env.HORIZON1_DISCOVERY_CURSOR_FILE || DEFAULT_CURSOR_PATH,

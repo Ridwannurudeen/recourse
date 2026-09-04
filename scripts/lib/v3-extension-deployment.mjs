@@ -20,6 +20,7 @@ import {
   reserveV3Manifest,
   validateSignedV3DeploymentStep,
 } from "./v3-deployment.mjs";
+import { requireCleanDeployableRepository } from "./pilot-readiness.mjs";
 import { verifyPinnedArtifactRuntime } from "./v3-activation.mjs";
 
 export const V3_EXTENSION_PLAN_VALIDITY_SECONDS = 1_800;
@@ -39,6 +40,7 @@ Options:
   --write-plan <path>         Write an expiring live plan for human approval
   --broadcast                 Broadcast only an exact approved live plan
   --approved-plan <path>      Human-approved live plan required by --broadcast
+  --approval-commitment <h>   Externally recorded approval digest required by --broadcast
   --qualify-deployed          Re-qualify an existing deployment manifest without signing
   --help, -h                  Show this help and exit`;
 
@@ -685,13 +687,22 @@ export function parseV3ExtensionArguments(args) {
     manifestPath: "v3-extension-deployment.json",
     writePlanPath: undefined,
     approvedPlanPath: undefined,
+    approvalCommitment: undefined,
   };
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
     if (argument === "--help" || argument === "-h") options.help = true;
     else if (argument === "--live-check") options.liveCheck = true;
     else if (argument === "--broadcast") options.broadcast = true;
-    else if (argument === "--qualify-deployed") options.qualifyDeployed = true;
+    else if (argument === "--approval-commitment") {
+      const value = args[index + 1];
+      if (!value || value.startsWith("--")) {
+        throw new Error("--approval-commitment requires a digest");
+      }
+      options.approvalCommitment = nonzeroDigest(value, "approval commitment");
+      index += 1;
+    } else if (argument === "--qualify-deployed")
+      options.qualifyDeployed = true;
     else if (
       ["--config", "--manifest", "--write-plan", "--approved-plan"].includes(
         argument,
@@ -726,11 +737,21 @@ export function parseV3ExtensionArguments(args) {
   ) {
     throw new Error("live operation requires --live-check");
   }
-  if (options.broadcast && (!options.liveCheck || !options.approvedPlanPath)) {
-    throw new Error("--broadcast requires --live-check and --approved-plan");
+  if (
+    options.broadcast &&
+    (!options.liveCheck ||
+      !options.approvedPlanPath ||
+      !options.approvalCommitment)
+  ) {
+    throw new Error(
+      "--broadcast requires --live-check, --approved-plan, and --approval-commitment",
+    );
   }
   if (!options.broadcast && options.approvedPlanPath) {
     throw new Error("--approved-plan is only valid with --broadcast");
+  }
+  if (!options.broadcast && options.approvalCommitment) {
+    throw new Error("--approval-commitment is only valid with --broadcast");
   }
   return options;
 }
@@ -998,12 +1019,35 @@ function constructorRecord(types, values) {
   };
 }
 
-function basePlan(config, artifacts, predictedContracts, constructors, steps) {
+function basePlan(
+  config,
+  artifacts,
+  predictedContracts,
+  constructors,
+  steps,
+  repositoryState,
+) {
+  const sourceState = repositoryState
+    ? {
+        sourceCommit: safeString(
+          repositoryState.head,
+          "sourceCommit",
+        ).toLowerCase(),
+        deployableScopeClean: repositoryState.deployableScopeClean === true,
+      }
+    : {};
+  if (
+    sourceState.sourceCommit &&
+    !/^[0-9a-f]{40}$/.test(sourceState.sourceCommit)
+  ) {
+    throw new Error("sourceCommit must be a 40-hex Git commit");
+  }
   const plan = {
     schemaVersion: 1,
     generation: config.generation,
     chainId: config.chainId,
     deployer: config.deployer,
+    ...sourceState,
     expectedStartingNonce: config.expectedStartingNonce,
     prerequisites: config.prerequisites,
     bindings: config.bindings,
@@ -1054,7 +1098,11 @@ function assertPlan(config, plan) {
   return plan;
 }
 
-export async function buildV3ExtensionDeploymentPlan({ config, artifacts }) {
+export async function buildV3ExtensionDeploymentPlan({
+  config,
+  artifacts,
+  repositoryState,
+}) {
   const nonce = config.expectedStartingNonce;
   if (config.generation === "v3-closed-loop-v1") {
     const predicted = getCreateAddress({ from: config.deployer, nonce });
@@ -1086,6 +1134,7 @@ export async function buildV3ExtensionDeploymentPlan({ config, artifacts }) {
             predictedContract: predicted,
           }),
         ],
+        repositoryState,
       ),
     );
   }
@@ -1123,6 +1172,7 @@ export async function buildV3ExtensionDeploymentPlan({ config, artifacts }) {
             predictedContract: predicted,
           }),
         ],
+        repositoryState,
       ),
     );
   }
@@ -1240,6 +1290,7 @@ export async function buildV3ExtensionDeploymentPlan({ config, artifacts }) {
           data: setMandateData,
         }),
       ],
+      repositoryState,
     ),
   );
 }
@@ -1432,6 +1483,12 @@ function qualificationSecurityState(qualification) {
     generation: qualification.generation,
     chainId: qualification.chainId,
     deployer: qualification.deployer,
+    ...(qualification.sourceCommit
+      ? {
+          sourceCommit: qualification.sourceCommit,
+          deployableScopeClean: qualification.deployableScopeClean,
+        }
+      : {}),
     artifactHashes: qualification.artifactHashes,
     prerequisiteCodeHashes: qualification.prerequisiteCodeHashes,
     ...(qualification.registryQualification
@@ -1530,7 +1587,7 @@ function validateRenewalBinding(binding, journal) {
   }
 }
 
-function approvalEnvelopeCommitment(approval) {
+export function v3ExtensionApprovalCommitment(approval) {
   return commitment(
     Object.fromEntries(
       Object.entries(approval ?? {}).filter(
@@ -1550,6 +1607,14 @@ export function createV3ExtensionApproval({
 }) {
   validateV3ExtensionLiveExecutionPlan({ config, plan, executionPlan });
   const issuedAt = integer(now, "approval issue time");
+  if (
+    issuedAt !==
+    integer(qualification.blockTimestamp, "qualification block timestamp")
+  ) {
+    throw new Error(
+      "extension approval issue time must equal its qualification timestamp",
+    );
+  }
   const securityQualification = qualificationSecurityState(qualification);
   const approval = {
     schemaVersion: 1,
@@ -1566,12 +1631,13 @@ export function createV3ExtensionApproval({
     executionPlanCommitment: executionPlan.commitment,
     ...(journal ? { renewal: createRenewalBinding(journal) } : {}),
   };
-  approval.approvalCommitment = approvalEnvelopeCommitment(approval);
+  approval.approvalCommitment = v3ExtensionApprovalCommitment(approval);
   return approval;
 }
 
 export function validateV3ExtensionApproval({
   approval,
+  expectedApprovalCommitment,
   config,
   plan,
   qualification,
@@ -1579,13 +1645,22 @@ export function validateV3ExtensionApproval({
   now,
   journal,
 }) {
+  const expectedCommitment = nonzeroDigest(
+    expectedApprovalCommitment,
+    "expected approval commitment",
+  );
+  if (
+    approval?.approvalCommitment !== expectedCommitment ||
+    approval.approvalCommitment !== v3ExtensionApprovalCommitment(approval)
+  ) {
+    throw new Error("extension approval commitment mismatch");
+  }
   if (
     approval?.schemaVersion !== 1 ||
     approval.generation !== config.generation ||
     approval.configCommitment !== plan.configCommitment ||
     approval.planCommitment !== plan.planCommitment ||
-    approval.executionPlanCommitment !== approval.executionPlan?.commitment ||
-    approval.approvalCommitment !== approvalEnvelopeCommitment(approval)
+    approval.executionPlanCommitment !== approval.executionPlan?.commitment
   ) {
     throw new Error("extension approval plan does not match this deployment");
   }
@@ -1606,6 +1681,15 @@ export function validateV3ExtensionApproval({
   const issuedAt = integer(approval.issuedAt, "approval issue time");
   const validUntil = integer(approval.validUntil, "approval expiry");
   const current = integer(now, "approval validation time");
+  if (
+    issuedAt !==
+    integer(
+      liveQualification?.blockTimestamp,
+      "live qualification block timestamp",
+    )
+  ) {
+    throw new Error("approved extension qualification timestamp changed");
+  }
   if (
     validUntil !== issuedAt + V3_EXTENSION_PLAN_VALIDITY_SECONDS ||
     current < issuedAt ||
@@ -2313,8 +2397,15 @@ export async function qualifyV3ExtensionDeployment({
   deploymentComplete = false,
   deploymentProgress,
   blockTag = "latest",
+  repositoryState,
 }) {
   assertPlan(config, plan);
+  if (plan.sourceCommit !== undefined) {
+    const sourceState = requireCleanDeployableRepository(repositoryState);
+    if (sourceState.head !== plan.sourceCommit) {
+      throw new Error("extension deployment source commit changed");
+    }
+  }
   const progress = progressStatuses(deploymentProgress, plan);
   const network = await provider.getNetwork();
   if (network.chainId !== BigInt(config.chainId))
@@ -2575,6 +2666,12 @@ export async function qualifyV3ExtensionDeployment({
     blockTimestamp: block.timestamp,
     pendingNonce,
     deployer: config.deployer,
+    ...(plan.sourceCommit
+      ? {
+          sourceCommit: plan.sourceCommit,
+          deployableScopeClean: true,
+        }
+      : {}),
     nativeBalance: BigInt(nativeBalance).toString(),
     artifactHashes: plan.artifactHashes,
     prerequisiteCodeHashes,
@@ -2695,6 +2792,12 @@ export function buildV3ExtensionManifest({
     status: "deployed-qualified",
     generation: config.generation,
     chainId: config.chainId,
+    ...(plan.sourceCommit
+      ? {
+          sourceCommit: plan.sourceCommit,
+          deployableScopeClean: plan.deployableScopeClean,
+        }
+      : {}),
     configCommitment: plan.configCommitment,
     planCommitment: plan.planCommitment,
     prerequisites: plan.prerequisites,
@@ -2725,6 +2828,8 @@ export function validateV3ExtensionManifest({
     manifest.status !== "deployed-qualified" ||
     manifest.generation !== config.generation ||
     manifest.chainId !== config.chainId ||
+    manifest.sourceCommit !== plan.sourceCommit ||
+    manifest.deployableScopeClean !== plan.deployableScopeClean ||
     manifest.configCommitment !== plan.configCommitment ||
     manifest.planCommitment !== plan.planCommitment ||
     canonicalText(manifest.prerequisites) !==

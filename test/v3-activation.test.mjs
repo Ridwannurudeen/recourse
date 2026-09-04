@@ -48,6 +48,7 @@ import {
   validateApprovedV3ActivationPlan,
   validateV3ActivationRenewalBinding,
   validateV3ActivationConfig,
+  v3ActivationApprovalCommitment,
   verifyPinnedFacilityRuntime,
   verifyPinnedFactoryRuntime,
   verifyPinnedPolicyRuntime,
@@ -325,6 +326,7 @@ test("activation arguments are dry-run by default and reject implicit broadcasts
     activationManifestPath: "activation-v3.json",
     writePlanPath: undefined,
     approvedPlanPath: undefined,
+    approvalCommitment: undefined,
   });
   assert.deepEqual(
     parseV3ActivationArguments([
@@ -332,6 +334,8 @@ test("activation arguments are dry-run by default and reject implicit broadcasts
       "--broadcast",
       "--approved-plan",
       "approved-plan.json",
+      "--approval-commitment",
+      HASH("9"),
       "--config",
       "pilot.json",
       "--core-manifest",
@@ -348,11 +352,12 @@ test("activation arguments are dry-run by default and reject implicit broadcasts
       activationManifestPath: "activation.json",
       writePlanPath: undefined,
       approvedPlanPath: "approved-plan.json",
+      approvalCommitment: HASH("9"),
     },
   );
   assert.throws(
     () => parseV3ActivationArguments(["--broadcast"]),
-    /requires --live-check and --approved-plan/,
+    /requires --live-check, --approved-plan, and --approval-commitment/,
   );
   assert.throws(
     () => parseV3ActivationArguments(["--send"]),
@@ -374,6 +379,7 @@ test("activation help exits without configuration or signing material and docume
     activationManifestPath: "activation-v3.json",
     writePlanPath: undefined,
     approvedPlanPath: undefined,
+    approvalCommitment: undefined,
   });
   assert.equal(parseV3ActivationArguments(["-h"]).help, true);
 
@@ -598,6 +604,7 @@ test("broadcast approval binds the exact live plan and expires without weakening
   });
   assert.equal(
     validateApprovedV3ActivationPlan(receipt, {
+      expectedApprovalCommitment: receipt.approvalCommitment,
       configCommitment: HASH("1"),
       planCommitment: HASH("2"),
       predictedFacility: ADDRESS("b"),
@@ -610,9 +617,31 @@ test("broadcast approval binds the exact live plan and expires without weakening
     }),
     true,
   );
+  const forgedReceipt = structuredClone(receipt);
+  forgedReceipt.targetBlock.timestamp += 86_400;
+  forgedReceipt.validUntil += 86_400;
+  forgedReceipt.approvalCommitment =
+    v3ActivationApprovalCommitment(forgedReceipt);
+  assert.throws(
+    () =>
+      validateApprovedV3ActivationPlan(forgedReceipt, {
+        expectedApprovalCommitment: receipt.approvalCommitment,
+        configCommitment: HASH("1"),
+        planCommitment: HASH("2"),
+        predictedFacility: ADDRESS("b"),
+        transactionPlan,
+        requests,
+        roles,
+        chainId: 102031,
+        feePolicy,
+        now: forgedReceipt.targetBlock.timestamp,
+      }),
+    /approval commitment/i,
+  );
   assert.throws(
     () =>
       validateApprovedV3ActivationPlan(receipt, {
+        expectedApprovalCommitment: receipt.approvalCommitment,
         configCommitment: HASH("1"),
         planCommitment: HASH("2"),
         predictedFacility: ADDRESS("b"),
@@ -628,6 +657,7 @@ test("broadcast approval binds the exact live plan and expires without weakening
   assert.throws(
     () =>
       validateApprovedV3ActivationPlan(receipt, {
+        expectedApprovalCommitment: receipt.approvalCommitment,
         configCommitment: HASH("1"),
         planCommitment: HASH("4"),
         predictedFacility: ADDRESS("b"),
@@ -1717,6 +1747,7 @@ test("an expired partial activation restarts only with journal-bound human reapp
   assert.throws(
     () =>
       validateApprovedV3ActivationPlan(initialApproval, {
+        expectedApprovalCommitment: initialApproval.approvalCommitment,
         configCommitment: HASH("1"),
         planCommitment: HASH("3"),
         predictedFacility: ADDRESS("b"),
@@ -1745,6 +1776,7 @@ test("an expired partial activation restarts only with journal-bound human reapp
   });
   assert.equal(
     validateApprovedV3ActivationPlan(renewedApproval, {
+      expectedApprovalCommitment: renewedApproval.approvalCommitment,
       configCommitment: HASH("1"),
       planCommitment: HASH("3"),
       predictedFacility: ADDRESS("b"),
@@ -1783,6 +1815,7 @@ test("an expired partial activation restarts only with journal-bound human reapp
       beforeBroadcast: async () => {
         approvalChecks += 1;
         validateApprovedV3ActivationPlan(renewedApproval, {
+          expectedApprovalCommitment: renewedApproval.approvalCommitment,
           configCommitment: HASH("1"),
           planCommitment: HASH("3"),
           predictedFacility: ADDRESS("b"),

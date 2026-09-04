@@ -9,6 +9,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { basename, resolve } from "node:path";
 import { discoverProofJobs, writeDiscoveryReport } from "./job-discovery.mjs";
+import { assertMatchingLogSets } from "./job-discovery-core.mjs";
 import { runHorizon1Job } from "./horizon1-runner.mjs";
 import { runV3Job } from "./v3-runner.mjs";
 import {
@@ -210,7 +211,43 @@ export function validateOperatorSourceNetworks(
       if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
         throw new Error(`Invalid RPC URL protocol for source key ${chainKey}`);
       }
-      return [chainKey, { evmChainId, rpcUrlEnvironment, rpcUrl }];
+      const secondaryRpcUrlEnvironment =
+        item?.secondaryRpcUrlEnvironment ?? `${rpcUrlEnvironment}_SECONDARY`;
+      if (!/^[A-Z][A-Z0-9_]*$/.test(secondaryRpcUrlEnvironment)) {
+        throw new Error(
+          `Invalid secondary RPC environment for source key ${chainKey}`,
+        );
+      }
+      const secondaryRpcUrl = environment[secondaryRpcUrlEnvironment];
+      if (secondaryRpcUrl !== undefined) {
+        let secondaryParsed;
+        try {
+          secondaryParsed = new URL(secondaryRpcUrl);
+        } catch {
+          throw new Error(
+            `Invalid secondary RPC URL for source key ${chainKey}`,
+          );
+        }
+        if (
+          (secondaryParsed.protocol !== "https:" &&
+            secondaryParsed.protocol !== "http:") ||
+          secondaryParsed.href === parsed.href
+        ) {
+          throw new Error(
+            `Secondary RPC URL for source key ${chainKey} must be an independent HTTP endpoint`,
+          );
+        }
+      }
+      return [
+        chainKey,
+        {
+          evmChainId,
+          rpcUrlEnvironment,
+          rpcUrl,
+          secondaryRpcUrlEnvironment,
+          secondaryRpcUrl,
+        },
+      ];
     }),
   );
 }
@@ -237,6 +274,7 @@ export async function assertExecutionKernelCapability(
 
 export async function scanJobEvidence({
   sourceProvider,
+  secondarySourceProvider,
   job,
   policy,
   statePath,
@@ -276,6 +314,13 @@ export async function scanJobEvidence({
     expectedSourceChainId,
     sourceChain,
   );
+  if (secondarySourceProvider) {
+    await assertSourceProviderIdentity(
+      secondarySourceProvider,
+      expectedSourceChainId,
+      sourceChain,
+    );
+  }
   const stored = existsSync(statePath) ? readJson(statePath) : undefined;
   if (stored) {
     if (
@@ -352,11 +397,22 @@ export async function scanJobEvidence({
           Number(configuration.endSourceBlock),
         );
         if (queryEnd < queryStart) continue;
-        const logs = await sourceProvider.getLogs({
+        const filter = {
           ...eventLogFilter(configuration),
           fromBlock: queryStart,
           toBlock: queryEnd,
-        });
+        };
+        const [logs, secondaryLogs] = await Promise.all([
+          sourceProvider.getLogs(filter),
+          secondarySourceProvider?.getLogs(filter),
+        ]);
+        if (secondarySourceProvider) {
+          assertMatchingLogSets(
+            logs,
+            secondaryLogs,
+            `source key ${sourceChain} blocks ${queryStart}..${queryEnd}`,
+          );
+        }
         queried.push({ configuration, logs });
       }
     } catch (error) {
@@ -765,6 +821,7 @@ export async function recoverExistingExecutionJournals({
 
 export async function runOperatorCycle({
   provider,
+  secondaryProvider,
   deployments,
   paths,
   config,
@@ -834,11 +891,24 @@ export async function runOperatorCycle({
     );
     sourceProviders.set(sourceChain, {
       provider: sourceProvider,
+      secondaryProvider: configured.secondaryRpcUrl
+        ? sourceProviderForChain(expected.chainKey, {
+            [configured.rpcUrlEnvironment]: configured.secondaryRpcUrl,
+          })
+        : undefined,
       evmChainId: expected.evmChainId,
     });
+    if (sourceProviders.get(sourceChain).secondaryProvider) {
+      await assertSourceProviderIdentity(
+        sourceProviders.get(sourceChain).secondaryProvider,
+        expected.evmChainId,
+        sourceChain,
+      );
+    }
   }
   const report = await discoverJobs({
     provider,
+    secondaryProvider,
     deployments,
     cursorPath: paths.discoveryCursor,
     confirmations: config.confirmations,
@@ -909,6 +979,7 @@ export async function runOperatorCycle({
         : { ...hydratedPolicy, configuration: group[0] };
       const { state, added } = await scanEvidence({
         sourceProvider: source.provider,
+        secondarySourceProvider: source.secondaryProvider,
         job,
         policy: normalizedPolicy,
         statePath,
@@ -956,6 +1027,7 @@ export async function runOperatorCycle({
 
 export async function runOperatorService({
   provider,
+  secondaryProvider,
   deployments,
   paths,
   config,
@@ -972,6 +1044,7 @@ export async function runOperatorService({
     try {
       const result = await runCycle({
         provider,
+        secondaryProvider,
         deployments,
         paths,
         config,
@@ -1118,6 +1191,16 @@ export function runtimeInputs(environment = process.env) {
     confirmations: rawConfig.confirmations ?? 12,
     discoveryChunkSize: rawConfig.discoveryChunkSize ?? 2_000,
   };
+  if (
+    config.execution === "enabled" &&
+    [...config.sourceNetworks.values()].some(
+      ({ secondaryRpcUrl }) => secondaryRpcUrl === undefined,
+    )
+  ) {
+    throw new Error(
+      "Execution requires an independent secondary RPC endpoint for every source chain",
+    );
+  }
   if (deployments.generation === V3_ACTIVATION_GENERATION) {
     assertV3OperatorBinding(manifest, config);
   }
@@ -1148,6 +1231,26 @@ async function main() {
   if (!process.env.CREDITCOIN_RPC_URL)
     throw new Error("CREDITCOIN_RPC_URL is required");
   const inputs = runtimeInputs();
+  const secondaryUrl = process.env.CREDITCOIN_RPC_URL_SECONDARY;
+  if (inputs.config.execution === "enabled" && !secondaryUrl) {
+    throw new Error(
+      "Execution requires CREDITCOIN_RPC_URL_SECONDARY for log cross-checking",
+    );
+  }
+  let secondaryProvider;
+  if (secondaryUrl) {
+    const primary = new URL(process.env.CREDITCOIN_RPC_URL);
+    const secondary = new URL(secondaryUrl);
+    if (
+      !["https:", "http:"].includes(secondary.protocol) ||
+      primary.href === secondary.href
+    ) {
+      throw new Error(
+        "CREDITCOIN_RPC_URL_SECONDARY must be an independent HTTP RPC endpoint",
+      );
+    }
+    secondaryProvider = new JsonRpcProvider(secondary.href);
+  }
   const lock = acquireProcessLock(inputs.paths.lock, {
     mode: inputs.config.execution,
     config: basename(
@@ -1166,6 +1269,7 @@ async function main() {
   try {
     await runOperatorService({
       provider: new JsonRpcProvider(process.env.CREDITCOIN_RPC_URL),
+      secondaryProvider,
       ...inputs,
       signal: controller.signal,
     });

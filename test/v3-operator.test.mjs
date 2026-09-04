@@ -205,11 +205,17 @@ test("V3 source network configuration enforces the documented CC3 chain bindings
     new Set(["1", "3"]),
     {
       SEPOLIA_RPC_URL: "https://sepolia.example",
+      SEPOLIA_RPC_URL_SECONDARY: "https://sepolia-secondary.example",
       ETH_MAINNET_RPC_URL: "https://mainnet.example",
+      ETH_MAINNET_RPC_URL_SECONDARY: "https://mainnet-secondary.example",
     },
   );
   assert.equal(networks.get("1").evmChainId, 11155111);
   assert.equal(networks.get("3").evmChainId, 1);
+  assert.equal(
+    networks.get("3").secondaryRpcUrl,
+    "https://mainnet-secondary.example",
+  );
   assert.throws(
     () =>
       validateOperatorSourceNetworks(
@@ -237,6 +243,23 @@ test("V3 source network configuration enforces the documented CC3 chain bindings
         { ETH_MAINNET_RPC_URL: "https://mainnet.example" },
       ),
     /Unsupported CC3 source chain key 4/,
+  );
+  assert.throws(
+    () =>
+      validateOperatorSourceNetworks(
+        {
+          3: {
+            evmChainId: 1,
+            rpcUrlEnvironment: "ETH_MAINNET_RPC_URL",
+          },
+        },
+        new Set(["3"]),
+        {
+          ETH_MAINNET_RPC_URL: "https://mainnet.example",
+          ETH_MAINNET_RPC_URL_SECONDARY: "https://mainnet.example/",
+        },
+      ),
+    /must be an independent HTTP endpoint/,
   );
 });
 
