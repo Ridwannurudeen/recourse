@@ -28,6 +28,7 @@ import {
   assertHorizon1BroadcastStillValid,
   recoverHorizon1TargetState,
 } from "./horizon1-recovery.mjs";
+import { loadHunterPrivateKey } from "./v3-core.mjs";
 import {
   OperatorIncidentError,
   assertCommitReady,
@@ -131,7 +132,7 @@ async function main() {
     targetConfirmations: executionPolicy.targetConfirmations,
     maxReceiptPolls:
       executionPolicy.targetConfirmations + executionPolicy.recoveryBlocks,
-    receiptPollIntervalMs: 1_000,
+    receiptPollIntervalMs: executionPolicy.blockTimeMs,
     signal: shutdownController.signal,
     feePolicy: executionPolicy.feePolicy,
   };
@@ -155,14 +156,12 @@ async function main() {
     );
   }
 
-  if (!process.env.HUNTER_PRIVATE_KEY || !process.env.HUNTER_ADDRESS) {
-    throw new Error("HUNTER_PRIVATE_KEY and HUNTER_ADDRESS are required");
+  if (!process.env.HUNTER_ADDRESS) {
+    throw new Error("HUNTER_ADDRESS is required");
   }
-  const hunter = new Wallet(process.env.HUNTER_PRIVATE_KEY, provider);
+  const hunter = new Wallet(loadHunterPrivateKey(), provider);
   if (!sameAddress(hunter.address, process.env.HUNTER_ADDRESS)) {
-    throw new Error(
-      "Refusing to run: HUNTER_PRIVATE_KEY does not match HUNTER_ADDRESS",
-    );
+    throw new Error("Hunter signing credential does not match HUNTER_ADDRESS");
   }
 
   const jobsRead = new Contract(

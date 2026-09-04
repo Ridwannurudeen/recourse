@@ -14,6 +14,7 @@ interface IPolicyEvaluatorLookupV1 {
 }
 
 contract RemedyCoordinatorV1 is IRemedyCoordinatorV1, ReentrancyGuard {
+    uint64 public constant CURE_WINDOW = 7 days;
     uint8 public constant MAXIMUM_PUBLISH_ATTEMPTS = 3;
     uint64 public constant PUBLISH_RETRY_DELAY = 1 hours;
 
@@ -31,6 +32,7 @@ contract RemedyCoordinatorV1 is IRemedyCoordinatorV1, ReentrancyGuard {
         bytes32 actionDataHash;
         uint64 expiry;
         uint64 lastPublishedAt;
+        uint64 acknowledgedAt;
         uint8 publishAttempts;
         IntentStatus status;
         bytes32 messageId;
@@ -138,6 +140,7 @@ contract RemedyCoordinatorV1 is IRemedyCoordinatorV1, ReentrancyGuard {
             actionDataHash: request.actionDataHash,
             expiry: request.expiry,
             lastPublishedAt: 0,
+            acknowledgedAt: 0,
             publishAttempts: 0,
             status: IntentStatus.Recorded,
             messageId: bytes32(0)
@@ -178,6 +181,7 @@ contract RemedyCoordinatorV1 is IRemedyCoordinatorV1, ReentrancyGuard {
             actionDataHash: predecessor.actionDataHash,
             expiry: expiry,
             lastPublishedAt: 0,
+            acknowledgedAt: 0,
             publishAttempts: 0,
             status: IntentStatus.Recorded,
             messageId: bytes32(0)
@@ -237,6 +241,7 @@ contract RemedyCoordinatorV1 is IRemedyCoordinatorV1, ReentrancyGuard {
         bytes32 messageId = _acknowledgedMessage(intentId, intent.publishAttempts);
         if (messageId == bytes32(0)) revert AcknowledgementMissing();
         intent.messageId = messageId;
+        intent.acknowledgedAt = uint64(block.timestamp);
         intent.status = IntentStatus.Acknowledged;
         emit IntentAcknowledged(intentId, messageId);
     }
@@ -251,6 +256,7 @@ contract RemedyCoordinatorV1 is IRemedyCoordinatorV1, ReentrancyGuard {
                 bytes32 acknowledgedMessage = _bestEffortAcknowledgedMessage(intentId, intent.publishAttempts);
                 if (acknowledgedMessage != bytes32(0)) {
                     intent.messageId = acknowledgedMessage;
+                    intent.acknowledgedAt = uint64(block.timestamp);
                     intent.status = IntentStatus.Acknowledged;
                     emit IntentAcknowledged(intentId, acknowledgedMessage);
                     return;
@@ -266,6 +272,9 @@ contract RemedyCoordinatorV1 is IRemedyCoordinatorV1, ReentrancyGuard {
                 ) revert IntentStillLive();
                 intent.status = IntentStatus.Failed;
             }
+        } else if (intent.status == IntentStatus.Acknowledged) {
+            if (block.timestamp < uint256(intent.acknowledgedAt) + CURE_WINDOW) revert IntentStillLive();
+            intent.status = IntentStatus.Expired;
         } else {
             revert IntentStillLive();
         }

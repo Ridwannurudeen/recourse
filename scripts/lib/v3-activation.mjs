@@ -84,6 +84,14 @@ const CORE_CONTRACTS = [
   "multiChainEventPolicy",
   "proofJobs",
 ];
+const CORE_RUNTIME_ARTIFACTS = {
+  policyKernel: "PolicyKernelV2",
+  verifiedCreditState: "VerifiedCreditStateV1",
+  policyRegistry: "PolicyRegistryV1",
+  cappedPilotFactory: "CappedPilotFactoryV1",
+  multiChainEventPolicy: "MultiChainEventPolicyV1",
+  proofJobs: "ProofJobsV1",
+};
 
 export async function assertV3ActivationStepSafety({
   label,
@@ -468,8 +476,12 @@ function normalizeSourceNetworks(value, rules) {
 
 function normalizeCoreManifest(input) {
   const core = object(input, "core manifest");
+  if (core.schemaVersion !== 2)
+    throw new Error("core manifest schemaVersion must be 2");
   if (core.generation !== "v3-core")
     throw new Error("core manifest generation must be v3-core");
+  if (core.status !== "deployed-qualified")
+    throw new Error("core manifest status must be deployed-qualified");
   if (core.chainId !== EXPECTED_V3_ACTIVATION_CHAIN_ID) {
     throw new Error(
       `core manifest chainId must be ${EXPECTED_V3_ACTIVATION_CHAIN_ID}`,
@@ -478,6 +490,10 @@ function normalizeCoreManifest(input) {
   const assetInput = object(core.asset, "core manifest asset");
   const rolesInput = object(core.roles, "core manifest roles");
   const contractsInput = object(core.contracts, "core manifest contracts");
+  const hashesInput = object(
+    core.runtimeCodeHashes,
+    "core manifest runtimeCodeHashes",
+  );
   const boundsInput = object(core.pilotBounds, "core manifest pilotBounds");
   return {
     generation: core.generation,
@@ -501,6 +517,15 @@ function normalizeCoreManifest(input) {
       CORE_CONTRACTS.map((name) => [
         name,
         address(contractsInput[name], `core manifest contracts.${name}`),
+      ]),
+    ),
+    runtimeCodeHashes: Object.fromEntries(
+      CORE_CONTRACTS.map((name) => [
+        name,
+        bytes32(
+          hashesInput[CORE_RUNTIME_ARTIFACTS[name]],
+          `core manifest runtimeCodeHashes.${CORE_RUNTIME_ARTIFACTS[name]}`,
+        ),
       ]),
     ),
     pilotBounds: {
@@ -1941,6 +1966,13 @@ export async function runV3ActivationPreflight({
     artifact: activationArtifacts.CappedPilotFactoryV1.artifact,
     liveCode: code[CORE_CONTRACTS.indexOf("cappedPilotFactory") + 1],
   });
+  for (const [index, name] of CORE_CONTRACTS.entries()) {
+    if (keccak256(code[index + 1]) !== core.runtimeCodeHashes[name]) {
+      throw new Error(
+        `${CORE_RUNTIME_ARTIFACTS[name]} live runtime bytecode does not match the core manifest`,
+      );
+    }
+  }
 
   sameAddress(
     await contracts.kernel.verifier(),

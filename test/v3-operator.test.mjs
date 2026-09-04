@@ -553,6 +553,7 @@ test("V3 operator passes validated economics to queued execution, not hydrated p
   const economicPolicy = {
     targetConfirmations: 6,
     recoveryBlocks: 12,
+    blockTimeMs: 15000,
     minRevealWindowBlocks: 18,
     minSecondsToExpiry: 3600,
     maxCommitBond: "10000000",

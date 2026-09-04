@@ -279,6 +279,33 @@ contract ClosedLoopPolicyV1Test is Test {
         policy.replaceRemedyIntent(FACILITY, POLICY_ID);
     }
 
+    function test_uncurableAcknowledgedIntentStopsWedgingThePolicyAfterTheCureWindow() public {
+        _evaluate(_adverseProven(75));
+        bytes32 intentId = policy.latestIntent(FACILITY, POLICY_ID);
+        coordinator.publishIntent(intentId, ACTION_DATA);
+        transport.setAcknowledged(true);
+        coordinator.syncAcknowledgement(intentId);
+
+        vm.expectRevert(ClosedLoopPolicyV1.RemedyPending.selector);
+        _evaluate(_adverseProven(80));
+        vm.expectRevert(ClosedLoopPolicyV1.RemedyNotReplaceable.selector);
+        vm.prank(LENDER);
+        policy.replaceRemedyIntent(FACILITY, POLICY_ID);
+
+        vm.warp(uint256(coordinator.intentOf(intentId).acknowledgedAt) + coordinator.CURE_WINDOW());
+        vm.prank(address(0xBAD));
+        coordinator.timeoutIntent(intentId);
+        assertEq(uint256(coordinator.intentStatus(intentId)), uint256(IRemedyCoordinatorV1.IntentStatus.Expired));
+
+        vm.prank(LENDER);
+        bytes32 replacementIntent = policy.replaceRemedyIntent(FACILITY, POLICY_ID);
+        assertEq(policy.latestIntent(FACILITY, POLICY_ID), replacementIntent);
+        assertEq(coordinator.intentExecutionId(replacementIntent), coordinator.intentExecutionId(intentId));
+        assertEq(
+            uint256(coordinator.intentStatus(replacementIntent)), uint256(IRemedyCoordinatorV1.IntentStatus.Recorded)
+        );
+    }
+
     function test_overlappingAdverseAndCurePredicatesAreRejectedAtTouchingWindowBoundary() public {
         ClosedLoopPolicyV1.Configuration memory configuration = _configuration();
         configuration.adverseRule.emitter = configuration.cureRule.eventRule.emitter;

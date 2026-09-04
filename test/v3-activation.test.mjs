@@ -151,6 +151,8 @@ function fixture() {
     hunter: hunter.address,
   };
   const core = {
+    schemaVersion: 2,
+    status: "deployed-qualified",
     generation: "v3-core",
     chainId: 102031,
     verifier: "0x0000000000000000000000000000000000000FD2",
@@ -165,6 +167,14 @@ function fixture() {
       cappedPilotFactory: ADDRESS("5"),
       multiChainEventPolicy: ADDRESS("6"),
       proofJobs: ADDRESS("7"),
+    },
+    runtimeCodeHashes: {
+      PolicyKernelV2: HASH("a"),
+      VerifiedCreditStateV1: HASH("b"),
+      PolicyRegistryV1: HASH("c"),
+      CappedPilotFactoryV1: HASH("d"),
+      MultiChainEventPolicyV1: HASH("e"),
+      ProofJobsV1: HASH("f"),
     },
     pilotBounds: {
       maximumFacilityLimit: "100000000000",
@@ -864,6 +874,17 @@ test("preflight verifies live empty state, four signers, exact allowances, and p
       core.contracts.proofJobs,
     ].map((address) => address.toLowerCase()),
   );
+  const boundCore = {
+    ...core,
+    runtimeCodeHashes: {
+      PolicyKernelV2: keccak256("0x6000"),
+      VerifiedCreditStateV1: keccak256("0x6000"),
+      PolicyRegistryV1: keccak256("0x6000"),
+      CappedPilotFactoryV1: keccak256(factoryRuntime),
+      MultiChainEventPolicyV1: keccak256(policyRuntime),
+      ProofJobsV1: keccak256("0x6000"),
+    },
+  };
   const provider = {
     getNetwork: async () => ({ chainId: 102031n }),
     getBlock: async () => ({ number: 5_400_000, timestamp: 1_788_091_545 }),
@@ -938,7 +959,7 @@ test("preflight verifies live empty state, four signers, exact allowances, and p
     asset,
     contracts,
     config,
-    coreManifest: core,
+    coreManifest: boundCore,
     activationArtifacts: {
       CappedPilotFactoryV1: {
         hash: HASH("7"),
@@ -971,7 +992,7 @@ test("preflight verifies live empty state, four signers, exact allowances, and p
         asset,
         contracts,
         config,
-        coreManifest: core,
+        coreManifest: boundCore,
         activationArtifacts: {
           CappedPilotFactoryV1: {
             hash: HASH("7"),
@@ -997,7 +1018,7 @@ test("preflight verifies live empty state, four signers, exact allowances, and p
         asset: { ...asset, allowance: async () => 1n },
         contracts,
         config,
-        coreManifest: core,
+        coreManifest: boundCore,
         activationArtifacts: {
           CappedPilotFactoryV1: {
             hash: HASH("7"),
@@ -1011,6 +1032,80 @@ test("preflight verifies live empty state, four signers, exact allowances, and p
         },
       }),
     /allowance must be exactly zero/,
+  );
+
+  await assert.rejects(
+    () =>
+      runV3ActivationPreflight({
+        provider: {
+          ...provider,
+          getCode: async (address) =>
+            address === core.contracts.policyKernel
+              ? "0x6001"
+              : provider.getCode(address),
+        },
+        sourceProvider,
+        attestedHeight: 25_867_930,
+        signers,
+        asset,
+        contracts,
+        config,
+        coreManifest: boundCore,
+        activationArtifacts: {
+          CappedPilotFactoryV1: {
+            hash: HASH("7"),
+            artifact: factoryArtifact,
+          },
+          MultiChainEventPolicyV1: {
+            hash: HASH("8"),
+            artifact: policyArtifact,
+          },
+          RecourseFacilityV3: { hash: HASH("9"), artifact: {} },
+        },
+      }),
+    /PolicyKernelV2 live runtime bytecode does not match the core manifest/,
+  );
+});
+
+test("core manifest binding requires a qualified schema and every core runtime hash", () => {
+  const { core, input } = fixture();
+  assert.throws(
+    () => validateV3ActivationConfig(input, { ...core, schemaVersion: 1 }),
+    /core manifest schemaVersion must be 2/,
+  );
+  assert.throws(
+    () => validateV3ActivationConfig(input, { ...core, status: "deployed" }),
+    /core manifest status must be deployed-qualified/,
+  );
+  assert.throws(
+    () =>
+      validateV3ActivationConfig(input, {
+        ...core,
+        runtimeCodeHashes: undefined,
+      }),
+    /core manifest runtimeCodeHashes must be an object/,
+  );
+  assert.throws(
+    () =>
+      validateV3ActivationConfig(input, {
+        ...core,
+        runtimeCodeHashes: {
+          ...core.runtimeCodeHashes,
+          VerifiedCreditStateV1: undefined,
+        },
+      }),
+    /core manifest runtimeCodeHashes\.VerifiedCreditStateV1 must be bytes32/,
+  );
+  assert.deepEqual(
+    validateV3ActivationConfig(input, core).core.runtimeCodeHashes,
+    {
+      policyKernel: HASH("a"),
+      verifiedCreditState: HASH("b"),
+      policyRegistry: HASH("c"),
+      cappedPilotFactory: HASH("d"),
+      multiChainEventPolicy: HASH("e"),
+      proofJobs: HASH("f"),
+    },
   );
 });
 

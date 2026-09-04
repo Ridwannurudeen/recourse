@@ -271,6 +271,73 @@ contract RemedyLifecycleV1Test is Test {
         assertEq(uint256(coordinator.intentStatus(intentId)), uint256(IRemedyCoordinatorV1.IntentStatus.Expired));
     }
 
+    function test_acknowledgedIntentExpiresOnlyAfterTheCureWindowAndBecomesReplaceable() public {
+        bytes32 intentId = coordinator.recordIntent(_request());
+        coordinator.publishIntent(intentId, ACTION_DATA);
+        transport.setAcknowledged(transport.lastMessageId(), true);
+        coordinator.syncAcknowledgement(intentId);
+        uint64 acknowledgedAt = coordinator.intentOf(intentId).acknowledgedAt;
+        assertEq(acknowledgedAt, uint64(block.timestamp));
+
+        vm.warp(uint256(acknowledgedAt) + coordinator.CURE_WINDOW() - 1);
+        vm.expectRevert(RemedyCoordinatorV1.IntentStillLive.selector);
+        vm.prank(address(0xBAD));
+        coordinator.timeoutIntent(intentId);
+
+        vm.warp(uint256(acknowledgedAt) + coordinator.CURE_WINDOW());
+        vm.prank(address(0xBAD));
+        coordinator.timeoutIntent(intentId);
+        assertEq(uint256(coordinator.intentStatus(intentId)), uint256(IRemedyCoordinatorV1.IntentStatus.Expired));
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                RemedyCoordinatorV1.WrongStatus.selector,
+                IRemedyCoordinatorV1.IntentStatus.Acknowledged,
+                IRemedyCoordinatorV1.IntentStatus.Expired
+            )
+        );
+        coordinator.recordCure(intentId, keccak256("late cure"));
+
+        bytes32 replacementIntent = coordinator.recordReplacement(intentId, uint64(block.timestamp + 1 days));
+        assertEq(
+            uint256(coordinator.intentStatus(replacementIntent)), uint256(IRemedyCoordinatorV1.IntentStatus.Recorded)
+        );
+    }
+
+    function test_cureRecordedInsideTheCureWindowStillClosesTheLoop() public {
+        bytes32 intentId = coordinator.recordIntent(_request());
+        coordinator.publishIntent(intentId, ACTION_DATA);
+        transport.setAcknowledged(transport.lastMessageId(), true);
+        coordinator.syncAcknowledgement(intentId);
+
+        vm.warp(uint256(coordinator.intentOf(intentId).acknowledgedAt) + coordinator.CURE_WINDOW() - 1);
+        bytes32 cureEvidence = keccak256("verified cure event");
+        coordinator.recordCure(intentId, cureEvidence);
+        assertEq(uint256(coordinator.intentStatus(intentId)), uint256(IRemedyCoordinatorV1.IntentStatus.Cured));
+        assertEq(coordinator.intentOf(intentId).cureEvidenceDigest, cureEvidence);
+    }
+
+    function test_lateAcknowledgementPromotionStartsTheCureWindowAtAcknowledgement() public {
+        IRemedyCoordinatorV1.IntentRequest memory request = _request();
+        request.expiry = uint64(block.timestamp + 10);
+        bytes32 intentId = coordinator.recordIntent(request);
+        coordinator.publishIntent(intentId, ACTION_DATA);
+        transport.setAcknowledged(transport.lastMessageId(), true);
+
+        vm.warp(uint256(request.expiry) + coordinator.CURE_WINDOW() + 1);
+        vm.prank(address(0xBAD));
+        coordinator.timeoutIntent(intentId);
+        assertEq(uint256(coordinator.intentStatus(intentId)), uint256(IRemedyCoordinatorV1.IntentStatus.Acknowledged));
+        assertEq(coordinator.intentOf(intentId).acknowledgedAt, uint64(block.timestamp));
+
+        vm.expectRevert(RemedyCoordinatorV1.IntentStillLive.selector);
+        vm.prank(address(0xBAD));
+        coordinator.timeoutIntent(intentId);
+
+        coordinator.recordCure(intentId, keccak256("late relay cure"));
+        assertEq(uint256(coordinator.intentStatus(intentId)), uint256(IRemedyCoordinatorV1.IntentStatus.Cured));
+    }
+
     function test_missingAcknowledgementHasBoundedAuthorizedRetriesAndPermissionlessFailure() public {
         bytes32 intentId = coordinator.recordIntent(_request());
         coordinator.publishIntent(intentId, ACTION_DATA);

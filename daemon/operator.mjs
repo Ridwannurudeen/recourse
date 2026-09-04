@@ -78,6 +78,7 @@ function executionPolicy(config) {
   return {
     targetConfirmations: config.targetConfirmations,
     recoveryBlocks: config.recoveryBlocks,
+    blockTimeMs: config.blockTimeMs,
     minRevealWindowBlocks: config.minRevealWindowBlocks,
     minSecondsToExpiry: config.minSecondsToExpiry,
     maxCommitBond: config.maxCommitBond.toString(),

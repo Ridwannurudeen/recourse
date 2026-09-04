@@ -100,7 +100,7 @@
     },
     "RemedyCoordinatorV1": {
       "path": "out/RemedyCoordinatorV1.sol/RemedyCoordinatorV1.json",
-      "keccak256": "0x3ef9ba3a4f37a50413974d97eae01dd2e7592abc9b5ebbaefc83541cb35e62d2"
+      "keccak256": "0x3941a6979c8d4d08ec037cd14d9f63be451778cc166c48cfe4e0510cd2640f35"
     },
     "BoundedRemedyReceiverV1": {
       "path": "out/BoundedRemedyReceiverV1.sol/BoundedRemedyReceiverV1.json",

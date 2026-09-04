@@ -16,6 +16,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
 const UINT256_MAX = (1n << 256n) - 1n;
+const DEFAULT_BLOCK_TIME_MS = 15_000;
 
 export class OperatorIncidentError extends Error {
   constructor(message) {
@@ -401,6 +402,11 @@ export function validateExecutionPolicy(policy) {
       "Minimum reveal window must cover target confirmations and recovery blocks",
     );
   }
+  const blockTimeMs =
+    policy?.blockTimeMs === undefined
+      ? DEFAULT_BLOCK_TIME_MS
+      : unsignedInteger(policy.blockTimeMs, "block time");
+  if (blockTimeMs < 1_000) throw new Error("Invalid block time");
   const minSecondsToExpiry = unsignedInteger(
     policy?.minSecondsToExpiry,
     "minimum seconds to expiry",
@@ -432,6 +438,7 @@ export function validateExecutionPolicy(policy) {
   return {
     targetConfirmations,
     recoveryBlocks,
+    blockTimeMs,
     minRevealWindowBlocks,
     minSecondsToExpiry,
     maxCommitBond,
@@ -495,6 +502,7 @@ export function validateOperatorConfig(config) {
   const executionPolicy = validateExecutionPolicy({
     targetConfirmations: config.targetConfirmations,
     recoveryBlocks: config.recoveryBlocks,
+    blockTimeMs: config.blockTimeMs,
     minRevealWindowBlocks: config.economics?.minRevealWindowBlocks,
     minSecondsToExpiry: config.economics?.minSecondsToExpiry,
     maxCommitBond: config.economics?.maxCommitBond,

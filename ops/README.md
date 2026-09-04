@@ -423,10 +423,10 @@ drop-in:
 LoadCredential=recourse-hunter-private-key:/etc/recourse/operator-hunter.key
 ```
 
-systemd exposes that file through `CREDENTIALS_DIRECTORY`; the V3 runner uses it
-before the development-only `HUNTER_PRIVATE_KEY` fallback. Never define both in
-production. Run `systemd-analyze verify` against the unit and drop-in on the
-target host before any start.
+systemd exposes that file through `CREDENTIALS_DIRECTORY`; the V3 and Horizon 1
+runners use it before the development-only `HUNTER_PRIVATE_KEY` fallback. Never
+define both in production. Run `systemd-analyze verify` against the unit and
+drop-in on the target host before any start.
 
 Before execution is authorized, stop the service at a durable boundary and
 create an authenticated encrypted backup of all of

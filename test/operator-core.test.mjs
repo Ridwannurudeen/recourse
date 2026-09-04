@@ -162,7 +162,27 @@ test("execution economics require enough reveal recovery time and conservative r
       }),
     /cover target confirmations and recovery blocks/,
   );
+  assert.throws(
+    () =>
+      validateExecutionPolicy({
+        targetConfirmations: 6,
+        recoveryBlocks: 12,
+        blockTimeMs: 500,
+        minRevealWindowBlocks: 18,
+        minSecondsToExpiry: 60,
+        maxCommitBond: "10",
+        minProofReimbursement: "20",
+        minRewardToBondBps: 20_000,
+        exclusiveSigner: true,
+      }),
+    /invalid block time/i,
+  );
   const policy = validateOperatorConfig(operatorConfig());
+  assert.equal(policy.blockTimeMs, 15_000);
+  assert.equal(
+    validateOperatorConfig(operatorConfig({ blockTimeMs: 20_000 })).blockTimeMs,
+    20_000,
+  );
   const safeJob = {
     commitBond: "10",
     proofReimbursement: "20",

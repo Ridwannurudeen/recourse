@@ -183,7 +183,7 @@ async function main() {
     targetConfirmations: executionPolicy.targetConfirmations,
     maxReceiptPolls:
       executionPolicy.targetConfirmations + executionPolicy.recoveryBlocks,
-    receiptPollIntervalMs: 1_000,
+    receiptPollIntervalMs: executionPolicy.blockTimeMs,
     signal: shutdownController.signal,
     feePolicy: executionPolicy.feePolicy,
   };

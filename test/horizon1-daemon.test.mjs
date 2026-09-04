@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { AbiCoder, getAddress, keccak256 } from "ethers";
 import {
@@ -436,6 +437,12 @@ test("incident resume state requires a durable reason", () => {
     },
   };
   assert.equal(validateResumeState(state, EXPECTED).phase, "incident");
+});
+
+test("Horizon 1 runtime signs with the systemd credential, not a raw environment key", async () => {
+  const source = await readFile("daemon/horizon1.mjs", "utf8");
+  assert.match(source, /loadHunterPrivateKey\(\), provider\)/);
+  assert.doesNotMatch(source, /process\.env\.HUNTER_PRIVATE_KEY/);
 });
 
 test("runner forwards abort to the child and reports a durable-boundary stop", async () => {

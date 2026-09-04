@@ -42,6 +42,16 @@ comparison, and can require the encoded bytes to match an expected on-chain
 configuration hash. Registry calldata aggregation remains dry-run only and
 preserves ordered call arrays without accepting a signer.
 
+`@recourse/sdk` is not published to npm. Do not run `npm install @recourse/sdk`;
+that name is unclaimed, so it would resolve to a package this project does not
+control. Install it from a clone of this repository instead, pointing at the
+`sdk` directory:
+
+```sh
+git clone https://github.com/Ridwannurudeen/recourse.git
+npm install ./recourse/sdk
+```
+
 ```js
 import {
   buildPortfolioPoolCalldata,

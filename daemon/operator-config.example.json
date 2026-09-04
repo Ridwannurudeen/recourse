@@ -8,6 +8,7 @@
   "discoveryChunkSize": 2000,
   "targetConfirmations": 6,
   "recoveryBlocks": 12,
+  "blockTimeMs": 15000,
   "exclusiveSigner": false,
   "economics": {
     "maxCommitBond": "10000000",
