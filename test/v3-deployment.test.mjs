@@ -859,6 +859,34 @@ test("V3 live execution planning rejects fee-cap breaches, mixed fee modes, and 
   );
 });
 
+test("V3 live execution planning accepts CC3's zero priority fee", async () => {
+  const wallet = Wallet.createRandom();
+  const input = fixtureConfig(wallet.address);
+  const config = validateV3DeploymentConfig(input);
+  const plan = await buildV3DeploymentPlan({
+    config,
+    artifacts: artifacts(input),
+    startingNonce: STARTING_NONCE,
+    sourceCommit: SOURCE_COMMIT,
+  });
+  const executionPlan = await buildV3DeploymentLiveExecutionPlan({
+    config,
+    plan,
+    signer: {
+      getAddress: async () => wallet.address,
+      populateTransaction: async (request) => ({
+        ...request,
+        type: 2,
+        maxFeePerGas: 1_000_000_000n,
+        maxPriorityFeePerGas: 0n,
+      }),
+    },
+  });
+
+  assert.equal(executionPlan.steps[0].maxFeePerGas, "1000000000");
+  assert.equal(executionPlan.steps[0].maxPriorityFeePerGas, "0");
+});
+
 test("V3 deployment approval expires and binds the chain anchor, source commit, artifacts, and clean scope", async () => {
   const fixture = await deploymentFixture();
   assert.equal(

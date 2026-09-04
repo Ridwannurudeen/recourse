@@ -801,6 +801,25 @@ test("USC live execution planning rejects over-cap and mismatched RPC fee modes"
     () => buildUscRemedyLiveExecutionPlan({ config, plan, signers }),
     /requires an EIP-1559 transaction/,
   );
+
+  for (const [network, wallet] of [
+    ["source", sourceWallet],
+    ["destination", destinationWallet],
+  ]) {
+    signers[network].populateTransaction = async (request) => ({
+      ...request,
+      type: 2,
+      maxFeePerGas: 2n,
+      maxPriorityFeePerGas: 0n,
+    });
+    signers[network].getAddress = async () => wallet.address;
+  }
+  const executionPlan = await buildUscRemedyLiveExecutionPlan({
+    config,
+    plan,
+    signers,
+  });
+  assert.equal(executionPlan.steps[0].maxPriorityFeePerGas, "0");
 });
 
 function artifacts() {

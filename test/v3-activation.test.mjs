@@ -819,6 +819,22 @@ test("activation live execution planning rejects compromised RPC fee envelopes",
       }),
     /requires an EIP-1559 transaction/,
   );
+
+  const executionPlan = await buildV3LiveExecutionPlan({
+    ...common,
+    signers: {
+      lender: {
+        getAddress: async () => wallet.address,
+        populateTransaction: async (request) => ({
+          ...request,
+          type: 2,
+          maxFeePerGas: 10n,
+          maxPriorityFeePerGas: 0n,
+        }),
+      },
+    },
+  });
+  assert.equal(executionPlan.steps[0].maxPriorityFeePerGas, "0");
 });
 
 test("activation reservation fails closed and retains an interrupted lock", (t) => {

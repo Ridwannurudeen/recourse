@@ -223,9 +223,8 @@ function transactionFeeFields(transaction, policy, label) {
     }
     const maxFeePerGas = BigInt(transaction.maxFeePerGas);
     const maxPriorityFeePerGas = BigInt(transaction.maxPriorityFeePerGas);
-    if (maxFeePerGas === 0n || maxPriorityFeePerGas === 0n) {
-      throw new Error(`${label} EIP-1559 fee fields must be positive`);
-    }
+    if (maxFeePerGas === 0n)
+      throw new Error(`${label} maxFeePerGas must be positive`);
     if (maxFeePerGas > policy.maximumFeePerGas) {
       throw new Error(
         `${label} maximumFeePerGas exceeds the configured maximum`,
