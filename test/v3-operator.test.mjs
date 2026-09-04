@@ -887,6 +887,7 @@ test("public reporter is independently sandboxed from protected operator state",
     unit,
     /daemon\/publish-operator-report\.mjs --input \/var\/lib\/recourse-report\/discovery-report\.json --output \/var\/lib\/recourse-report-public\/operator-report\.json/,
   );
+  assert.match(unit, /^StandardError=journal$/m);
   assert.doesNotMatch(unit, /operator\.json|LoadCredential|HUNTER_PRIVATE_KEY/);
   assert.match(timer, /^OnBootSec=15s$/m);
   assert.match(timer, /^OnUnitInactiveSec=30s$/m);

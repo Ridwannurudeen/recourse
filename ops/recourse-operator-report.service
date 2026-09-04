@@ -14,6 +14,7 @@ Environment=HORIZON1_DISCOVERY_CURSOR_FILE=/var/lib/recourse-report/discovery-cu
 ExecStart=/usr/bin/node /opt/recourse-operator/current/daemon/job-discovery.mjs --output /var/lib/recourse-report/discovery-report.json
 ExecStart=/usr/bin/node /opt/recourse-operator/current/daemon/publish-operator-report.mjs --input /var/lib/recourse-report/discovery-report.json --output /var/lib/recourse-report-public/operator-report.json
 StandardOutput=null
+StandardError=journal
 UMask=0027
 NoNewPrivileges=true
 CapabilityBoundingSet=
