@@ -253,7 +253,9 @@ It uses pull withdrawals and claims, permissionless cash-only finalization after
 the deadline, lender-only facility loss settlement after maturity plus the pool's
 recovery delay, late-recovery redistribution, and largest-remainder distribution
 so no finalized asset unit is stranded. Proof Jobs spending is limited to the exact
-facility, asset, policy, kernel, venue, gross service cap, and job duration.
+facility, asset, policy, kernel, venue, gross service cap, and job duration. The
+immutable gross service cap cannot exceed 500 basis points (5%) of maximum pool
+assets.
 Remedy-capable allocations freeze the exact evaluator and coordinator before
 funding; only the manager can forward a publish retry or policy-authorized
 replacement, and that bounded servicing path remains available after pool

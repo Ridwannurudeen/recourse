@@ -359,6 +359,7 @@ export const portfolioMandateV1Abi = [
 
 export const portfolioPoolV1Abi = [
   "constructor(address asset_,address manager_,uint256 maximumPoolAssets_,uint256 maximumServiceBudget_,uint64 maximumServiceJobDuration_,uint16 maximumFacilityCount_,uint64 fundingDeadline_,uint64 recoveryDelayBlocks_)",
+  "function MAXIMUM_SERVICE_BUDGET_BPS() view returns (uint256)",
   "function MAXIMUM_INVESTORS() view returns (uint256)",
   "function asset() view returns (address)",
   "function manager() view returns (address)",

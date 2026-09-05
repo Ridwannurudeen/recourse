@@ -241,7 +241,7 @@ contract PortfolioPoolV1Test is Test {
         kernel = new PolicyKernelV2(new MockVerifier());
         proofJobs = new ProofJobsV1(kernel);
         kernel.setProofJobs(address(proofJobs));
-        pool = new PortfolioPoolV1(token, MANAGER, 1_000, 100, 1 days, 1, uint64(block.timestamp + 7 days), 10);
+        pool = new PortfolioPoolV1(token, MANAGER, 1_000, 50, 1 days, 1, uint64(block.timestamp + 7 days), 10);
         factory = new CappedPilotFactoryV1(
             token, address(kernel), address(pool), BORROWER, GUARDIAN, 1_000, 1_000, 2_000, 0, 100, 0, 1
         );
@@ -328,6 +328,13 @@ contract PortfolioPoolV1Test is Test {
         assertEq(pool.candidateCount(), 1);
         assertEq(pool.candidateAt(0), address(facility));
         assertEq(uint256(pool.status()), uint256(PortfolioPoolV1.PoolStatus.Configuring));
+    }
+
+    function test_serviceBudgetCannotExceedFivePercentOfPoolAssets() public {
+        assertEq(pool.maximumServiceBudget(), 50);
+        assertEq(pool.MAXIMUM_SERVICE_BUDGET_BPS(), 500);
+        vm.expectRevert(PortfolioPoolV1.InvalidConfiguration.selector);
+        new PortfolioPoolV1(token, MANAGER, 1_000, 51, 1 days, 1, uint64(block.timestamp + 7 days), 10);
     }
 
     function test_fullRecoveryFlowsThroughExactMandateAndPullClaims() public {

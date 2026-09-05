@@ -15,15 +15,15 @@
   "artifacts": {
     "PortfolioPoolV1": {
       "path": "out/PortfolioPoolV1.sol/PortfolioPoolV1.json",
-      "keccak256": "0x631de1df4ed26273f69f0868c6aeb8867c6180fa9bb43a7f5771bedba99720ba"
+      "keccak256": "0x8b0e089450e23696b6f54e0923aea88556a4c39325061e88e964249af2d4ee3e"
     },
     "CappedPilotFactoryV1": {
       "path": "out/CappedPilotFactoryV1.sol/CappedPilotFactoryV1.json",
-      "keccak256": "0x8655ebfd1e9d2e75d9499c35818ff4155f15b08a1e2bcbdab99f81260e4afc75"
+      "keccak256": "0x06c91f836e88a96dfe861ca2e14fa268db7cd87f9758a4788365c08d7c40c41b"
     },
     "PortfolioMandateV1": {
       "path": "out/PortfolioMandateV1.sol/PortfolioMandateV1.json",
-      "keccak256": "0xcaf77a97ff4de228069c8077480bddbd2dedeb81740f29623cf333ff4c1d29dd"
+      "keccak256": "0x0cf296dbead1600d6f0f585a085166e1295dbca53696d7a7405e9c4d75c31246"
     }
   },
   "transactionPolicy": {

@@ -70,6 +70,7 @@ contract PortfolioPoolV1 is ERC20, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     uint256 public constant MAXIMUM_INVESTORS = 64;
+    uint256 public constant MAXIMUM_SERVICE_BUDGET_BPS = 500;
 
     enum PoolStatus {
         Configuring,
@@ -182,7 +183,8 @@ contract PortfolioPoolV1 is ERC20, ReentrancyGuard {
     ) ERC20("Recourse Portfolio Share", "rPORT") {
         if (address(asset_) == address(0) || manager_ == address(0)) revert ZeroAddress();
         if (
-            maximumPoolAssets_ == 0 || maximumServiceBudget_ > maximumPoolAssets_
+            maximumPoolAssets_ == 0
+                || maximumServiceBudget_ > Math.mulDiv(maximumPoolAssets_, MAXIMUM_SERVICE_BUDGET_BPS, 10_000)
                 || (maximumServiceBudget_ != 0 && maximumServiceJobDuration_ == 0) || maximumFacilityCount_ == 0
                 || fundingDeadline_ <= block.timestamp || recoveryDelayBlocks_ == 0
         ) revert InvalidConfiguration();

@@ -19,7 +19,11 @@ const ADDRESS = (suffix) => getAddress(`0x${suffix.padStart(40, "0")}`);
 
 test("PortfolioPoolV1 ABI and calldata cover the complete local capital lifecycle", () => {
   const pool = new Interface(portfolioPoolV1Abi);
-  assert.equal(pool.fragments.length, 121);
+  assert.equal(pool.fragments.length, 122);
+  assert.equal(
+    pool.getFunction("MAXIMUM_SERVICE_BUDGET_BPS").name,
+    "MAXIMUM_SERVICE_BUDGET_BPS",
+  );
   assert.equal(pool.getFunction("setMandate").selector, "0x52ea357a");
   assert.equal(pool.getFunction("allocate").name, "allocate");
   assert.equal(pool.getFunction("settleAllocation").name, "settleAllocation");

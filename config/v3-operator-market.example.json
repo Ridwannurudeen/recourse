@@ -15,7 +15,7 @@
   "artifacts": {
     "OperatorMarketV1": {
       "path": "out/OperatorMarketV1.sol/OperatorMarketV1.json",
-      "keccak256": "0x5945cda7cae8564113361a2f22f8e2c3c3ffff4d2f7bf68b5a7ffb38a7e4a4eb"
+      "keccak256": "0x5a81d7de0cc23ed0ff7ad76d457cd896ee0b8d524285fedad44f11b2b9ce626f"
     }
   },
   "transactionPolicy": {

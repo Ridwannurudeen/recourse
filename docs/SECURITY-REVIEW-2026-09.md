@@ -11,10 +11,8 @@ manually triaged. The review began from commit
 `b95444875aedb5abcacbf9b6299fc1ecbfb867b1` on 2026-09-04.
 
 The review found 4 HIGH, 15 MEDIUM, approximately 22 LOW, and approximately 22
-informational findings. All four HIGH findings and 14 of the 15 MEDIUM findings
-were remediated. The remaining MEDIUM is an undeployed portfolio configuration
-risk that requires an accountable owner to set a conservative service-budget
-cap before any deployment can be approved.
+informational findings. All four HIGH findings and all 15 MEDIUM findings were
+remediated.
 
 ## HIGH findings
 
@@ -35,7 +33,7 @@ cap before any deployment can be approved.
 | M4 | Proof Jobs | A borrower could unilaterally pause draws and thereby veto the pool's only evidence-admission path. | Fixed. Draw-pause state no longer gates `ProofJobsV1.createJob`; it still controls draws. |
 | M5 | Operator market | Any address could accept a public quote and force capture of the operator's bond at gas-only cost. | Fixed. Quotes require a nonzero intended sponsor, and only that sponsor may accept. |
 | M6 | Operator market | The service verifier was an unconstrained trust dependency with no reference implementation. | Fixed. `OperatorServiceVerifierV1` binds the complete service context in an EIP-712 receipt and supports both ECDSA and ERC-1271 attestors. |
-| M7 | Portfolio | Configuration permits `maximumServiceBudget == maximumPoolAssets`, placing all investor capital within the manager's service-spending authority. | Open, owner-gated, and undeployed. The checked-in example retains placeholders; an accountable approver must cap the service budget to a conservative fraction of pool assets before deployment. |
+| M7 | Portfolio | Configuration permitted `maximumServiceBudget == maximumPoolAssets`, placing all investor capital within the manager's service-spending authority. | Fixed. `PortfolioPoolV1` rejects deployments whose immutable service budget exceeds 500 basis points (5%) of maximum pool assets; deployments may choose a lower or zero budget. A regression test covers the boundary. |
 | M8 | Release tooling | Approval files used only an unkeyed hash over editable JSON, so an editor could alter the envelope and recompute its commitment. | Fixed. Broadcast validation requires an approval commitment supplied outside the approval file and independently derives the complete envelope digest. |
 | M9 | Release tooling | Activation approval lacked effective integrity, bounded time anchoring, and canonical live-chain qualification checks. | Fixed. Activation uses the external approval commitment, validates the live qualification rather than the approval's self-reported copy, and enforces live timestamp and canonical-anchor consistency. Extension and USC validators enforce the same issued-at invariant. |
 | M10 | Release tooling | Config and prerequisite-manifest paths were unconfined, allowing out-of-repository substitutions to be labeled with a clean audited commit. | Fixed. Live tools require repository-confined, tracked, clean inputs, record tracked Git blob commitments, and bind source commit and deployable-scope state. |
