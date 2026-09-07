@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { AbiCoder, getAddress, keccak256 } from "ethers";
+import { AbiCoder, Interface, getAddress, keccak256 } from "ethers";
 import {
   assertProofPreflight,
   assertProvenTransactionMatchesSource,
@@ -475,6 +475,7 @@ test("commit pre-broadcast rejects an evidence digest reserved by another hunter
 });
 
 test("every mined transaction revert retires its journal into a durable incident", async () => {
+  const jobsInterface = new Interface(["error EvidenceAlreadyReserved()"]);
   for (const kind of ["approval", "commit", "reveal", "release", "claim"]) {
     const state = {
       ...resumeFixture(),
@@ -488,19 +489,29 @@ test("every mined transaction revert retires its journal into a durable incident
               : "committed",
       pending: { kind, transactionHash: HASH("90") },
     };
+    if (kind === "approval" || kind === "commit") {
+      delete state.commitBlock;
+      delete state.commitTransactionHash;
+    }
     let written;
     const reverted = new OperatorIncidentError(`${kind} transaction reverted`);
-    reverted.receipt = { status: 0, blockNumber: 5_377_801 };
+    reverted.receipt = {
+      hash: HASH("90"),
+      status: 0,
+      blockNumber: 5_377_801,
+      blockHash: HASH("91"),
+    };
     reverted.revert = {
-      data: "0x08c379a0",
-      name: "Error",
-      reason: "reservation lost",
+      data: jobsInterface.encodeErrorResult("EvidenceAlreadyReserved"),
+      name: null,
+      args: [],
+      reason: null,
     };
     await assert.rejects(
       recoverHorizon1TargetState({
         provider: {},
         jobsRead: {},
-        jobs: {},
+        jobs: { interface: jobsInterface },
         hunter: { address: HUNTER },
         jobId: 1n,
         state,
@@ -515,12 +526,33 @@ test("every mined transaction revert retires its journal into a durable incident
           written = next;
         },
       }),
-      OperatorIncidentError,
+      (error) =>
+        error instanceof OperatorIncidentError &&
+        error.terminalIncident === true &&
+        error.message === reverted.message,
     );
     assert.equal(written.phase, "incident");
     assert.equal(written.pending, null);
     assert.equal(written.incident.transaction.kind, kind);
-    assert.deepEqual(written.incident.revert, reverted.revert);
+    assert.equal(written.incident.reason, reverted.message);
+    assert.deepEqual(written.incident.receipt, {
+      transactionHash: HASH("90"),
+      blockNumber: 5_377_801,
+      blockHash: HASH("91"),
+      status: 0,
+    });
+    assert.deepEqual(written.incident.revert, {
+      ...reverted.revert,
+      name: "EvidenceAlreadyReserved",
+      reason: "EvidenceAlreadyReserved()",
+    });
+    const resumed = validateResumeState(written, EXPECTED);
+    await assert.rejects(
+      recoverHorizon1TargetState({ state: resumed }),
+      (error) =>
+        error instanceof OperatorIncidentError &&
+        error.message === reverted.message,
+    );
   }
 });
 

@@ -301,7 +301,10 @@ export function validateResumeState(state, expected) {
   if (
     state.phase === "committed" ||
     state.phase === "released" ||
-    state.phase === "incident" ||
+    (state.phase === "incident" &&
+      (!["approval", "commit"].includes(state.incident?.transaction?.kind) ||
+        state.commitBlock !== undefined ||
+        state.commitTransactionHash !== undefined)) ||
     state.phase === "revealed"
   ) {
     commitBlock = requireUnsignedInteger(state.commitBlock, "commit block");

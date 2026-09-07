@@ -51,6 +51,12 @@ commit/reveal proof-job market, and an ERC-20 facility factory. Seven Horizon 1 
 deployed on CC3 around an Active demonstration facility denominated in a fixed-supply testnet
 token. The contracts have not been independently audited.
 
+These testnet demonstrations are separate from the current V3 roadmap build.
+The recorded inactive V3 core predates the current interfaces and must be freshly
+redeployed before activation. The current V3 build is undeployed: there is no design
+partner, live pilot facility, published SDK, opened operator market, or capitalized
+portfolio pool.
+
 ## Attestcoin Protocol Integration Summary
 
 Recourse uses Attestcoin as the evidence and adjudication layer for both live generations.
@@ -102,7 +108,7 @@ Full technical detail: `docs/attestcoin-integration.md` in the repository.
 
 ## GitHub Repository URL
 
-*(owner action — the repository must be public before submission)*
+https://github.com/Ridwannurudeen/recourse
 
 ## Project Deck or Whitepaper (PDF URL)
 
@@ -137,6 +143,6 @@ Owner confirms these personally.
 - [x] Deployed on a testnet (CC3 Testnet, chainId 102031)
 - [x] Integrates the Attestcoin Protocol as a core feature
 - [x] Does not infringe third-party IP (permissively licensed dependencies, required notices retained)
-- [ ] Public GitHub repository with README — owner action
+- [x] Public GitHub repository with README
 - [ ] Demo video — owner action
 - [ ] Deck / whitepaper PDF — owner action
