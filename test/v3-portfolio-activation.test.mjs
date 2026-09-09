@@ -17,6 +17,7 @@ import {
   keccak256,
 } from "ethers";
 import { encodeConfigureMultiChainPolicy } from "../sdk/src/core.mjs";
+import { runPortfolioActivation } from "../scripts/activate-v3-portfolio.mjs";
 import {
   buildPortfolioPlan,
   createPortfolioApproval,
@@ -128,6 +129,151 @@ test("portfolio preflight accepts a signerless clean chain and rejects every bou
     Number(f.manifests.portfolio.constructors.PortfolioPoolV1.values[6]) - 3600;
   await assert.rejects(runPortfolioPreflight(f), /one-hour/);
   f.block.timestamp = timestamp;
+});
+
+test("portfolio preflight survives a head fork while finalized remains stable", async () => {
+  const f = await chainFixture();
+  const head = { ...f.block, number: f.block.number + 3, hash: HASH("8") };
+  const getBlock = f.provider.getBlock;
+  f.provider.getBlock = async (tag) =>
+    tag === "latest"
+      ? head
+      : tag === head.number
+        ? { ...head, hash: HASH("9") }
+        : getBlock(tag);
+  const result = await runPortfolioPreflight(f);
+  assert.deepEqual(result.targetBlock, f.block);
+});
+
+test("portfolio preflight rejects a changed finalized snapshot hash", async () => {
+  const f = await chainFixture();
+  const getBlock = f.provider.getBlock;
+  f.provider.getBlock = async (tag) =>
+    tag === f.block.number ? { ...f.block, hash: HASH("9") } : getBlock(tag);
+  await assert.rejects(
+    runPortfolioPreflight(f),
+    /Preflight snapshot canonical hash mismatch/,
+  );
+});
+
+test("portfolio preflight waits for finalized to include confirmed receipts and bounds stalled finality", async () => {
+  const f = await chainFixture(true, 1);
+  const receiptBlock = f.block.number;
+  const journal = {
+    ...f.plan,
+    steps: f.plan.transactionPlan.map((step, index) =>
+      index === 0
+        ? {
+            ...step,
+            status: "confirmed",
+            intent: {
+              ...f.plan.executionPlan.steps[index],
+              transactionHash: HASH("7"),
+            },
+            receipt: {
+              hash: HASH("7"),
+              blockNumber: receiptBlock,
+              blockHash: f.block.hash,
+              status: 1,
+            },
+          }
+        : { ...step, status: "planned" },
+    ),
+  };
+  const getBlock = f.provider.getBlock;
+  const getCode = f.provider.getCode;
+  let finalizedReads = 0;
+  let stalled = false;
+  const waits = [];
+  f.provider.getBlock = async (tag) => {
+    if (tag === "finalized") {
+      finalizedReads += 1;
+      return {
+        ...f.block,
+        number: stalled || finalizedReads < 3 ? receiptBlock - 1 : receiptBlock,
+      };
+    }
+    return getBlock(tag);
+  };
+  f.provider.getCode = async (address, blockTag) => {
+    assert.ok(finalizedReads >= 3, "state must wait for finality");
+    assert.ok(blockTag >= receiptBlock, "state must include the receipt");
+    return getCode(address, blockTag);
+  };
+  const options = { ...f, journal, delay: async (ms) => waits.push(ms) };
+  assert.equal((await runPortfolioPreflight(options)).confirmedSteps, 1);
+  assert.deepEqual(waits, [15000, 15000]);
+  finalizedReads = 0;
+  waits.length = 0;
+  stalled = true;
+  await assert.rejects(
+    runPortfolioPreflight(options),
+    /Finalized block.*receipt block/,
+  );
+  assert.equal(finalizedReads, f.config.transactionPolicy.maximumReceiptPolls);
+  assert.equal(
+    waits.length,
+    f.config.transactionPolicy.maximumReceiptPolls - 1,
+  );
+});
+
+test("portfolio qualification and approval bind the finalized preflight snapshot", async (t) => {
+  const values = fixture();
+  const registry = values.manifests.activation.registry;
+  registry.runtimeCodeHash = keccak256("0x60006000");
+  registry.runtimeVariantId = keccak256(
+    AbiCoder.defaultAbiCoder().encode(
+      ["bytes32", "bytes32", "bytes32"],
+      [
+        registry.releaseId,
+        registry.runtimeCodeHash,
+        registry.constructorArgumentsHash,
+      ],
+    ),
+  );
+  const f = await chainFixture(false, 0, undefined, values);
+  const directory = mkdtempSync(
+    join(tmpdir(), "recourse-portfolio-finalized-"),
+  );
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const approvalPath = join(directory, "approval.json");
+  const head = {
+    ...f.block,
+    number: f.block.number + 3,
+    timestamp: f.block.timestamp + 45,
+    hash: HASH("8"),
+  };
+  const getBlock = f.provider.getBlock;
+  f.provider.getBlock = async (tag) =>
+    tag === "latest"
+      ? head
+      : tag === head.number
+        ? { ...head, hash: HASH("9") }
+        : getBlock(tag);
+  let output;
+  await runPortfolioActivation(
+    [
+      "--live-check",
+      "--write-plan",
+      approvalPath,
+      "--manifest",
+      join(directory, "allocation.json"),
+    ],
+    {
+      inspectRepository: () => repositoryState,
+      readInputs: () => f,
+      createProvider: () => ({ ...f.provider, destroy() {} }),
+      createContracts: () => f.contracts,
+      log: (value) => {
+        output = JSON.parse(value);
+      },
+    },
+  );
+  const approval = JSON.parse(readFileSync(approvalPath, "utf8"));
+  assert.deepEqual(output.plan.qualificationBlock, f.block);
+  assert.deepEqual(approval.qualificationBlock, f.block);
+  assert.deepEqual(approval.targetBlock, output.preflight.targetBlock);
+  assert.equal(approval.validUntil, f.block.timestamp + 1800);
 });
 
 test("portfolio inputs require a Git-tracked config and help rejects implicit broadcast without reading signer material", (t) => {
@@ -499,7 +645,21 @@ test("portfolio recovery recognizes a mined prepared transaction without modifyi
   };
   f.provider.getTransactionReceipt = async () => receipt;
   f.provider.getTransaction = async () => transaction;
-  const result = await runPortfolioPreflight({ ...f, journal });
+  const getBlock = f.provider.getBlock;
+  let waits = 0;
+  f.provider.getBlock = async (tag) =>
+    tag === "finalized" && waits === 0
+      ? { ...f.block, number: receipt.blockNumber - 1 }
+      : getBlock(tag);
+  const result = await runPortfolioPreflight({
+    ...f,
+    journal,
+    delay: async (ms) => {
+      assert.equal(ms, 15000);
+      waits += 1;
+    },
+  });
+  assert.equal(waits, 1);
   assert.equal(result.confirmedSteps, 7);
   assert.equal(journal.steps[6].status, "prepared");
   assert.equal(readFileSync(journalPath, "utf8"), persisted);
@@ -591,6 +751,37 @@ test("portfolio final verification reconciles all thirteen canonical receipts an
   assert.equal(result.assetMovement.transfers.length, 3);
   assert.equal(result.pool.statusCode, 2);
   assert.equal(result.facility.statusCode, 1);
+  const originalGetBlock = f.provider.getBlock;
+  const lastReceiptBlock = steps.at(-1).receipt.blockNumber;
+  let finalityWaits = 0;
+  f.provider.getBlock = async (tag) => {
+    if (tag === "finalized")
+      return {
+        ...f.block,
+        number: lastReceiptBlock - (finalityWaits === 0 ? 1 : 0),
+      };
+    if (tag === "latest")
+      return { ...f.block, number: lastReceiptBlock + 5 };
+    return originalGetBlock(tag);
+  };
+  const finalizedResult = await verifyPortfolioFinal({
+    ...f,
+    delay: async (ms) => {
+      assert.equal(ms, 15000);
+      finalityWaits += 1;
+    },
+  });
+  assert.equal(finalityWaits, 1);
+  assert.equal(finalizedResult.verifiedAtBlock, lastReceiptBlock);
+  f.provider.getBlock = async (tag) =>
+    tag === f.block.number
+      ? { ...f.block, hash: HASH("9") }
+      : originalGetBlock(tag);
+  await assert.rejects(
+    verifyPortfolioFinal(f),
+    /Final snapshot canonical hash mismatch/,
+  );
+  f.provider.getBlock = originalGetBlock;
   const finalization = createPortfolioApproval({
     plan,
     config,
@@ -675,10 +866,13 @@ test("portfolio final verification reconciles all thirteen canonical receipts an
   transactions[firstHash] = { ...transaction, nonce: transaction.nonce + 1 };
   await assert.rejects(verifyPortfolioFinal(f), /Canonical transaction nonce/);
   transactions[firstHash] = transaction;
-  const number = f.block.number;
-  f.block.number = first.blockNumber;
+  const getBlock = f.provider.getBlock;
+  f.provider.getBlock = async (tag) =>
+    tag === "latest"
+      ? { ...f.block, number: first.blockNumber }
+      : getBlock(tag);
   await assert.rejects(verifyPortfolioFinal(f), /target confirmations/);
-  f.block.number = number;
+  f.provider.getBlock = getBlock;
 });
 
 test("portfolio config rejects placeholders, changed exact terms, shared-account nonce divergence and fee policy drift", () => {

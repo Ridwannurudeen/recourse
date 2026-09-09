@@ -317,7 +317,7 @@ test("actual portfolio CLI orchestration preserves approval, guards, checkpoints
       const provider = {
         getNetwork: async () => ({ chainId: 102031n }),
         getBlock: async (number) =>
-          number === "latest"
+          number === "latest" || number === "finalized"
             ? { ...snapshots[prefix].block, timestamp: clock }
             : number === approval.targetBlock.number
               ? approval.targetBlock

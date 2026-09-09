@@ -331,7 +331,9 @@ export async function chainFixture(
   const provider = {
     getNetwork: async () => ({ chainId: 102031n }),
     getBlock: async (number) =>
-      number === "latest" ? block : config.qualificationBlock,
+      number === "latest" || number === "finalized"
+        ? block
+        : config.qualificationBlock,
     getCode: async (address) =>
       address === plan.predictedFacility
         ? prefix >= 1

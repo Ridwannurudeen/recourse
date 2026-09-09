@@ -125,7 +125,7 @@ export async function runPortfolioActivation(
     const qualificationBlock =
       journal?.preflight.qualificationBlock ??
       approvedPlan?.qualificationBlock ??
-      latestBlock;
+      (await provider.getBlock("finalized"));
     const plan = await buildPortfolioPlan({
       config,
       manifests,
@@ -193,7 +193,7 @@ export async function runPortfolioActivation(
         livePlan = createPortfolioApproval({
           plan,
           config,
-          targetBlock: latestBlock,
+          targetBlock: preflight.targetBlock,
           journal,
           repositoryState,
         });

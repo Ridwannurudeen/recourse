@@ -1081,6 +1081,22 @@ async function verifyPrefixState({
   }
 }
 
+async function finalizedSnapshot(provider, config, minimumBlock, delay) {
+  for (
+    let attempt = 0;
+    attempt < config.transactionPolicy.maximumReceiptPolls;
+    attempt += 1
+  ) {
+    const block = blockRecord(await provider.getBlock("finalized"));
+    if (block.number >= minimumBlock) return block;
+    if (attempt + 1 < config.transactionPolicy.maximumReceiptPolls)
+      await delay(15_000);
+  }
+  throw new Error(
+    `Finalized block did not reach receipt block ${minimumBlock} within the receipt poll budget`,
+  );
+}
+
 export async function runPortfolioPreflight({
   provider,
   config,
@@ -1089,15 +1105,17 @@ export async function runPortfolioPreflight({
   contracts,
   repositoryState,
   journal,
+  delay = (milliseconds) =>
+    new Promise((resolve) => setTimeout(resolve, milliseconds)),
 }) {
   requireCleanDeployableRepository(repositoryState);
-  const [network, latest] = await Promise.all([
-    provider.getNetwork(),
-    provider.getBlock("latest"),
-  ]);
+  const network = await provider.getNetwork();
   equal(network.chainId, config.chainId, "Network chainId");
-  const targetBlock = blockRecord(latest);
   let prefix = confirmedPrefix(journal, plan);
+  let minimumBlock = Math.max(
+    0,
+    ...(journal?.steps.slice(0, prefix).map((step) => step.receipt.blockNumber) ?? []),
+  );
   const prepared = journal?.steps[prefix];
   if (prepared?.status === "prepared") {
     const receipt = await provider.getTransactionReceipt(
@@ -1115,10 +1133,7 @@ export async function runPortfolioPreflight({
         receipt.blockHash,
         "Prepared receipt canonical block",
       );
-      assert(
-        receipt.blockNumber <= targetBlock.number,
-        "Prepared receipt is newer than qualification block; retry qualification",
-      );
+      minimumBlock = Math.max(minimumBlock, receipt.blockNumber);
       const transaction = await provider.getTransaction(
         prepared.intent.transactionHash,
       );
@@ -1148,6 +1163,12 @@ export async function runPortfolioPreflight({
       prefix += 1;
     }
   }
+  const targetBlock = await finalizedSnapshot(
+    provider,
+    config,
+    minimumBlock,
+    delay,
+  );
   if (prefix < 13)
     assertTerms(
       config,
@@ -1290,6 +1311,8 @@ export async function verifyPortfolioFinal({
   plan,
   contracts,
   journal,
+  delay = (milliseconds) =>
+    new Promise((resolve) => setTimeout(resolve, milliseconds)),
 }) {
   equal(
     confirmedPrefix(journal, plan),
@@ -1297,7 +1320,13 @@ export async function verifyPortfolioFinal({
     "Final confirmed transaction count",
   );
   equal((await provider.getNetwork()).chainId, config.chainId, "Final chainId");
-  const head = blockRecord(await provider.getBlock("latest"));
+  const head = await finalizedSnapshot(
+    provider,
+    config,
+    Math.max(...journal.steps.map((step) => step.receipt.blockNumber)),
+    delay,
+  );
+  const confirmationHead = blockRecord(await provider.getBlock("latest"));
   verifyPinnedFacilityRuntime({
     artifact: manifests.artifacts.facility,
     liveCode: await provider.getCode(plan.predictedFacility, head.number),
@@ -1339,7 +1368,7 @@ export async function verifyPortfolioFinal({
       "Canonical receipt block",
     );
     assert(
-      head.number >=
+      confirmationHead.number >=
         receipt.blockNumber + config.transactionPolicy.targetConfirmations - 1,
       "Receipt lacks target confirmations",
     );
