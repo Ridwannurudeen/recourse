@@ -1,15 +1,17 @@
 import {
   formatAssetAmount,
+  HISTORICAL_FACTORY,
   summarizePortfolio,
   validateNetworkAnchor,
 } from "./portfolio-core.mjs";
+import { EXTENSION_DEPLOYMENT, readV3Extensions } from "./v3-core.mjs";
 
 const NETWORKS = Object.freeze([
   {
     name: "Creditcoin CC3 Testnet",
     chainId: 102031,
     rpcUrl: "https://rpc.cc3-testnet.creditcoin.network",
-    factory: "0x04719DA84B91AC2Cb2bf9ad770F412989DF61fbd",
+    factory: EXTENSION_DEPLOYMENT.contracts.CappedPilotFactoryV1,
   },
 ]);
 const MAX_FACILITIES_PER_NETWORK = 200;
@@ -54,10 +56,11 @@ async function inBatches(values, size, read) {
 async function readNetwork(config) {
   const provider = new JsonRpcProvider(config.rpcUrl, config.chainId, {
     staticNetwork: true,
+    batchMaxCount: 1,
   });
   const actualChainId = Number(BigInt(await provider.send("eth_chainId", [])));
-  const blockNumber = await provider.getBlockNumber();
-  const anchor = await provider.getBlock(blockNumber);
+  const anchor = await provider.getBlock("finalized");
+  const blockNumber = anchor?.number;
   if (!anchor || typeof anchor.hash !== "string")
     throw new Error(`${config.name} block ${blockNumber} is unavailable`);
   const validatedAnchor = validateNetworkAnchor({
@@ -68,6 +71,7 @@ async function readNetwork(config) {
     blockTimestamp: anchor.timestamp,
   });
   const factory = new Contract(config.factory, FACTORY_ABI, provider);
+  const extensions = await readV3Extensions(provider, Contract, blockNumber);
   const count = await factory.facilityCount({ blockTag: blockNumber });
   if (count > BigInt(Number.MAX_SAFE_INTEGER))
     throw new Error(`${config.name} facility count is not safely indexable`);
@@ -139,6 +143,8 @@ async function readNetwork(config) {
   }
   return {
     name: config.name,
+    factory: config.factory,
+    extensions,
     chainId: config.chainId,
     blockNumber,
     blockHash: validatedAnchor.blockHash,
@@ -181,6 +187,46 @@ function ledger(items) {
 }
 
 function render(summary) {
+  const observed = byId("portfolio-pool-observed");
+  observed.replaceChildren();
+  for (const network of summary.networks) {
+    const state = network.pool;
+    if (!state) continue;
+    observed.append(
+      badge(state.poolStatement, state.truth === "deployed" ? "good" : "alert"),
+    );
+    const rows = [
+      ["Observed block", String(network.blockNumber)],
+      ["Current pool", EXTENSION_DEPLOYMENT.contracts.PortfolioPoolV1],
+      ["Current pool-owned factory", network.factory],
+      ["Lifecycle", state.lifecycle],
+      ["Capital", state.capital],
+      ["Execution", state.execution],
+      ["Mandate requirement", state.mandateStatement],
+      ["Historical factory", HISTORICAL_FACTORY.address],
+      ["Historical scope", HISTORICAL_FACTORY.label],
+      [
+        "Historical source",
+        `${HISTORICAL_FACTORY.manifest} at commit ${HISTORICAL_FACTORY.commit}`,
+      ],
+    ];
+    if (state.truth === "deployed") {
+      rows.push(
+        ["Mandate", state.pool.mandate],
+        [
+          "Maximum pool assets (raw units)",
+          String(state.pool.maximumPoolAssets),
+        ],
+        ["Funding deadline (Unix seconds)", String(state.pool.fundingDeadline)],
+        ["Registered investors", String(state.pool.investorCount)],
+        ["Pool-created facilities", String(state.pool.facilityCount)],
+        ["Pool-owned factory facilities", String(state.factory.facilityCount)],
+      );
+    } else {
+      rows.push(["Read issues", state.issues.join("; ")]);
+    }
+    observed.append(ledger(rows));
+  }
   setText(
     "portfolio-coverage",
     `${summary.observedFacilities} / ${summary.totalFacilities}`,
@@ -237,7 +283,11 @@ function render(summary) {
           "State age",
           `${network.stateAgeSeconds.toLocaleString("en-US")} seconds`,
         ],
-        ["Factory entries", network.totalFacilities.toLocaleString("en-US")],
+        ["Current factory", network.factory],
+        [
+          "Current factory entries",
+          network.totalFacilities.toLocaleString("en-US"),
+        ],
         [
           "Read successfully",
           network.observedFacilities.toLocaleString("en-US"),

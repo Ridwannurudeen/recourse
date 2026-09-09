@@ -13,13 +13,159 @@ import {
 } from "../web/operator-core.mjs";
 import {
   formatAssetAmount,
+  HISTORICAL_FACTORY,
   normalizeTokenSymbol,
   summarizePortfolio,
+  summarizePortfolioPool,
   validateNetworkAnchor,
 } from "../web/portfolio-core.mjs";
+import { EXTENSION_DEPLOYMENT } from "../web/v3-core.mjs";
 
 const HASH = (byte) => `0x${byte.repeat(32)}`;
 const ADDRESS = (suffix) => `0x${suffix.padStart(40, "0")}`;
+
+function poolExtensions() {
+  const pinned = EXTENSION_DEPLOYMENT;
+  return {
+    contracts: Object.entries(pinned.contracts).map(([name, address]) => ({
+      name,
+      address,
+      hasCode: true,
+    })),
+    errors: [],
+    verifier: { attestor: pinned.attestor },
+    market: {
+      verifier: pinned.contracts.OperatorServiceVerifierV1,
+      token: pinned.token,
+      quoteCount: 0n,
+    },
+    pool: {
+      status: 0n,
+      mandate: pinned.contracts.PortfolioMandateV1,
+      asset: pinned.token,
+      facilityCount: 0n,
+      investorCount: 0n,
+      maximumPoolAssets: 300000000000n,
+      fundingDeadline: 1789591485n,
+      totalDeposited: 0n,
+      totalAllocatedPrincipal: 0n,
+      allocatedFacilityCount: 0n,
+      assetBalance: 0n,
+    },
+    mandate: {
+      factory: pinned.contracts.CappedPilotFactoryV1,
+      requiredReleaseId: pinned.activatedReleaseId,
+      requiredPolicySetCommitment: HASH("aa"),
+      requiredActionAdapterKind: HASH("00"),
+    },
+    factory: { lender: pinned.contracts.PortfolioPoolV1, facilityCount: 0n },
+  };
+}
+
+test("portfolio pool truth follows anchored lifecycle and capital, including direct asset transfers", () => {
+  const raw = poolExtensions();
+  const initial = summarizePortfolioPool(raw);
+  assert.equal(initial.truth, "deployed");
+  assert.equal(
+    initial.poolStatement,
+    "Deployed · Configuring · no facilities, no capital, no allocation",
+  );
+  assert.equal(initial.lifecycle, "Configuring — not activated");
+  assert.equal(initial.capital, "None (0 deposits, 0 allocations)");
+  assert.equal(initial.execution, "Allocation path not exercised");
+  assert.equal(
+    initial.mandateStatement,
+    "No action adapter required by this mandate",
+  );
+  const donated = summarizePortfolioPool({
+    ...raw,
+    pool: { ...raw.pool, assetBalance: 1n },
+  });
+  assert.doesNotMatch(donated.capital, /None/);
+  assert.doesNotMatch(donated.poolStatement, /no capital/);
+  const active = summarizePortfolioPool({
+    ...raw,
+    pool: {
+      ...raw.pool,
+      status: 2n,
+      facilityCount: 1n,
+      totalDeposited: 10n,
+      totalAllocatedPrincipal: 10n,
+      allocatedFacilityCount: 1n,
+    },
+    factory: { ...raw.factory, facilityCount: 1n },
+  });
+  assert.equal(active.lifecycle, "Active");
+  assert.equal(active.execution, "1 facilities allocated");
+  assert.doesNotMatch(active.capital, /None/);
+  const inconsistent = summarizePortfolioPool({
+    ...raw,
+    factory: { ...raw.factory, lender: ADDRESS("999") },
+  });
+  assert.equal(inconsistent.truth, "inconsistent");
+  assert.equal(inconsistent.capital, "Capital state unavailable");
+  const missing = summarizePortfolioPool({ ...raw, pool: null });
+  assert.equal(missing.truth, "unavailable");
+  assert.equal(missing.execution, "Allocation state unavailable");
+});
+
+test("portfolio summary retains current pool provenance without counting the historical factory", async () => {
+  const manifest = JSON.parse(
+    await readFile(
+      new URL("../deployments-v3-portfolio-core-current.json", import.meta.url),
+      "utf8",
+    ),
+  );
+  assert.equal(
+    EXTENSION_DEPLOYMENT.contracts.CappedPilotFactoryV1,
+    manifest.contracts.CappedPilotFactoryV1,
+  );
+  assert.equal(
+    EXTENSION_DEPLOYMENT.contracts.PortfolioPoolV1,
+    manifest.contracts.PortfolioPoolV1,
+  );
+  assert.notEqual(
+    HISTORICAL_FACTORY.address,
+    manifest.contracts.CappedPilotFactoryV1,
+  );
+  assert.equal(
+    HISTORICAL_FACTORY.commit,
+    "14d1e62e1b1adc671123cad80e9cff43ffd71b38",
+  );
+  const summary = summarizePortfolio([
+    {
+      name: "CC3",
+      chainId: 102031,
+      blockNumber: 5459807,
+      blockHash: HASH("aa"),
+      blockTimestamp: 1788987795,
+      factory: manifest.contracts.CappedPilotFactoryV1,
+      extensions: poolExtensions(),
+      totalFacilities: 0,
+      facilities: [],
+      failures: [],
+      truncated: false,
+    },
+  ]);
+  assert.equal(summary.totalFacilities, 0);
+  assert.equal(
+    summary.networks[0].factory,
+    manifest.contracts.CappedPilotFactoryV1,
+  );
+  assert.equal(summary.networks[0].pool.pool.investorCount, 0n);
+  assert.equal(summary.networks[0].pool.pool.maximumPoolAssets, 300000000000n);
+  const js = await readFile(
+    new URL("../web/portfolio.js", import.meta.url),
+    "utf8",
+  );
+  assert.match(js, /getBlock\("finalized"\)/);
+  assert.match(js, /readV3Extensions\(provider, Contract, blockNumber\)/);
+  assert.match(
+    js,
+    /finalAnchor\.hash\.toLowerCase\(\) !== anchor\.hash\.toLowerCase\(\)/,
+  );
+  assert.doesNotMatch(js, /eth_requestAccounts|getSigner|BrowserProvider/);
+});
 
 function report(overrides = {}) {
   return {
@@ -454,7 +600,7 @@ test("observatory pages keep external data on safe text DOM paths and expose sta
   assert.doesNotMatch(operatorJs, /URLSearchParams/);
 });
 
-test("portfolio observatory labels the pool lifecycle as source-only before RPC state", async () => {
+test("portfolio observatory distinguishes committed deployment from observed RPC state", async () => {
   const html = await readFile(
     new URL("../web/portfolio.html", import.meta.url),
     "utf8",
@@ -462,9 +608,15 @@ test("portfolio observatory labels the pool lifecycle as source-only before RPC 
   const sourcePanel = html.indexOf('id="portfolio-pool-source"');
   const rpcState = html.indexOf('id="portfolio-state"');
   assert.ok(sourcePanel >= 0 && sourcePanel < rpcState);
-  assert.match(html, /PortfolioPoolV1 is built, not deployed/i);
-  assert.match(html, /No verified pool address/i);
-  assert.match(html, /No verified pool capital/i);
+  assert.match(
+    html,
+    /Deployed · Configuring · no facilities, no capital, no allocation/,
+  );
+  assert.match(html, /0x7dd538A9ab77a4d2953b28f3bCe710145a0eC8C2/);
+  assert.match(html, /None \(0 deposits, 0 allocations\)/);
+  assert.match(html, /Allocation path not exercised/);
+  assert.match(html, /Committed manifest qualification/);
+  assert.match(html, /id="portfolio-pool-observed"/);
   for (const status of [
     "Configuring",
     "Funding",

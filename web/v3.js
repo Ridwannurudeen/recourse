@@ -1,5 +1,7 @@
 import {
   DeploymentTruth,
+  EXTENSION_DEPLOYMENT,
+  readV3Extensions,
   anchorV3Snapshot,
   summarizeV3Snapshot,
 } from "./v3-core.mjs";
@@ -21,9 +23,12 @@ const DEPLOYMENT = Object.freeze({
 });
 
 const LOCAL_CAPABILITIES = Object.freeze([
-  { name: "OperatorMarketV1", deploymentAddress: null },
-  { name: "PortfolioMandateV1", deploymentAddress: null },
-  { name: "PortfolioPoolV1", deploymentAddress: null },
+  ...Object.entries(EXTENSION_DEPLOYMENT.contracts).map(
+    ([name, deploymentAddress]) => ({ name, deploymentAddress }),
+  ),
+  { name: "ClosedLoopPolicyV1", deploymentAddress: null },
+  { name: "UscRemedyTransportV1", deploymentAddress: null },
+  { name: "UscRemedyDispatcherV1", deploymentAddress: null },
 ]);
 
 const FACTORY_ABI = [
@@ -218,6 +223,7 @@ async function readPinned(blockTag, anchor) {
     creationPaused,
     registryReleaseCountValue,
     nextProofJobId,
+    extensions,
   ] = await Promise.all([
     Promise.all(
       addresses.map(async ([name, address]) => ({
@@ -235,6 +241,7 @@ async function readPinned(blockTag, anchor) {
     factory.creationPaused({ blockTag }),
     registry.releaseCount({ blockTag }),
     proofJobs.nextJobId({ blockTag }),
+    readV3Extensions(provider, Contract, blockTag),
   ]);
   const facilityCount = safeNumber(facilityCountValue, "facility count");
   const maximumFacilityCount = safeNumber(
@@ -278,7 +285,14 @@ async function readPinned(blockTag, anchor) {
       "registry release count",
     ),
     nextProofJobId,
-    localCapabilities: LOCAL_CAPABILITIES,
+    extensions,
+    localCapabilities: LOCAL_CAPABILITIES.map((capability) => ({
+      ...capability,
+      hasCode: extensions.contracts.some(
+        (contract) =>
+          contract.address === capability.deploymentAddress && contract.hasCode,
+      ),
+    })),
   };
 }
 
@@ -403,6 +417,33 @@ function render(summary) {
         : `Manifest address ${shortHex(capability.deploymentAddress)}.`;
     card.append(state, heading, copy);
     capabilities.append(card);
+  }
+
+  const extensions = summary.extensions;
+  byId("v3-extensions").dataset.truth = extensions.truth;
+  setText("v3-extensions-state", extensions.truth);
+  setText("v3-extensions-issues", extensions.issues.join("; "));
+  setText("v3-extension-market", extensions.marketStatement);
+  setText("v3-extension-pool", extensions.poolStatement);
+  setText("v3-extension-mandate", extensions.mandateStatement);
+  const extensionDetails = byId("v3-extension-details");
+  extensionDetails.replaceChildren();
+  for (const [label, fields] of Object.entries({
+    verifier: extensions.verifier,
+    market: extensions.market,
+    pool: extensions.pool,
+    mandate: extensions.mandate,
+    factory: extensions.factory,
+  })) {
+    for (const [field, value] of Object.entries(fields || {})) {
+      const row = document.createElement("tr");
+      row.append(
+        cell("Contract", label),
+        cell("Read", field),
+        cell("Value", value, "obs-address"),
+      );
+      extensionDetails.append(row);
+    }
   }
 
   const gates = byId("v3-external-gates");

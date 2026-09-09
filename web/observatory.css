@@ -489,6 +489,19 @@ body.observatory-page::after {
   text-align: right;
 }
 
+#portfolio-pool-source small,
+#portfolio-pool-observed .obs-ledger dd,
+#portfolio-networks .obs-ledger dd,
+#v3-extensions .obs-address {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+#v3-extensions .obs-address::before {
+  flex-shrink: 0;
+  overflow-wrap: normal;
+}
+
 .obs-v3-intro h1 {
   max-width: 900px;
 }

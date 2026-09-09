@@ -11,7 +11,241 @@ export const DeploymentTruth = Object.freeze({
   SourceOnly: "source-only",
   ExternalGated: "external-gated",
   Unavailable: "unavailable",
+  Inconsistent: "inconsistent",
 });
+
+export const EXTENSION_DEPLOYMENT = Object.freeze({
+  contracts: Object.freeze({
+    OperatorServiceVerifierV1: "0x44B3e639722650902a11EB26151cBaB039f67a23",
+    OperatorMarketV1: "0x649A73302861fcDf641Aa4cBe5e7eD58d0363337",
+    PortfolioPoolV1: "0x7dd538A9ab77a4d2953b28f3bCe710145a0eC8C2",
+    CappedPilotFactoryV1: "0xA5997C4c212eE27B774a7dBa1E5081a9355A16c0",
+    PortfolioMandateV1: "0x49306adA3decC50D08D11B403A120cd6FD5501D3",
+  }),
+  deploymentBlocks: Object.freeze({
+    OperatorServiceVerifierV1: 5459750,
+    OperatorMarketV1: 5459763,
+    PortfolioPoolV1: 5459775,
+    CappedPilotFactoryV1: 5459784,
+    PortfolioMandateV1: 5459793,
+  }),
+  attestor: "0xeCf1BeeF05450f1E2A2adAb86b61ccC2D6235369",
+  token: "0x3c6eF93E1d2C539c5EFefbBc51cc6a1E120fBf77",
+  activatedReleaseId:
+    "0xad31a01779b7c8c8651e1fecbb15b6d177c25dbd637c99d7496c2c2a0b7d221a",
+});
+
+const EXTENSION_READS = Object.freeze({
+  verifier: {
+    name: "OperatorServiceVerifierV1",
+    fields: { attestor: "address" },
+  },
+  market: {
+    name: "OperatorMarketV1",
+    fields: {
+      verifier: "address",
+      token: "address",
+      minimumOperatorBond: "uint256",
+      quoteCount: "uint256",
+    },
+  },
+  pool: {
+    name: "PortfolioPoolV1",
+    fields: {
+      status: "uint8",
+      mandate: "address",
+      asset: "address",
+      createdFacilityCount: "uint256",
+      maximumPoolAssets: "uint256",
+      fundingDeadline: "uint64",
+      investorCount: "uint256",
+      allocatedFacilityCount: "uint256",
+      totalDeposited: "uint256",
+      totalAllocatedPrincipal: "uint256",
+    },
+  },
+  mandate: {
+    name: "PortfolioMandateV1",
+    fields: {
+      requiredActionAdapterKind: "bytes32",
+      requiredReleaseId: "bytes32",
+      requiredPolicySetCommitment: "bytes32",
+      requiredEvidenceKind: "uint8",
+      factory: "address",
+    },
+  },
+  factory: {
+    name: "CappedPilotFactoryV1",
+    fields: { lender: "address", facilityCount: "uint256" },
+  },
+});
+
+export async function readV3Extensions(provider, Contract, blockTag) {
+  safeCount(blockTag, "extension blockTag");
+  const entries = await Promise.all(
+    Object.entries(EXTENSION_READS).map(async ([key, { name, fields }]) => {
+      const address = EXTENSION_DEPLOYMENT.contracts[name];
+      let hasCode = false;
+      try {
+        hasCode = (await provider.getCode(address, blockTag)) !== "0x";
+        if (!hasCode)
+          return {
+            key,
+            contract: { name, address, hasCode },
+            value: null,
+            error: `${name}: no runtime code`,
+          };
+        const contract = new Contract(
+          address,
+          Object.entries(fields).map(
+            ([field, type]) => `function ${field}() view returns (${type})`,
+          ),
+          provider,
+        );
+        const values = await Promise.all(
+          Object.keys(fields).map(async (field) => [
+            field,
+            await contract[field]({ blockTag }),
+          ]),
+        );
+        const value = Object.fromEntries(values);
+        if (key === "pool") {
+          value.facilityCount = value.createdFacilityCount;
+          delete value.createdFacilityCount;
+          const token = new Contract(
+            value.asset,
+            ["function balanceOf(address account) view returns (uint256)"],
+            provider,
+          );
+          value.assetBalance = await token.balanceOf(address, { blockTag });
+        }
+        return { key, contract: { name, address, hasCode }, value };
+      } catch (error) {
+        return {
+          key,
+          contract: { name, address, hasCode },
+          value: null,
+          error: `${name}: ${error instanceof Error ? error.message : String(error)}`,
+        };
+      }
+    }),
+  );
+  return {
+    contracts: entries.map((entry) => entry.contract),
+    ...Object.fromEntries(entries.map((entry) => [entry.key, entry.value])),
+    errors: entries.filter((entry) => entry.error).map((entry) => entry.error),
+  };
+}
+
+export function summarizeV3Extensions(value) {
+  const unavailable = (issues) => ({
+    ...value,
+    truth: DeploymentTruth.Unavailable,
+    issues,
+    poolStatement: "Pool state unavailable",
+    marketStatement: "Market state unavailable",
+    mandateStatement: "Mandate state unavailable",
+  });
+  if (!value || !Array.isArray(value.contracts))
+    return unavailable(["Extension snapshot unavailable"]);
+  if (value.errors?.length) return unavailable(value.errors);
+  const missing = Object.entries(EXTENSION_READS).filter(
+    ([key, { name }]) =>
+      !value[key] ||
+      !value.contracts.some((entry) => entry.name === name && entry.hasCode),
+  );
+  if (missing.length)
+    return unavailable(
+      missing.map(
+        ([, { name }]) => `${name}: state or runtime code unavailable`,
+      ),
+    );
+  try {
+    const { verifier, market, pool, mandate, factory } = value;
+    const pinned = EXTENSION_DEPLOYMENT;
+    const issues = [];
+    for (const [label, actual, expected] of [
+      [
+        "market.verifier",
+        market.verifier,
+        pinned.contracts.OperatorServiceVerifierV1,
+      ],
+      ["pool.mandate", pool.mandate, pinned.contracts.PortfolioMandateV1],
+      [
+        "mandate.factory",
+        mandate.factory,
+        pinned.contracts.CappedPilotFactoryV1,
+      ],
+      ["factory.lender", factory.lender, pinned.contracts.PortfolioPoolV1],
+      ["verifier.attestor", verifier.attestor, pinned.attestor],
+      ["market.token", market.token, pinned.token],
+      ["pool.asset", pool.asset, pinned.token],
+    ]) {
+      if (normalizedAddress(actual, label) !== expected.toLowerCase())
+        issues.push(`${label} does not match the manifest`);
+    }
+    for (const entry of value.contracts) {
+      if (
+        normalizedAddress(entry.address, entry.name) !==
+        pinned.contracts[entry.name]?.toLowerCase()
+      )
+        issues.push(`${entry.name} address does not match the manifest`);
+    }
+    if (
+      bytes32(mandate.requiredReleaseId, "requiredReleaseId") !==
+      pinned.activatedReleaseId
+    )
+      issues.push(
+        "mandate.requiredReleaseId does not match the activated release",
+      );
+    bytes32(mandate.requiredPolicySetCommitment, "requiredPolicySetCommitment");
+    const adapterKind = bytes32(
+      mandate.requiredActionAdapterKind,
+      "requiredActionAdapterKind",
+    );
+    const quoteCount = amount(market.quoteCount, "quoteCount");
+    const status = safeCount(Number(pool.status), "pool.status");
+    if (status > 4) throw new TypeError("Invalid pool.status");
+    const facilityCount = amount(pool.facilityCount, "pool.facilityCount");
+    if (
+      facilityCount !== amount(factory.facilityCount, "factory.facilityCount")
+    )
+      issues.push("Pool and factory facility counts differ");
+    const emptyPool =
+      status === 0 &&
+      facilityCount === 0n &&
+      amount(pool.totalDeposited, "totalDeposited") === 0n &&
+      amount(pool.totalAllocatedPrincipal, "totalAllocatedPrincipal") === 0n &&
+      amount(pool.assetBalance, "assetBalance") === 0n &&
+      amount(pool.allocatedFacilityCount, "allocatedFacilityCount") === 0n;
+    return {
+      ...value,
+      truth: issues.length
+        ? DeploymentTruth.Inconsistent
+        : DeploymentTruth.Deployed,
+      issues,
+      poolStatement: issues.length
+        ? "Pool deployment inconsistent"
+        : emptyPool
+          ? "Deployed · Configuring · no facilities, no capital, no allocation"
+          : `Deployed · ${["Configuring", "Funding", "Active", "Finalized", "Cancelled"][status]} · ${facilityCount} facilities · ${pool.totalDeposited} raw units deposited · ${pool.totalAllocatedPrincipal} raw units allocated`,
+      marketStatement: issues.length
+        ? "Market deployment inconsistent"
+        : quoteCount === 0n
+          ? "Deployed · empty · single project-operated attestor"
+          : `Deployed · ${quoteCount} quotes · single project-operated attestor`,
+      mandateStatement: issues.length
+        ? "Mandate deployment inconsistent"
+        : adapterKind === ZERO_HASH
+          ? "No action adapter required by this mandate"
+          : `Required action adapter kind: ${adapterKind}`,
+    };
+  } catch (error) {
+    return unavailable([
+      error instanceof Error ? error.message : String(error),
+    ]);
+  }
+}
 
 const EXTERNAL_GATES = Object.freeze([
   "Independent security review",
@@ -146,7 +380,9 @@ function summarizeFacility(value, index) {
     `facilities[${index}].policySetCommitment`,
   );
   const configured =
-    registeredPolicies > 0 && configuredPolicies > 0 && commitment !== ZERO_HASH;
+    registeredPolicies > 0 &&
+    configuredPolicies > 0 &&
+    commitment !== ZERO_HASH;
   const activated = configured && ACTIVATED_STATUSES.has(status);
   return {
     address: address(facility.address, `facilities[${index}].address`),
@@ -322,6 +558,7 @@ export function summarizeV3Snapshot(value) {
     proofJobState:
       nextProofJobId === 1n ? DeploymentTruth.Empty : DeploymentTruth.Deployed,
     localCapabilities,
+    extensions: summarizeV3Extensions(snapshot.extensions),
     externalGates: EXTERNAL_GATES.map((name) => ({
       name,
       truth: DeploymentTruth.ExternalGated,

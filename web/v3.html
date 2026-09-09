@@ -161,11 +161,45 @@
           </div>
         </section>
 
+        <section
+          class="obs-section"
+          id="v3-extensions"
+          aria-labelledby="v3-extensions-title"
+        >
+          <div class="obs-section-heading">
+            <div>
+              <p class="obs-eyebrow">
+                Same finalized anchor · runtime code and wiring
+              </p>
+              <h2 id="v3-extensions-title">Extension deployments</h2>
+            </div>
+            <p class="obs-section-note" id="v3-extensions-state"></p>
+          </div>
+          <p id="v3-extensions-issues"></p>
+          <p id="v3-extension-market"></p>
+          <p id="v3-extension-pool"></p>
+          <p id="v3-extension-mandate"></p>
+          <div class="obs-table-wrap">
+            <table class="obs-table">
+              <thead>
+                <tr>
+                  <th>Contract</th>
+                  <th>Read</th>
+                  <th>Value</th>
+                </tr>
+              </thead>
+              <tbody id="v3-extension-details"></tbody>
+            </table>
+          </div>
+        </section>
+
         <section class="obs-section" aria-labelledby="v3-local-title">
           <div class="obs-section-heading">
             <div>
               <p class="obs-eyebrow">Repository capability</p>
-              <h2 id="v3-local-title">Built locally, not deployed</h2>
+              <h2 id="v3-local-title">
+                Extension addresses and local capabilities
+              </h2>
             </div>
             <p class="obs-section-note">
               Source-level contracts are labeled source-only until a verified
@@ -198,8 +232,11 @@
             <p>
               The activated facility is a fixed-supply demo-token testnet
               demonstration, not a live pilot with a counterparty. There is no
-              independent audit. Items 5–6 are blocked on writability; items 9–10
-              are not deployed.
+              independent audit. Items 5–6 are blocked on writability. Items
+              9–10 have deployed manifests: market — Deployed · empty · single
+              project-operated attestor; pool — Deployed · Configuring · no
+              facilities, no capital, no allocation. The anchored extension
+              section checks their current state.
             </p>
             <p>
               The <a href="../deployments-v3.json">superseded historical core</a>
@@ -211,9 +248,9 @@
               means no reputation score is invented.
             </p>
             <p>
-              A mandate or pool contract in source does not establish deposited
-              capital, TVL, yield, allocations, recoveries, or a live portfolio.
-              Those claims require a deployed address and anchored state.
+              A deployed mandate or pool does not establish deposited capital,
+              allocations, or recoveries. Those claims require anchored state.
+              No action adapter required by this mandate.
             </p>
           </div>
         </section>

@@ -1,3 +1,45 @@
+import { summarizeV3Extensions } from "./v3-core.mjs";
+
+export const HISTORICAL_FACTORY = Object.freeze({
+  address: "0x04719DA84B91AC2Cb2bf9ad770F412989DF61fbd",
+  manifest: "deployments-horizon1.json",
+  commit: "14d1e62e1b1adc671123cad80e9cff43ffd71b38",
+  label: "Historical Horizon 1 factory; excluded from current pool inventory",
+});
+
+export function summarizePortfolioPool(extensions) {
+  const summary = summarizeV3Extensions(extensions);
+  if (summary.truth !== "deployed") {
+    return {
+      ...summary,
+      lifecycle: summary.poolStatement,
+      capital: "Capital state unavailable",
+      execution: "Allocation state unavailable",
+    };
+  }
+  const { pool } = summary;
+  return {
+    ...summary,
+    lifecycle:
+      Number(pool.status) === 0
+        ? "Configuring — not activated"
+        : ["Configuring", "Funding", "Active", "Finalized", "Cancelled"][
+            Number(pool.status)
+          ],
+    capital:
+      BigInt(pool.totalDeposited) === 0n &&
+      BigInt(pool.totalAllocatedPrincipal) === 0n &&
+      BigInt(pool.assetBalance) === 0n
+        ? "None (0 deposits, 0 allocations)"
+        : `${pool.totalDeposited} raw units deposited · ${pool.totalAllocatedPrincipal} raw units allocated · ${pool.assetBalance} raw units in pool`,
+    execution:
+      BigInt(pool.allocatedFacilityCount) === 0n &&
+      BigInt(pool.totalAllocatedPrincipal) === 0n
+        ? "Allocation path not exercised"
+        : `${pool.allocatedFacilityCount} facilities allocated`,
+  };
+}
+
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 const BYTES32 = /^0x[0-9a-fA-F]{64}$/;
 
@@ -145,6 +187,10 @@ export function summarizePortfolio(snapshots, options = {}) {
       stateAgeSeconds: anchor.stateAgeSeconds,
       stale: anchor.stale,
       future: anchor.future,
+      factory: snapshot.factory,
+      pool: snapshot.extensions
+        ? summarizePortfolioPool(snapshot.extensions)
+        : null,
       totalFacilities,
       observedFacilities: snapshot.facilities.length,
       failedFacilities: snapshot.failures.length,
