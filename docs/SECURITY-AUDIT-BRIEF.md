@@ -41,7 +41,7 @@ The functional review areas are:
 | --- | --- |
 | Capped pilot and evidence kernel | `CappedPilotFactoryV1`, `RecourseFacilityV3`, `PolicyKernelV2`, `MultiChainEventPolicyV1`, `PolicyRegistryV1`, `ProofJobsV1`, `VerifiedCreditStateV1` |
 | Remedy lifecycle and USC route | `RemedyCoordinatorV1`, `BoundedRemedyReceiverV1`, `ClosedLoopPolicyV1`, `UscRemedyTransportV1`, `UscRemedyDispatcherV1` |
-| Operator services | `OperatorMarketV1`, `IOperatorServiceVerifierV1` |
+| Operator services | `OperatorMarketV1`, `OperatorServiceVerifierV1`, `IOperatorServiceVerifierV1` |
 | Credit portfolio | `PortfolioMandateV1`, `PortfolioPoolV1` |
 
 Review inherited V2 behavior where V3 extends or calls it; inherited accounting,
@@ -54,7 +54,7 @@ The contract review should include the code that turns reviewed source into a
 deployment or executable operator configuration:
 
 - `config/v3-cc3.json`, `config/v3-pilot-cc3.json`,
-  `config/usc-remedy.example.json`, and the three `config/v3-*.example.json`
+  `config/usc-remedy.example.json`, and the four `config/v3-*.example.json`
   extension configurations;
 - `scripts/deploy-v3.mjs`, `scripts/activate-v3-pilot.mjs`,
   `scripts/deploy-usc-remedy.mjs`, `scripts/deploy-v3-extension.mjs`, and their
@@ -96,6 +96,12 @@ The reviewed local baseline uses:
 `package-lock.json`, `sdk/package-lock.json`, `foundry.lock`, `.gitmodules`, and
 the `lib/forge-std` gitlink are part of the reproducibility boundary. Do not
 substitute later dependency versions without creating a new reviewed commit.
+
+Artifact pins are raw-file keccak256 of a `forge clean && forge build`
+whole-project build. Incremental or subset compilation can change raw artifact
+IDs without changing executable bytecode; bytecode equality does not satisfy a
+raw-file pin. Build the dedicated USC `Inbox020` artifact afterward with its
+pinned package build command before checking its separate pin.
 
 Third-party implementations under `node_modules/`, including OpenZeppelin and
 USC contracts, are not first-party source, but their exact imported code,
@@ -183,8 +189,8 @@ Use a fresh checkout of the exact review revision:
 git submodule update --init --recursive
 npm ci
 npm --prefix sdk ci
+forge clean && forge build
 npm run build:usc-contracts-020
-forge build --force
 npm test
 forge lint contracts/v3 contracts/v2 --severity high med
 forge build --sizes
@@ -194,11 +200,11 @@ npm --prefix sdk run pack:check
 git diff --check
 ```
 
-The release baseline is 376 Forge tests, 272 root Node tests (271 passes and one
-Windows symlink-permission skip), and 39 SDK tests followed by strict declaration
-type-checking. Each of eight invariant properties completes 256 runs totaling
-128,000 calls, with zero handler reverts. A different count, unexpected skip,
-stale artifact pin, dirty submodule, or warning promoted to the selected
+The release baseline is 392 Forge tests, 280 root Node tests (279 passes and one
+Windows symlink-permission skip), and 44 SDK tests followed by strict declaration
+type-checking. Each of twelve invariant checks (eight distinct properties)
+completes 256 runs totaling 128,000 calls, with zero handler reverts. A different
+count, unexpected skip, stale artifact pin, dirty submodule, or warning promoted to the selected
 high/medium lint threshold must be investigated.
 
 The dependency audits currently report zero known vulnerabilities. The
@@ -212,8 +218,15 @@ suite or internal review as an audit substitute.
 
 The historical `deployments-v3.json` core is inactive, empty, and incompatible
 with the current hardened activation checks. It is not an activation target.
-The scoped current V3 core, USC route, operator market, and portfolio pool have
-not been deployed, activated, funded, or opened. No audit activity authorizes a
+The current V3 core and capped testnet facility are separately recorded in
+`deployments-v3-current.json` and `activation-v3-current.json`. The qualified
+operator verifier and empty market, and the fixed-vintage pool, pool-owned
+factory, and zero-mode mandate are recorded in their three current extension
+manifests. The pool remains Configuring with no allocation exercised; the
+verifier has one dedicated project-operated EOA attestor. These deployments
+were outside the September internal review's deployed scope. No live USC route,
+independent attestation, external capital, or completed service is established
+by these manifests. No audit activity authorizes a
 broadcast, signer installation, production deployment, capital movement, or
 pilot launch.
 

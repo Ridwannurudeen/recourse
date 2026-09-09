@@ -248,19 +248,26 @@ but cannot reduce that coverage.
 
 The operator daemon is a reference service implementation, not evidence of an
 open market. A Horizon 1 instance is installed and healthy in read-only mode;
-the V3 executable configuration and signer are not installed. There is no
-independently qualified production service verifier, live market quote, paid
-operator, customer, reputation system, or profitability claim. The market is not
-deployed because its required `operator-service-verifier-v1` manifest has no
-producer in the deployment tooling; the verifier attestor remains a governance
-decision.
+the V3 executable configuration and signer are not installed.
+`deployments-v3-operator-service-verifier-current.json` and
+`deployments-v3-operator-market-current.json` record the verifier and empty market
+as deployed and qualified on CC3. The verifier uses one dedicated,
+project-operated testnet EOA attestor,
+`0xeCf1BeeF05450f1E2A2adAb86b61ccC2D6235369`; this is not independent attestation.
+The market qualification records zero quotes and zero token balance: no operators,
+sponsors, settlements, or completed work have been demonstrated. No independently
+qualified production service verifier, customer, reputation system, or
+profitability evidence exists.
 
 ## 10. Programmable credit portfolios
 
 `PortfolioMandateV1` is an eligibility gate. It checks exact factory
 provenance, asset, kernel, facility status, maximum notional, minimum bond,
 maximum draw fee, remaining maturity, policy-set commitment, release,
-deployment binding, evidence kind, and action-adapter declaration.
+deployment binding, and evidence kind. Its action-adapter requirement is optional:
+a zero kind requires no adapter declaration; a nonzero kind still requires an
+exact matching registry declaration. This is a metadata check, not proof of
+remedy execution.
 
 `PortfolioPoolV1` is a fixed-vintage, single-asset pool. It freezes a bounded
 investor allowlist before activation, creates facilities through its exact
@@ -278,26 +285,36 @@ funding; only the manager can forward a publish retry or policy-authorized
 replacement, and that bounded servicing path remains available after pool
 finalization so economic closeout cannot strand an outstanding remedy.
 
-The pool and its observatory are source-only. It is not deployed, capitalized,
-audited, evergreen, or evidence of lender demand. Shares lock after activation;
+`deployments-v3-portfolio-core-current.json` records the fixed-vintage pool,
+its dedicated pool-owned `CappedPilotFactoryV1`, and zero-mode mandate as deployed
+and qualified on CC3 in `Configuring` state. The mandate reuses the activated
+release, exact policy-set commitment, and evidence kind `1`; no action adapter is
+required by this mandate. Qualification records zero facilities, zero pool token
+balance, and zero share supply. Allocation has not been exercised.
+
+The remaining allocation steps are: create a facility through the pool;
+configure and register its policy; record the issuer-attested policy deployment;
+register the candidate and investor; open funding and deposit; post the borrower
+bond; activate the pool; and allocate the exact facility limit. Facility activation
+must be verified separately. The pool is uncapitalized, unaudited, and not an
+evergreen NAV product or evidence of lender demand. Shares lock after activation;
 valuation inputs, custody, legal structure, and real servicing history remain
-external gates before capital use. Deployment is deliberately blocked by a
-design gate: `PortfolioMandateV1` requires a nonzero action-adapter kind and a
-matching registry declaration, while the activated release declares no action
-adapters because items 5 and 6 await Attestcoin writability. A pool could be deployed
-but could not allocate against that release (`MissingActionAdapter`).
+external gates before capital use.
 
 ## Separate V3 extension deployment workflow
 
-`npm run deploy:v3-extension` handles exactly three independent generations:
-`v3-closed-loop-v1`, `v3-operator-market-v1`, and `v3-portfolio-core-v1`.
+`npm run deploy:v3-extension` handles exactly four independent generations:
+`operator-service-verifier-v1`, `v3-closed-loop-v1`, `v3-operator-market-v1`, and
+`v3-portfolio-core-v1`.
 The caller must supply `--config`; the checked-in examples are deliberately
 unauthorized until every prerequisite manifest, role, nonce, fee, runtime, and
 economic field is replaced with reviewed evidence. Closed loop binds exact fresh
-V3-core and USC-remedy manifests. The market binds an independently qualified
-service-verifier manifest and the token runtime. Portfolio core binds a fresh
-V3-core manifest, a pinned asset runtime, and the required registry release,
-evidence kind, and action-adapter declaration before deployment.
+V3-core and USC-remedy manifests. The verifier generation produces the qualified
+service-verifier manifest required by the market, binding its configured attestor;
+the market also binds the token runtime. Portfolio core binds a fresh V3-core
+manifest, a pinned asset runtime, and the required registry release and evidence
+kind before deployment. A nonzero action-adapter kind requires an exact declaration;
+zero means no adapter is required.
 
 The default mode is deterministic and offline. `--live-check --write-plan`
 creates a 30-minute approval candidate binding the full qualification snapshot,
@@ -309,6 +326,11 @@ checks canonical transactions, deployed runtime around immutables, constructor
 bindings, and empty initial state—including a zero asset balance at the pool—
 before writing a manifest. No checked-in placeholder authorizes signing,
 broadcast, or deployment.
+
+`--qualify-deployed` re-derives the plan at the current HEAD and binds it to the
+journal's source commit. Run it before committing the manifest, or at that exact
+source commit; after HEAD moves it fails with
+`extension deployment journal does not match its plan`.
 
 ## Deployment order and trust boundaries
 

@@ -30,12 +30,16 @@ keys, bearer tokens, account credentials, or provider secrets in it.
 
 ## Fresh V3 core-manifest handoff
 
-Freeze deployment artifacts with Forge 1.7.1 by running `forge build --force`
+Freeze deployment artifacts with Forge 1.7.1 by running `forge clean && forge build`
 and `npm run build:usc-contracts-020` before reviewing either activation
 configuration. The checked-in V3 and USC
 configurations pin the exact raw artifact files, and the root Node suite rejects
 every stale non-placeholder pin. Any source or toolchain change requires a fresh
-forced build, review, and hash update before approval.
+clean whole-project build, review, and hash update before approval. Artifact pins
+are raw-file keccak256 of a `forge clean && forge build` whole-project build;
+incremental or subset builds can change compiler-generated IDs in raw JSON even
+when executable bytecode is unchanged. Build the dedicated USC artifact after
+the clean Forge build, before validating its pin.
 
 `deployments-v3.json` is the immutable historical V3 record. It predates the
 current hardened contracts, and the deployment reservation correctly refuses to
@@ -159,17 +163,24 @@ has been reviewed.
 
 ## Separate V3 extension manifests
 
-Deploy closed loop, the operator market, and portfolio core separately from the
-fresh six-contract V3 core. Each generation gets its own reviewed config,
+Deploy closed loop, the operator service verifier, the operator market, and
+portfolio core separately from the fresh six-contract V3 core. Each generation
+gets its own reviewed config,
 approval file, manifest filename, and recovery journal. Start from exactly one
 of `config/v3-closed-loop.example.json`,
+`config/v3-operator-service-verifier.example.json`,
 `config/v3-operator-market.example.json`, or
 `config/v3-portfolio-core.example.json`; none is authorized as checked in.
 
 Replace every placeholder with reviewed evidence, including exact prerequisite
 manifest paths and lowercase SHA-256 digests. Closed loop requires both the
-fresh V3-core manifest and a qualified USC-remedy manifest. The market requires
-an independently qualified service-verifier manifest and pinned token runtime.
+fresh V3-core manifest and a qualified USC-remedy manifest. The verifier
+generation (`operator-service-verifier-v1`) produces the qualified service-verifier
+manifest required by the market config; the market also requires pinned token
+runtime. Verifier qualification checks runtime, configured attestor, EIP-712
+domain, and a locally computed receipt digest. Qualification does not establish
+attestor independence: the deployed CC3 verifier uses one dedicated,
+project-operated EOA.
 Portfolio core requires the fresh V3-core manifest plus approved manager,
 borrower, guardian, registry-release, evidence-kind, adapter-kind, deadline,
 limit, fee, and pinned asset-runtime decisions. Its predicted pool address must
@@ -179,6 +190,11 @@ values or pre-fund a predicted address.
 Use a new manifest filename and preserve it through every mode:
 
 ```sh
+# Verifier generation example; replace placeholders and review before use.
+npm run deploy:v3-extension -- \
+  --config config/v3-operator-service-verifier.example.json \
+  --manifest deployments-v3-operator-service-verifier-current.json
+
 # Offline validation and deterministic planning; no RPC or signer.
 npm run deploy:v3-extension -- \
   --config /secure/path/reviewed-extension.json \
@@ -216,7 +232,13 @@ npm run deploy:v3-extension -- \
   --qualify-deployed
 ```
 
-Keep separate filenames for all three generations. A manifest for one
+`--qualify-deployed` re-derives the plan at the current HEAD and binds its
+commitment to the journal's `sourceCommit`. Run it before committing the
+manifest, or at that exact source commit. After HEAD moves, the same journal
+fails with `extension deployment journal does not match its plan`; do not edit
+the journal to bypass that binding.
+
+Keep separate filenames for all four generations. A manifest for one
 generation cannot satisfy another generation's prerequisite or authorization
 boundary.
 

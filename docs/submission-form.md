@@ -65,12 +65,20 @@ testnet demonstration with no draw recorded. There is no design partner, live pi
 with a counterparty, independent audit, or production asset or custody decision.
 Items 5–6 remain blocked on Attestcoin writability. SDK 0.1.0 is published for interface
 discovery and testnet integration; interfaces are not frozen and no external integration exists.
-Item 9's operator market remains undeployed: no deployment path produces its required
-`operator-service-verifier-v1` prerequisite manifest, and the verifier's attestor is a
-governance decision. Item 10's portfolio pool is deliberately undeployed at a design gate:
-its mandate requires a nonzero action-adapter kind declared by the facility's registry
-release, but the activated release declares none while items 5–6 await Attestcoin writability.
-A pool deployed today could not allocate to this facility (`MissingActionAdapter`).
+The [verifier manifest](../deployments-v3-operator-service-verifier-current.json) records
+OperatorServiceVerifierV1 `0x44B3e639722650902a11EB26151cBaB039f67a23`;
+the [market manifest](../deployments-v3-operator-market-current.json) records
+OperatorMarketV1 `0x649A73302861fcDf641Aa4cBe5e7eD58d0363337`, deployed and empty.
+One dedicated project-operated EOA attestor serves the verifier; no operators, quotes,
+sponsors, settlements, or independent attestation are demonstrated.
+The [portfolio core manifest](../deployments-v3-portfolio-core-current.json) records
+PortfolioPoolV1 `0x7dd538A9ab77a4d2953b28f3bCe710145a0eC8C2`, its dedicated
+CappedPilotFactoryV1 `0xA5997C4c212eE27B774a7dBa1E5081a9355A16c0`, and
+PortfolioMandateV1 `0x49306adA3decC50D08D11B403A120cd6FD5501D3`, deployed and
+qualified in Configuring state against the activated release and evidence policy.
+The mandate requires no action adapter in zero-kind mode; nonzero kinds retain exact
+matching. Allocation has not been exercised: no investors, capital, or completed work
+are demonstrated by these deployments.
 
 ## Attestcoin Protocol Integration Summary
 

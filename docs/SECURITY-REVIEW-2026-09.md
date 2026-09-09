@@ -116,3 +116,68 @@ context for that review only.
 
 The first two defects were found by running the release tools live, not by this
 review. They are release-tooling defects, not contract defects.
+
+## Post-review mandate and verifier addendum (2026-09-09)
+
+`PortfolioMandateV1` now accepts `requiredActionAdapterKind == bytes32(0)`
+and returns Eligible after the evidence-kind check in that mode. A nonzero
+kind still requires an exact matching action-adapter declaration. This permits
+the existing activated release and evidence policy to serve a mandate that
+requires no action adapter. It removes only the metadata-only declaration
+check in zero mode; that check never proved adapter deployment, execution,
+custody, or recovery. It does not deploy a same-chain remedy adapter.
+
+Factory membership, asset, kernel, facility status, limit, bond, draw fee,
+maturity, policy-set commitment, release existence, issuer-recorded deployment
+bindings, and evidence-kind checks remain in their original order. Registry
+publication and SDK publication encoding still reject zero-kind adapter
+declarations; an empty declaration list remains allowed. The SDK simulator
+mirrors both mandate modes for valid complete snapshots.
+
+The fourth extension generation, `operator-service-verifier-v1`, produces the
+qualified prerequisite manifest consumed by the operator-market generation.
+It checks the pinned runtime and immutable groups, configured attestor,
+EIP-712 domain, and a locally computed service-receipt digest before publishing
+a deployed-qualified manifest. Shared approval, nonce, fee, journal, and
+canonical-confirmation controls remain required.
+
+Task W reviewed commits `6de854d` and `de416dc` and found one MEDIUM finding,
+Task W M1: three extension artifact pins matched existing output but failed a
+clean whole-project rebuild. Compiler-generated raw JSON IDs differed while
+creation/runtime bytecode and metadata were unchanged. The correction,
+`08915d422c3ecdb8717f6a8dd9265825c77fe2c9`, re-pinned the verifier, pool,
+mandate, and affected remedy artifacts from clean-build output. Raw-file
+keccak256 checks remain mandatory; executable-bytecode equality is insufficient.
+Task W's recorded checks passed: `forge test` (392 passed, zero failed or
+skipped), `node --test test/*.test.mjs` (280 tests, 279 passed, one Windows
+symlink-permission skip), and `npm --prefix sdk test` (44 passed plus strict
+declaration type-checking). Those Node checks used existing output and did not
+negate M1; Task X subsequently verified the corrected pins and passing root
+Node suite. These are internal checks, not independent audit evidence.
+
+Task Y reran those three commands after the deployment records: 392 Forge
+tests passed with zero failures or skips; 280 root Node tests yielded 279
+passes, zero failures, and one Windows symlink-permission skip; all 44 SDK
+tests and strict declaration type-checking passed. Twelve invariant checks
+(eight distinct properties) each completed 256 runs and 128,000 calls with
+zero handler reverts. No RPC, signing, or broadcast was part of these checks.
+
+The committed verifier, market, and portfolio-core manifests record six
+qualified CC3 transactions. The operator verifier and empty market are
+deployed with one dedicated project-operated EOA attestor. The fixed-vintage
+pool, dedicated pool-owned capped factory, and zero-mode mandate are deployed
+and qualified in Configuring state against the activated release, with no
+adapter required by the mandate. Allocation has not been exercised. No
+investors, capital, service quotes, or completed work are demonstrated by
+deployment. See `deployments-v3-operator-service-verifier-current.json`,
+`deployments-v3-operator-market-current.json`, and
+`deployments-v3-portfolio-core-current.json` at the repository root.
+
+These contracts were not part of the September internal review's deployed
+scope; this addendum does not extend that review into a production security or
+audit conclusion. Independent attestation, competitive operators, customer
+usage, real servicing performance, profitability, production readiness,
+evergreen NAV, cross-chain remedy execution, Attestcoin writability, completed
+cures, and audited portfolio loss accounting remain unsupported. Legal and
+custody review, external demand, a production audit, and real servicing
+history remain open.

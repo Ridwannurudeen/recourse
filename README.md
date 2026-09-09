@@ -49,7 +49,7 @@ Roadmap work now also includes a typed [SDK](sdk/README.md), policy simulation a
 
 The repository now covers the buildable contract and tooling scope for roadmap items 4–10: a capped pilot factory and loss-settling facility, offline-first deployment and activation tooling, bounded remedy coordination, a pinned USC 0.2 transport and dispatcher, closed-loop acknowledgement/cure lifecycle, block-hash-paged registry SDK, multi-chain event-risk policy, escrowed operator-service market, hardened reference operator, and a fixed-vintage portfolio pool with exact allocation and loss accounting. See [the exact build inventory and remaining gates](docs/ROADMAP-4-10-BUILD.md). The historical inactive core in `deployments-v3.json` remains unchanged and incompatible with current activation. Its replacement is deployed-qualified on CC3 Testnet in [`deployments-v3-current.json`](deployments-v3-current.json), from source commit `90d8b05af38940ffeb55d974401641a327176b9e`, with runtime code hashes verified for all six contracts at block `5459080`.
 
-[`activation-v3-current.json`](activation-v3-current.json) records Active facility `0x00B50626C4AA42d22ca01AAEa8649f253aEc5B1e`, policy `1`, registry release `0xad31a01779b7c8c8651e1fecbb15b6d177c25dbd637c99d7496c2c2a0b7d221a`, and Open proof job `1`. The facility was activated at block `5459222`; the completed activation was verified at block `5459248`. Its Ethereum source window is `25944522–26024522`, maturity block is `5554121`, and proof-job expiry is Unix timestamp `1792497600`. The manifest records 100,000 rUSD lender funding, a 20,000 rUSD borrower bond, and zero drawn principal. This is a capped testnet demonstration using the fixed-supply demo token. There is no design partner, live pilot with a counterparty, independent audit, or production asset or custody decision. The USC route, operator market, and portfolio pool remain undeployed.
+[`activation-v3-current.json`](activation-v3-current.json) records Active facility `0x00B50626C4AA42d22ca01AAEa8649f253aEc5B1e`, policy `1`, registry release `0xad31a01779b7c8c8651e1fecbb15b6d177c25dbd637c99d7496c2c2a0b7d221a`, and Open proof job `1`. The facility was activated at block `5459222`; the completed activation was verified at block `5459248`. Its Ethereum source window is `25944522–26024522`, maturity block is `5554121`, and proof-job expiry is Unix timestamp `1792497600`. The manifest records 100,000 rUSD lender funding, a 20,000 rUSD borrower bond, and zero drawn principal. This is a capped testnet demonstration using the fixed-supply demo token. There is no design partner, live pilot with a counterparty, independent audit, or production asset or custody decision. The USC route remains undeployed. The operator verifier and empty market are deployed on CC3; the fixed-vintage pool, dedicated capped factory, and zero-mode mandate are deployed and qualified in Configuring state. Allocation has not been exercised.
 
 Fresh V3 deployment is offline by default. A signerless `--live-check` precedes
 `--write-plan`; an accountable human must separately approve that exact plan,
@@ -65,24 +65,43 @@ verifies exact runtime around immutables for all six artifacts, including
 operator handoff](ops/README.md#fresh-v3-core-manifest-handoff) for the exact
 commands and renewal procedure.
 
-Closed-loop policy, operator-market, and portfolio-core deployments use the
-separate `npm run deploy:v3-extension` workflow. Its three checked-in example
-configurations pin the reviewed local artifacts but deliberately leave route,
-verifier, role, economics, nonce, fee, and prerequisite-manifest evidence
-unauthorized. Each generation is planned independently from exact prerequisite
-manifest hashes; live planning is signerless, approval expires after 30 minutes,
-and raw signed transactions are journaled before broadcast. No extension has
-been deployed. See [the extension handoff](ops/README.md#separate-v3-extension-manifests).
+Closed-loop policy, operator-service-verifier, operator-market, and portfolio-core deployments use the
+separate `npm run deploy:v3-extension` workflow with four generations. The verifier
+producer supplies the market's prerequisite manifest. The committed CC3 configs
+and manifests record the verifier, empty market, and Configuring portfolio core;
+the closed-loop policy remains undeployed. Each generation is planned independently
+from exact prerequisite manifest hashes; live planning is signerless, approval expires
+after 30 minutes, and raw signed transactions are journaled before broadcast.
+See [the extension handoff](ops/README.md#separate-v3-extension-manifests).
+
+The committed extension deployment records are:
+
+| Component | CC3 address | Deployment block |
+| --- | --- | --- |
+| OperatorServiceVerifierV1 | `0x44B3e639722650902a11EB26151cBaB039f67a23` | 5459750 |
+| OperatorMarketV1 | `0x649A73302861fcDf641Aa4cBe5e7eD58d0363337` | 5459763 |
+| PortfolioPoolV1 | `0x7dd538A9ab77a4d2953b28f3bCe710145a0eC8C2` | 5459775 |
+| CappedPilotFactoryV1 | `0xA5997C4c212eE27B774a7dBa1E5081a9355A16c0` | 5459784 |
+| PortfolioMandateV1 | `0x49306adA3decC50D08D11B403A120cd6FD5501D3` | 5459793 |
+
+Sources: [verifier manifest](deployments-v3-operator-service-verifier-current.json),
+[market manifest](deployments-v3-operator-market-current.json), and
+[portfolio manifest](deployments-v3-portfolio-core-current.json). The verifier uses
+one dedicated project-operated EOA attestor, `0xeCf1BeeF05450f1E2A2adAb86b61ccC2D6235369`;
+this is not independent attestation. No operators, quotes, sponsors, or settlements
+are demonstrated. The pool has no investors, capital, or allocations demonstrated;
+its mandate reuses the activated release and evidence policy with no action adapter
+required. No remedy adapter is implied by that setting.
 
 ## Quickstart
 
-The checked-in `deployments.json` points to the already-breached live facility. To reproduce the full demo with a fresh facility, use fresh development wallets and CC3 testnet funds. The release baseline uses Node.js 24.15.0, npm 11.12.1, and Foundry 1.7.1; ensure `forge` is on `PATH` before running the unified test command. The deployment and activation configurations pin the raw artifacts emitted by the forced build, and the Node suite rejects stale pins.
+The checked-in `deployments.json` points to the already-breached live facility. To reproduce the full demo with a fresh facility, use fresh development wallets and CC3 testnet funds. The release baseline uses Node.js 24.15.0, npm 11.12.1, and Foundry 1.7.1; ensure `forge` is on `PATH` before running the unified test command. The deployment and activation configurations pin the raw artifacts emitted by a clean whole-project build, and the Node suite rejects stale pins.
 
 ```bash
 git submodule update --init --recursive
 npm ci
 npm --prefix sdk ci
-forge build --force
+forge clean && forge build
 npm test
 npm run wallets:new
 ```
@@ -168,9 +187,9 @@ The borrower's activation commits to an ordered hash covering both the identity 
 
 ## Testing
 
-`npm test` passes 376 Forge tests, 271 root Node tests, and 39 SDK tests across the deployed generations and the local roadmap build, followed by a strict SDK declaration compile. One Windows-only symlink test is skipped when the process lacks symlink privilege, for 272 root Node tests in total. Coverage includes exact pilot loss settlement, remedy retry/timeout/acknowledgement recovery, multi-rule transaction accumulation, per-policy source ordering and the later-weak/earlier-severe front-running regression, sponsor-bound operator-market escrow, registry declarations and exact audit scopes, ABI parity, block-hash-bound pagination, reorg-anchored aggregate reads, target-first crash recovery, signed-call substitution rejection, native proof/receipt binding, bounded adaptive source scans, queue-saturation recovery, transaction finality, conservative cures, extension deployment approval and journal recovery, and end-to-end policy flows.
+The test suites pass 392 Forge tests, 279 root Node tests, and 44 SDK tests across the deployed generations and the local roadmap build, followed by a strict SDK declaration compile. One Windows-only symlink test is skipped when the process lacks symlink privilege, for 280 root Node tests in total. Coverage includes exact pilot loss settlement, remedy retry/timeout/acknowledgement recovery, multi-rule transaction accumulation, per-policy source ordering and the later-weak/earlier-severe front-running regression, sponsor-bound operator-market escrow, registry declarations and exact audit scopes, ABI parity, block-hash-bound pagination, reorg-anchored aggregate reads, target-first crash recovery, signed-call substitution rejection, native proof/receipt binding, bounded adaptive source scans, queue-saturation recovery, transaction finality, conservative cures, extension deployment approval and journal recovery, and end-to-end policy flows.
 
-Eight stateful invariant properties each complete 256 runs and 128,000 calls with zero handler reverts. They cover native and ERC-20 asset conservation, claim solvency, Horizon 1 and capped-pilot facility bounds, default loss distribution, inactive credit availability, portfolio recovery and loss bounds, and fully collateralized operator-market obligations even when unsolicited token transfers create surplus. A separate regression test asserts that the original-generation bond can be claimed at most once.
+Twelve stateful invariant checks (eight distinct properties) each complete 256 runs and 128,000 calls with zero handler reverts. They cover native and ERC-20 asset conservation, claim solvency, Horizon 1 and capped-pilot facility bounds, default loss distribution, inactive credit availability, portfolio recovery and loss bounds, and fully collateralized operator-market obligations even when unsolicited token transfers create surplus. A separate regression test asserts that the original-generation bond can be claimed at most once.
 
 ## Honest limitations
 
@@ -191,7 +210,7 @@ Recourse's trajectory is not “more covenants.” It is a cross-chain credit po
 
 - **Horizon 1 — Items 1–3 delivered; item 4 core deployed and capped testnet demonstration activated.** The current six-contract V3 core is runtime-qualified and its pilot activation is recorded in the current manifests above. The historical inactive deployment remains separate. Only the Horizon 1 read-only operator service is installed; V3 execution is not installed. No live pilot with a counterparty has run: a design partner, independent audit, legal review, and production asset and custody decisions remain explicit gates.
 - **Horizon 2 — Local closed-loop stack delivered; live routing blocked.** Items 5 and 6 include a transport-neutral lifecycle plus a pinned USC 0.2 single-route adapter, deterministic deployment qualification, and acknowledgement handling. They remain undeployed and blocked on Attestcoin writability and independently verified route and Inbox configuration. Item 7's SDK `0.1.0` is published for interface discovery and testnet integration against the current core and pilot registry release. Interfaces are not frozen; there is no external integration yet. Independent audit and two external integrations remain gates.
-- **Horizon 3 — Local coordination stack delivered; live market and capital remain gated.** Item 8 supports the two source keys currently documented for CC3. Item 9's operator market is not deployed: no deployment path produces its required `operator-service-verifier-v1` prerequisite manifest, and the verifier's attestor remains a governance decision. Item 10's portfolio pool is deliberately undeployed: its mandate requires a nonzero action-adapter kind declared by the registry release, while the activated release declares none because items 5–6 remain blocked. It could not allocate to that facility (`MissingActionAdapter`). No operator market, portfolio allocation, or customer policy is live; audit, demand, economics, supported routes, and real servicing history remain gates.
+- **Horizon 3 — Coordination contracts deployed; market activity and capital allocation remain gated.** Item 8 supports the two source keys currently documented for CC3. Item 9's verifier and empty operator market are deployed with one dedicated project-operated EOA attestor; no operators, quotes, sponsors, settlements, or independent attestation are demonstrated. Item 10's fixed-vintage pool, dedicated factory, and zero-mode mandate are deployed and qualified in Configuring state against the activated release. Zero adapter kind means none required; nonzero kinds still require an exact declaration match. Allocation has not been exercised. Audit, demand, economics, legal/custody review, and real servicing history remain gates.
 
 See the [full three-horizon roadmap](docs/ROADMAP.md) for the ten-item plan, investment milestones, dependencies, and deliberate cut list.
 
