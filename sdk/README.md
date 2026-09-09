@@ -42,12 +42,14 @@ comparison, and can require the encoded bytes to match an expected on-chain
 configuration hash. Registry calldata aggregation remains dry-run only and
 preserves ordered call arrays without accepting a signer.
 
-`recourse-protocol-sdk` 0.1.0 is published to npm for interface discovery and
-testnet integration. It is not a frozen production dependency; interfaces may
-still change before external integrations shape them.
+`recourse-protocol-sdk` 0.1.1 is prepared locally for interface discovery and
+testnet integration; publication is pending. It is not a frozen production
+dependency; interfaces may still change before external integrations shape them.
+
+After publication:
 
 ```sh
-npm install recourse-protocol-sdk
+npm install recourse-protocol-sdk@0.1.1
 ```
 
 To work against the repository source instead, install from a clone, pointing
@@ -108,14 +110,22 @@ must not be treated as compatible with the exported V3 interfaces.
 [`activation-v3-current.json`](../activation-v3-current.json) records an activated
 capped facility denominated in the fixed-supply demo token; this is a testnet
 demonstration, with no design partner or live pilot with a counterparty.
-`OperatorMarketV1`, `PortfolioMandateV1`, and
-`PortfolioPoolV1` exports describe source-level capabilities only unless a
-separate verified deployment establishes live state. The pool API covers its
-configuring, funding, active, finalized, and cancelled lifecycle, but the
-repository contains no verified pool address or live pool capital. Market
+[`deployments-v3-operator-market-current.json`](../deployments-v3-operator-market-current.json)
+records the qualified empty market, and
+[`deployments-v3-portfolio-core-current.json`](../deployments-v3-portfolio-core-current.json)
+records the qualified pool, dedicated capped factory, and zero-mode mandate in
+Configuring state. The pool API covers its configuring, funding, active,
+finalized, and cancelled lifecycle; deployment demonstrates no investors,
+capital, allocations, service quotes, or completed work. Market
 activity, operator reputation, portfolio capital, TVL, yield, or allocation is
 never inferred from an ABI.
 
 Run `npm test` for runtime parity tests and strict declaration checks. Run
 `npm run pack:check` to inspect the deterministic publish file set without
 publishing anything.
+
+## Changes
+
+0.1.1: The portfolio-mandate simulator now mirrors the zero-adapter-kind mode:
+zero means no action adapter is required, while nonzero kinds retain exact
+matching. All earlier eligibility gates still apply.
