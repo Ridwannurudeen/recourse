@@ -690,6 +690,8 @@ async function executeStep(
       signer: signers[transactionPlan[stepIndex].signer],
       request: transactionRequests[stepIndex],
       approvedTransaction: liveExecutionPlan.steps[stepIndex],
+      targetConfirmations: config.transactionPolicy.targetConfirmations,
+      maximumReceiptPolls: config.transactionPolicy.maximumReceiptPolls,
     });
   }
   const result = await reconcileV3ActivationStep({

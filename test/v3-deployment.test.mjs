@@ -1280,6 +1280,147 @@ test("V3 journal durably records the signed transaction before broadcast and nev
   assert.equal(result.journal.steps[0].intent.rawTransaction, undefined);
 });
 
+test("V3 receipt polling waits in CC3 blocks for six confirmations on poll eight", async (t) => {
+  const directory = mkdtempSync(join(tmpdir(), "recourse-v3-block-polls-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const fixture = await deploymentFixture();
+  let { path, journal } = initializeV3DeploymentJournal({
+    ...fixture,
+    manifestPath: join(directory, "deployment.json"),
+  });
+  journal = await prepareV3DeploymentStep({
+    journal,
+    journalPath: path,
+    stepIndex: 0,
+    signer: fixture.signer,
+  });
+  const transaction = Transaction.from(journal.steps[0].intent.rawTransaction);
+  const receipt = {
+    hash: transaction.hash,
+    status: 1,
+    blockNumber: 50,
+    blockHash: HASH("d"),
+    contractAddress: fixture.plan.steps[0].predictedContract,
+  };
+  const delays = [];
+  let elapsed = 0;
+  let polls = 0;
+  const result = await reconcileV3DeploymentStep({
+    journal,
+    journalPath: path,
+    stepIndex: 0,
+    targetConfirmations: 6,
+    maximumReceiptPolls: 24,
+    provider: {
+      getNetwork: async () => ({ chainId: 102031n }),
+      getTransactionReceipt: async () => (++polls === 1 ? null : receipt),
+      getTransaction: async () => transaction,
+      getBlockNumber: async () =>
+        50 + Math.floor(Math.max(0, elapsed - 30_000) / 15_000),
+      getBlock: async () => ({ hash: receipt.blockHash }),
+    },
+    delay: async (milliseconds) => {
+      delays.push(milliseconds);
+      elapsed += milliseconds;
+    },
+  });
+  assert.equal(result.journal.steps[0].status, "confirmed");
+  assert.deepEqual(delays, Array(7).fill(15_000));
+  assert.equal(polls, 9);
+});
+
+test("V3 receipt time budget rejects short intervals before signing and accepts the block default", async (t) => {
+  const directory = mkdtempSync(join(tmpdir(), "recourse-v3-poll-budget-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const fixture = await deploymentFixture();
+  const { path, journal } = initializeV3DeploymentJournal({
+    ...fixture,
+    manifestPath: join(directory, "deployment.json"),
+  });
+  let signatures = 0;
+  const options = {
+    journal,
+    journalPath: path,
+    stepIndex: 0,
+    targetConfirmations: 6,
+    maximumReceiptPolls: 6,
+    signer: {
+      ...fixture.signer,
+      signTransaction: (request) => {
+        signatures += 1;
+        return fixture.signer.signTransaction(request);
+      },
+    },
+  };
+  await assert.rejects(
+    () => prepareV3DeploymentStep({ ...options, receiptPollIntervalMs: 1_000 }),
+    /6000 ms.*90000 ms/,
+  );
+  assert.equal(signatures, 0);
+  assert.equal(
+    JSON.parse(readFileSync(path, "utf8")).steps[0].status,
+    "planned",
+  );
+  const prepared = await prepareV3DeploymentStep(options);
+  assert.equal(signatures, 1);
+  await assert.rejects(
+    () =>
+      reconcileV3DeploymentStep({
+        ...options,
+        journal: prepared,
+        receiptPollIntervalMs: 1_000,
+        provider: { getNetwork: async () => ({ chainId: 102031n }) },
+      }),
+    /6000 ms.*90000 ms/,
+  );
+});
+
+test("V3 receipt polling remains pending when confirmation depth exceeds the bounded wait", async (t) => {
+  const directory = mkdtempSync(join(tmpdir(), "recourse-v3-poll-timeout-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const fixture = await deploymentFixture();
+  let { path, journal } = initializeV3DeploymentJournal({
+    ...fixture,
+    manifestPath: join(directory, "deployment.json"),
+  });
+  journal = await prepareV3DeploymentStep({
+    journal,
+    journalPath: path,
+    stepIndex: 0,
+    signer: fixture.signer,
+  });
+  const transaction = Transaction.from(journal.steps[0].intent.rawTransaction);
+  const delays = [];
+  await assert.rejects(
+    () =>
+      reconcileV3DeploymentStep({
+        journal,
+        journalPath: path,
+        stepIndex: 0,
+        targetConfirmations: 6,
+        maximumReceiptPolls: 6,
+        provider: {
+          getNetwork: async () => ({ chainId: 102031n }),
+          getTransactionReceipt: async () => ({
+            hash: transaction.hash,
+            status: 1,
+            blockNumber: 50,
+            blockHash: HASH("d"),
+            contractAddress: fixture.plan.steps[0].predictedContract,
+          }),
+          getBlockNumber: async () => 54,
+        },
+        delay: async (milliseconds) => delays.push(milliseconds),
+      }),
+    /remains pending after 6 bounded receipt polls/,
+  );
+  assert.deepEqual(delays, Array(5).fill(15_000));
+  assert.equal(
+    JSON.parse(readFileSync(path, "utf8")).steps[0].status,
+    "prepared",
+  );
+});
+
 test("V3 recovery refuses nonce advancement and requires canonical confirmation depth", async (t) => {
   const directory = mkdtempSync(join(tmpdir(), "recourse-v3-recovery-"));
   t.after(() => rmSync(directory, { recursive: true, force: true }));

@@ -1766,6 +1766,145 @@ test("signed USC deployment transactions cannot substitute calldata, nonce, sign
   );
 });
 
+for (const scenario of ["confirms", "insufficient budget", "pending"]) {
+  test(`USC receipt polling ${scenario} with a block-time budget`, async () => {
+    const directory = await mkdtemp(join(tmpdir(), "recourse-usc-polls-"));
+    const wallet = Wallet.createRandom();
+    const rawInput = input();
+    rawInput.source.deployer = wallet.address;
+    const config = validateUscRemedyDeploymentConfig(rawInput);
+    const plan = await buildUscRemedyDeploymentPlan({
+      config,
+      artifacts: artifacts(),
+    });
+    try {
+      const executionPlan = await liveExecutionPlan(config, plan);
+      const approval = createUscRemedyApproval({
+        config,
+        plan,
+        executionPlan,
+        qualification: {
+          source: { blockTimestamp: 1_000 },
+          destination: {},
+          dependencies: {},
+        },
+        now: 1_000,
+      });
+      let { path, journal } = initializeUscRemedyJournal({
+        manifestPath: join(directory, "deployment.json"),
+        config,
+        plan,
+        qualification: { checked: true },
+        approval,
+      });
+      let signatures = 0;
+      const preparation = {
+        journal,
+        journalPath: path,
+        stepIndex: 0,
+        targetConfirmations: 6,
+        maximumReceiptPolls: 6,
+        signer: {
+          getAddress: async () => wallet.address,
+          signTransaction: (request) => {
+            signatures += 1;
+            return wallet.signTransaction(request);
+          },
+        },
+      };
+      if (scenario === "insufficient budget") {
+        await assert.rejects(
+          prepareUscRemedyStep({ ...preparation, receiptPollIntervalMs: NaN }),
+          /receipt poll interval/,
+        );
+        await assert.rejects(
+          prepareUscRemedyStep({
+            ...preparation,
+            receiptPollIntervalMs: 1_000,
+          }),
+          /6000.*90000/,
+        );
+        assert.equal(signatures, 0);
+      }
+      journal = await prepareUscRemedyStep(preparation);
+      assert.equal(signatures, 1);
+      const transaction = Transaction.from(
+        journal.steps[0].intent.rawTransaction,
+      );
+      const receipt = {
+        hash: transaction.hash,
+        status: 1,
+        blockNumber: 102,
+        blockHash: HASH("ee"),
+        contractAddress: plan.predictedContracts.transport,
+      };
+      const delays = [];
+      let elapsed = 0;
+      let receiptReads = 0;
+      let broadcasts = 0;
+      const reconcile = {
+        journal,
+        journalPath: path,
+        stepIndex: 0,
+        targetConfirmations: 6,
+        maximumReceiptPolls: scenario === "confirms" ? 24 : 6,
+        provider: {
+          getNetwork: async () => ({ chainId: 102031n }),
+          getTransactionReceipt: async () => {
+            receiptReads += 1;
+            return elapsed >= 15_000 ? receipt : null;
+          },
+          getBlockNumber: async () =>
+            scenario === "pending"
+              ? 102
+              : 102 + Math.floor(Math.max(0, elapsed - 30_000) / 15_000),
+          getBlock: async () => ({ hash: receipt.blockHash }),
+          getTransaction: async () => (broadcasts > 0 ? transaction : null),
+          getTransactionCount: async () => transaction.nonce,
+          broadcastTransaction: async (raw) => {
+            assert.equal(raw, journal.steps[0].intent.rawTransaction);
+            broadcasts += 1;
+          },
+        },
+        delay: async (milliseconds) => {
+          delays.push(milliseconds);
+          elapsed += milliseconds;
+        },
+      };
+      if (scenario === "insufficient budget") {
+        await assert.rejects(
+          reconcileUscRemedyStep({ ...reconcile, receiptPollIntervalMs: NaN }),
+          /receipt poll interval/,
+        );
+        await assert.rejects(
+          reconcileUscRemedyStep({
+            ...reconcile,
+            receiptPollIntervalMs: 1_000,
+          }),
+          /6000.*90000/,
+        );
+        assert.equal(receiptReads, 0);
+        assert.equal(broadcasts, 0);
+      } else if (scenario === "pending") {
+        await assert.rejects(
+          reconcileUscRemedyStep(reconcile),
+          /remains pending after 6 bounded receipt polls/,
+        );
+        assert.equal(receiptReads, 6);
+        assert.deepEqual(delays, Array(5).fill(15_000));
+      } else {
+        const result = await reconcileUscRemedyStep(reconcile);
+        assert.equal(result.journal.steps[0].status, "confirmed");
+        assert.equal(receiptReads, 9);
+        assert.equal(broadcasts, 1);
+        assert.deepEqual(delays, Array(7).fill(15_000));
+      }
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+}
+
 test("USC deployment journal survives a crash after signing and never rebroadcasts a mined step", async () => {
   const directory = await mkdtemp(join(tmpdir(), "recourse-usc-journal-"));
   const wallet = Wallet.createRandom();

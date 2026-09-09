@@ -1941,6 +1941,152 @@ test("the journal persists signed raw intent before broadcast, recovers canonica
   }
 });
 
+test("extension receipt polls use block time to reach six confirmations on poll eight", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "recourse-extension-poll-time-"));
+  try {
+    const fixture = await liveFixture();
+    let { path, journal } = initializeV3ExtensionJournal({
+      manifestPath: join(directory, "deployment.json"),
+      ...fixture,
+    });
+    journal = await prepareV3ExtensionStep({
+      journal,
+      journalPath: path,
+      stepIndex: 0,
+      signer: fixture.signer,
+      targetConfirmations: 6,
+      maximumReceiptPolls: 24,
+    });
+    const transaction = Transaction.from(
+      journal.steps[0].intent.rawTransaction,
+    );
+    const receipt = {
+      hash: transaction.hash,
+      status: 1,
+      blockNumber: 700,
+      blockHash: HASH("a"),
+      contractAddress: journal.steps[0].predictedContract,
+    };
+    let elapsed = 0;
+    let receiptCalls = 0;
+    let broadcasts = 0;
+    const delays = [];
+    const provider = {
+      getNetwork: async () => ({ chainId: BigInt(CHAIN_ID) }),
+      getTransactionReceipt: async () => (++receiptCalls === 1 ? null : receipt),
+      getTransaction: async () => (receiptCalls === 1 ? null : transaction),
+      getTransactionCount: async () => STARTING_NONCE,
+      getBlockNumber: async () =>
+        700 + Math.floor(Math.max(0, elapsed - 30_000) / 15_000),
+      getBlock: async () => ({ number: 700, hash: receipt.blockHash }),
+      broadcastTransaction: async (raw) => {
+        assert.equal(raw, journal.steps[0].intent.rawTransaction);
+        assert.equal(
+          JSON.parse(readFileSync(path, "utf8")).steps[0].status,
+          "prepared",
+        );
+        broadcasts += 1;
+      },
+    };
+    const result = await reconcileV3ExtensionStep({
+      journal,
+      journalPath: path,
+      stepIndex: 0,
+      provider,
+      targetConfirmations: 6,
+      maximumReceiptPolls: 24,
+      delay: async (milliseconds) => {
+        delays.push(milliseconds);
+        elapsed += milliseconds;
+      },
+    });
+    assert.deepEqual(delays, Array(7).fill(15_000));
+    assert.equal(receiptCalls, 9);
+    assert.equal(broadcasts, 1);
+    assert.equal(result.journal.steps[0].status, "confirmed");
+    assert.equal(result.journal.steps[0].intent.rawTransaction, undefined);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("extension receipt time budget rejects before signing and accepts six block-time polls", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "recourse-extension-poll-budget-"));
+  try {
+    const fixture = await liveFixture();
+    const { path, journal } = initializeV3ExtensionJournal({
+      manifestPath: join(directory, "deployment.json"),
+      ...fixture,
+    });
+    let signatures = 0;
+    const signer = {
+      ...fixture.signer,
+      signTransaction: async (request) => {
+        signatures += 1;
+        return fixture.signer.signTransaction(request);
+      },
+    };
+    const options = {
+      journal,
+      journalPath: path,
+      stepIndex: 0,
+      signer,
+      targetConfirmations: 6,
+      maximumReceiptPolls: 6,
+    };
+    await assert.rejects(
+      prepareV3ExtensionStep({ ...options, receiptPollIntervalMs: 1_000 }),
+      /6000.*90000/,
+    );
+    assert.equal(signatures, 0);
+    assert.equal(
+      JSON.parse(readFileSync(path, "utf8")).steps[0].status,
+      "planned",
+    );
+    const prepared = await prepareV3ExtensionStep(options);
+    assert.equal(signatures, 1);
+    const transaction = Transaction.from(
+      prepared.steps[0].intent.rawTransaction,
+    );
+    const receipt = {
+      hash: transaction.hash,
+      status: 1,
+      blockNumber: 700,
+      blockHash: HASH("b"),
+      contractAddress: prepared.steps[0].predictedContract,
+    };
+    const delays = [];
+    const reconciliation = {
+      ...options,
+      journal: prepared,
+      provider: {
+        getNetwork: async () => ({ chainId: BigInt(CHAIN_ID) }),
+        getTransactionReceipt: async () => receipt,
+        getBlockNumber: async () => 700,
+      },
+      delay: async (milliseconds) => delays.push(milliseconds),
+    };
+    await assert.rejects(
+      reconcileV3ExtensionStep({
+        ...reconciliation,
+        receiptPollIntervalMs: 1_000,
+      }),
+      /6000.*90000/,
+    );
+    await assert.rejects(
+      reconcileV3ExtensionStep(reconciliation),
+      /remains pending after 6 bounded receipt polls/,
+    );
+    assert.deepEqual(delays, Array(5).fill(15_000));
+    assert.equal(
+      JSON.parse(readFileSync(path, "utf8")).steps[0].status,
+      "prepared",
+    );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("manifest and transaction verification require an exact separate generation and canonical signed CREATE", async () => {
   const fixture = await liveFixture();
   const { wallet, config, artifacts, plan, executionPlan } = fixture;

@@ -62,6 +62,7 @@ const SOURCE_NETWORKS = Object.freeze({
   }),
 });
 
+const CC3_BLOCK_TIME_MS = 15_000;
 const ZERO_BYTES32 = ZeroHash;
 const ABI = AbiCoder.defaultAbiCoder();
 const POLICY_EFFECT_TUPLE =
@@ -2906,6 +2907,33 @@ function transactionMatchesIntent(transaction, intent) {
   );
 }
 
+function validateReceiptTimeBudget(
+  targetConfirmations,
+  maximumReceiptPolls,
+  receiptPollIntervalMs,
+) {
+  integer(targetConfirmations, "target confirmations", 256, { positive: true });
+  integer(maximumReceiptPolls, "maximum receipt polls", 10_000, {
+    positive: true,
+  });
+  if (maximumReceiptPolls < targetConfirmations) {
+    throw new Error("Maximum receipt polls must cover target confirmations");
+  }
+  integer(
+    receiptPollIntervalMs,
+    "receipt poll interval",
+    Number.MAX_SAFE_INTEGER,
+    { positive: true },
+  );
+  const receiptTimeBudgetMs = maximumReceiptPolls * receiptPollIntervalMs;
+  const requiredConfirmationTimeMs = targetConfirmations * CC3_BLOCK_TIME_MS;
+  if (receiptTimeBudgetMs < requiredConfirmationTimeMs) {
+    throw new Error(
+      `Receipt time budget ${receiptTimeBudgetMs} ms must cover confirmation time ${requiredConfirmationTimeMs} ms`,
+    );
+  }
+}
+
 export async function prepareV3ActivationStep({
   journal,
   journalPath,
@@ -2913,7 +2941,15 @@ export async function prepareV3ActivationStep({
   signer,
   request,
   approvedTransaction,
+  targetConfirmations = 1,
+  maximumReceiptPolls = 20,
+  receiptPollIntervalMs = CC3_BLOCK_TIME_MS,
 }) {
+  validateReceiptTimeBudget(
+    targetConfirmations,
+    maximumReceiptPolls,
+    receiptPollIntervalMs,
+  );
   const step = journal.steps[stepIndex];
   if (!step || step.status !== "planned")
     throw new Error(`Activation step ${stepIndex + 1} is not planned`);
@@ -3021,7 +3057,7 @@ export async function reconcileV3ActivationStep({
   provider,
   targetConfirmations = 1,
   maximumReceiptPolls = 20,
-  receiptPollIntervalMs = 1_000,
+  receiptPollIntervalMs = CC3_BLOCK_TIME_MS,
   beforeBroadcast = async () => {},
   delay = (milliseconds) =>
     new Promise((resolvePromise) => setTimeout(resolvePromise, milliseconds)),
@@ -3033,21 +3069,11 @@ export async function reconcileV3ActivationStep({
   const network = await provider.getNetwork();
   if (network.chainId !== BigInt(intent.chainId))
     throw new Error(`${step.name} journal chain mismatch`);
-  targetConfirmations = integer(
+  validateReceiptTimeBudget(
     targetConfirmations,
-    "target confirmations",
-    256,
-    { positive: true },
-  );
-  maximumReceiptPolls = integer(
     maximumReceiptPolls,
-    "maximum receipt polls",
-    10_000,
-    { positive: true },
+    receiptPollIntervalMs,
   );
-  if (maximumReceiptPolls < targetConfirmations) {
-    throw new Error("Maximum receipt polls must cover target confirmations");
-  }
   let receipt;
   let transaction;
   let broadcast = false;

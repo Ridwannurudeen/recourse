@@ -349,6 +349,8 @@ try {
           journalPath,
           stepIndex,
           signer,
+          targetConfirmations: config.transactionPolicy.targetConfirmations,
+          maximumReceiptPolls: config.transactionPolicy.maximumReceiptPolls,
         });
       }
       const reconciled = await reconcileV3DeploymentStep({

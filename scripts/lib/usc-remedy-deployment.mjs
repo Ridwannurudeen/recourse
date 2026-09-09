@@ -109,6 +109,7 @@ export const USC_ATTESTOR_REGISTRY_ABI = Object.freeze([
 ]);
 
 const ABI = AbiCoder.defaultAbiCoder();
+const CC3_BLOCK_TIME_MS = 15_000;
 const OUTBOX_CONSTRUCTOR_TYPES = [
   "uint32",
   "address",
@@ -3101,7 +3102,23 @@ export async function prepareUscRemedyStep({
   journalPath,
   stepIndex,
   signer,
+  targetConfirmations = 1,
+  maximumReceiptPolls = 24,
+  receiptPollIntervalMs = CC3_BLOCK_TIME_MS,
 }) {
+  positiveInteger(targetConfirmations, "target confirmations", 256);
+  positiveInteger(maximumReceiptPolls, "maximum receipt polls", 10_000);
+  positiveInteger(receiptPollIntervalMs, "receipt poll interval");
+  if (maximumReceiptPolls < targetConfirmations) {
+    throw new Error("Maximum receipt polls must cover confirmation depth");
+  }
+  const receiptBudgetMs = maximumReceiptPolls * receiptPollIntervalMs;
+  const confirmationBudgetMs = targetConfirmations * CC3_BLOCK_TIME_MS;
+  if (receiptBudgetMs < confirmationBudgetMs) {
+    throw new Error(
+      `Receipt poll budget ${receiptBudgetMs} ms cannot cover confirmation depth requiring ${confirmationBudgetMs} ms`,
+    );
+  }
   const step = journal.steps[stepIndex];
   if (!step || step.status !== "planned") {
     throw new Error(`USC deployment step ${stepIndex + 1} is not planned`);
@@ -3190,7 +3207,7 @@ export async function reconcileUscRemedyStep({
   provider,
   targetConfirmations,
   maximumReceiptPolls,
-  receiptPollIntervalMs = 1_000,
+  receiptPollIntervalMs = CC3_BLOCK_TIME_MS,
   beforeBroadcast = async () => {},
   delay = (milliseconds) =>
     new Promise((resolvePromise) => setTimeout(resolvePromise, milliseconds)),
@@ -3205,8 +3222,16 @@ export async function reconcileUscRemedyStep({
   }
   positiveInteger(targetConfirmations, "target confirmations", 256);
   positiveInteger(maximumReceiptPolls, "maximum receipt polls", 10_000);
+  positiveInteger(receiptPollIntervalMs, "receipt poll interval");
   if (maximumReceiptPolls < targetConfirmations) {
     throw new Error("Maximum receipt polls must cover confirmation depth");
+  }
+  const receiptBudgetMs = maximumReceiptPolls * receiptPollIntervalMs;
+  const confirmationBudgetMs = targetConfirmations * CC3_BLOCK_TIME_MS;
+  if (receiptBudgetMs < confirmationBudgetMs) {
+    throw new Error(
+      `Receipt poll budget ${receiptBudgetMs} ms cannot cover confirmation depth requiring ${confirmationBudgetMs} ms`,
+    );
   }
   let receipt;
   let broadcastAttempted = false;

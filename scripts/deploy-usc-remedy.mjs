@@ -350,6 +350,11 @@ try {
           journalPath,
           stepIndex,
           signer,
+          targetConfirmations:
+            step.network === "source"
+              ? config.transactionPolicy.sourceConfirmations
+              : config.transactionPolicy.destinationConfirmations,
+          maximumReceiptPolls: config.transactionPolicy.maximumReceiptPolls,
         });
       }
       const reconciled = await reconcileUscRemedyStep({

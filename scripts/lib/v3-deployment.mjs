@@ -55,6 +55,7 @@ Options:
   --approved-plan <path>     Human-approved plan required by --broadcast
   --approval-commitment <h>  Externally recorded approval digest required by --broadcast`;
 
+const CC3_BLOCK_TIME_MS = 15_000;
 const ROLE_NAMES = ["deployer", "lender", "borrower", "guardian"];
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 const IMMUTABLE_COUNTS = Object.freeze({
@@ -1501,12 +1502,40 @@ export function validateSignedV3DeploymentStep(transaction, step) {
   return parsed;
 }
 
+function validateV3ReceiptPollBudget(
+  targetConfirmations,
+  maximumReceiptPolls,
+  receiptPollIntervalMs,
+) {
+  positiveInteger(targetConfirmations, "target confirmations", 256);
+  positiveInteger(maximumReceiptPolls, "maximum receipt polls", 10_000);
+  positiveInteger(receiptPollIntervalMs, "receipt poll interval");
+  if (maximumReceiptPolls < targetConfirmations) {
+    throw new Error("Maximum receipt polls must cover confirmation depth");
+  }
+  const budget = maximumReceiptPolls * receiptPollIntervalMs;
+  const required = targetConfirmations * CC3_BLOCK_TIME_MS;
+  if (budget < required) {
+    throw new Error(
+      `Receipt poll time budget ${budget} ms must cover confirmation depth ${required} ms`,
+    );
+  }
+}
+
 export async function prepareV3DeploymentStep({
   journal,
   journalPath,
   stepIndex,
   signer,
+  targetConfirmations = 6,
+  maximumReceiptPolls = 24,
+  receiptPollIntervalMs = CC3_BLOCK_TIME_MS,
 }) {
+  validateV3ReceiptPollBudget(
+    targetConfirmations,
+    maximumReceiptPolls,
+    receiptPollIntervalMs,
+  );
   const step = journal.steps[stepIndex];
   if (!step || step.status !== "planned")
     throw new Error(`V3 deployment step ${stepIndex + 1} is not planned`);
@@ -1591,7 +1620,7 @@ export async function reconcileV3DeploymentStep({
   provider,
   targetConfirmations,
   maximumReceiptPolls,
-  receiptPollIntervalMs = 1_000,
+  receiptPollIntervalMs = CC3_BLOCK_TIME_MS,
   beforeBroadcast = async () => {},
   delay = (milliseconds) =>
     new Promise((resolvePromise) => setTimeout(resolvePromise, milliseconds)),
@@ -1603,19 +1632,11 @@ export async function reconcileV3DeploymentStep({
   const network = await provider.getNetwork();
   if (network.chainId !== BigInt(step.chainId))
     throw new Error(`${step.name} journal chain mismatch`);
-  targetConfirmations = positiveInteger(
+  validateV3ReceiptPollBudget(
     targetConfirmations,
-    "target confirmations",
-    256,
-  );
-  maximumReceiptPolls = positiveInteger(
     maximumReceiptPolls,
-    "maximum receipt polls",
-    10_000,
+    receiptPollIntervalMs,
   );
-  if (maximumReceiptPolls < targetConfirmations) {
-    throw new Error("Maximum receipt polls must cover confirmation depth");
-  }
   let receipt;
   let broadcastAttempted = false;
   let canonicallyConfirmed = false;

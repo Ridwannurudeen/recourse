@@ -1598,6 +1598,54 @@ test("activation recovery refuses a missing transaction after nonce advancement 
     executionPlan,
     preflight: {},
   });
+  await t.test("activation rejects an insufficient receipt time budget before signing", async () => {
+    let signatures = 0;
+    await assert.rejects(
+      prepareV3ActivationStep({
+        journal: initial,
+        journalPath,
+        stepIndex: 0,
+        signer: {
+          getAddress: async () => wallet.address,
+          signTransaction: (request) => {
+            signatures += 1;
+            return wallet.signTransaction(request);
+          },
+        },
+        request: { to: target, data: "0xabcd" },
+        approvedTransaction: executionPlan.steps[0],
+        targetConfirmations: 6,
+        maximumReceiptPolls: 6,
+        receiptPollIntervalMs: 1_000,
+      }),
+      /6000.*90000/,
+    );
+    assert.equal(signatures, 0);
+    assert.equal(readV3ActivationJournal(journalPath).steps[0].status, "planned");
+  });
+  await t.test("activation rejects an invalid receipt interval before signing", async () => {
+    let signatures = 0;
+    await assert.rejects(
+      prepareV3ActivationStep({
+        journal: initial,
+        journalPath,
+        stepIndex: 0,
+        signer: {
+          getAddress: async () => wallet.address,
+          signTransaction: (request) => {
+            signatures += 1;
+            return wallet.signTransaction(request);
+          },
+        },
+        request: { to: target, data: "0xabcd" },
+        approvedTransaction: executionPlan.steps[0],
+        receiptPollIntervalMs: NaN,
+      }),
+      /receipt poll interval must be a positive integer/,
+    );
+    assert.equal(signatures, 0);
+    assert.equal(readV3ActivationJournal(journalPath).steps[0].status, "planned");
+  });
   const prepared = await prepareV3ActivationStep({
     journal: initial,
     journalPath,
@@ -1608,6 +1656,8 @@ test("activation recovery refuses a missing transaction after nonce advancement 
     },
     request: { to: target, data: "0xabcd" },
     approvedTransaction: executionPlan.steps[0],
+    targetConfirmations: 6,
+    maximumReceiptPolls: 6,
   });
   let broadcasts = 0;
   await assert.rejects(
@@ -1638,6 +1688,81 @@ test("activation recovery refuses a missing transaction after nonce advancement 
     status: 1,
     logs: [],
   };
+  await t.test("activation rejects an insufficient reconcile receipt time budget", async () => {
+    let polls = 0;
+    await assert.rejects(
+      reconcileV3ActivationStep({
+        journal: prepared,
+        journalPath,
+        stepIndex: 0,
+        targetConfirmations: 6,
+        maximumReceiptPolls: 6,
+        receiptPollIntervalMs: 1_000,
+        delay: async () => {},
+        provider: {
+          getNetwork: async () => ({ chainId: 102031n }),
+          getTransactionReceipt: async () => {
+            polls += 1;
+            return receipt;
+          },
+          getBlockNumber: async () => 50,
+        },
+      }),
+      /6000.*90000/,
+    );
+    assert.equal(polls, 0);
+  });
+  await t.test("activation polls at block time and reaches six confirmations on poll eight", async () => {
+    let polls = 0;
+    let elapsed = 0;
+    const intervals = [];
+    const result = await reconcileV3ActivationStep({
+      journal: prepared,
+      journalPath,
+      stepIndex: 0,
+      targetConfirmations: 6,
+      maximumReceiptPolls: 24,
+      delay: async (milliseconds) => {
+        intervals.push(milliseconds);
+        elapsed += milliseconds;
+      },
+      provider: {
+        getNetwork: async () => ({ chainId: 102031n }),
+        getTransactionReceipt: async () => {
+          polls += 1;
+          return polls === 1 ? null : receipt;
+        },
+        getTransaction: async () => transaction,
+        getBlockNumber: async () =>
+          50 + Math.max(0, Math.floor(elapsed / 15_000) - 2),
+        getBlock: async () => ({ hash: HASH("a") }),
+      },
+    });
+    assert.equal(result.journal.steps[0].status, "confirmed");
+    assert.equal(polls, 9);
+    assert.deepEqual(intervals, Array(7).fill(15_000));
+    assert.equal(elapsed, 105_000);
+  });
+  await t.test("activation remains pending when receipt depth never reaches the budget", async () => {
+    const intervals = [];
+    await assert.rejects(
+      reconcileV3ActivationStep({
+        journal: prepared,
+        journalPath,
+        stepIndex: 0,
+        targetConfirmations: 6,
+        maximumReceiptPolls: 6,
+        delay: async (milliseconds) => intervals.push(milliseconds),
+        provider: {
+          getNetwork: async () => ({ chainId: 102031n }),
+          getTransactionReceipt: async () => receipt,
+          getBlockNumber: async () => 50,
+        },
+      }),
+      /remains pending after 6 bounded receipt polls/,
+    );
+    assert.deepEqual(intervals, Array(5).fill(15_000));
+  });
   let head = 49;
   let delays = 0;
   const result = await reconcileV3ActivationStep({
