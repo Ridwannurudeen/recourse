@@ -1,0 +1,136 @@
+{
+  "generation": "v3-pilot-activation",
+  "chainId": 102031,
+  "assetSymbol": "rUSD",
+  "coreManifest": {
+    "path": "deployments-v3-current.json",
+    "sha256": "150e7a2b8674243a03d4d7f6b5660dbae7b4840117f4755a10d775c53f2bb9fa"
+  },
+  "roles": {
+    "deployer": "0xB9262d47B4d6d569A7C5230B3BF7De1080dD6e49",
+    "lender": "0x3d97e8eB57CBf459e22965162B5DEc182862e312",
+    "borrower": "0x1aBE54FE9aDB691Df093F1d3711ec3D5fCd99F1D",
+    "guardian": "0xa61B1518691dF7655226fF944b6f3Eade4E4B228",
+    "hunter": "0xa61B1518691dF7655226fF944b6f3Eade4E4B228"
+  },
+  "artifacts": {
+    "CappedPilotFactoryV1": {
+      "path": "out/CappedPilotFactoryV1.sol/CappedPilotFactoryV1.json",
+      "keccak256": "0x06c91f836e88a96dfe861ca2e14fa268db7cd87f9758a4788365c08d7c40c41b"
+    },
+    "MultiChainEventPolicyV1": {
+      "path": "out/MultiChainEventPolicyV1.sol/MultiChainEventPolicyV1.json",
+      "keccak256": "0x7a2babd43ad7a9d2a388c130a8ade1f03da08c3d1453ee41150ea4be774d51d2"
+    },
+    "RecourseFacilityV3": {
+      "path": "out/RecourseFacilityV3.sol/RecourseFacilityV3.json",
+      "keccak256": "0x5b4115fd15c1db98449c3892244abc46f459bb0367a462d16369b7d709179b9f"
+    }
+  },
+  "facility": {
+    "facilityLimit": "100000000000",
+    "bondRequired": "20000000000",
+    "drawFeeBps": 200,
+    "maturityBlock": 5554121,
+    "drawDelayBlocks": 10
+  },
+  "policy": {
+    "policyId": "1",
+    "configuration": {
+      "subject": "0x1aBE54FE9aDB691Df093F1d3711ec3D5fCd99F1D",
+      "freshnessPeriod": 86400,
+      "watchThreshold": 1,
+      "restrictedThreshold": 2,
+      "marginThreshold": 3,
+      "breachThreshold": 4,
+      "watchEffect": {
+        "outcome": 1,
+        "creditLimitBps": 10000,
+        "futureDrawFeeBps": 200,
+        "freezePendingDraw": false,
+        "requireFreshEvidence": false,
+        "terminate": false
+      },
+      "restrictedEffect": {
+        "outcome": 2,
+        "creditLimitBps": 7500,
+        "futureDrawFeeBps": 300,
+        "freezePendingDraw": true,
+        "requireFreshEvidence": true,
+        "terminate": false
+      },
+      "marginEffect": {
+        "outcome": 3,
+        "creditLimitBps": 5000,
+        "futureDrawFeeBps": 400,
+        "freezePendingDraw": true,
+        "requireFreshEvidence": true,
+        "terminate": false
+      },
+      "breachEffect": {
+        "outcome": 4,
+        "creditLimitBps": 0,
+        "futureDrawFeeBps": 400,
+        "freezePendingDraw": true,
+        "requireFreshEvidence": true,
+        "terminate": true
+      },
+      "rules": [
+        {
+          "sourceChain": 3,
+          "emitter": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+          "eventSignature": "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+          "startSourceBlock": 25944522,
+          "endSourceBlock": 26024522,
+          "topicCount": 3,
+          "subjectTopicIndex": 1,
+          "dataLength": 32,
+          "observedValueOffset": 0,
+          "observationKind": 4,
+          "riskWeight": 1
+        }
+      ]
+    }
+  },
+  "registry": {
+    "packageName": "recourse-multi-chain-event-policy",
+    "version": "1.0.0-cc3-pilot",
+    "metadata": "Recourse MultiChainEventPolicyV1 CC3 pilot release 1.0.0",
+    "metadataHash": "0xea0ece904b3a36e49a34fb989c8a2ae23d5f233b609ecb17299ec8f4e7342e7f",
+    "evidenceKinds": [1],
+    "actionAdapters": []
+  },
+  "proofJob": {
+    "expiry": 1792497600,
+    "revealWindowBlocks": 30,
+    "maxSuccessfulProofs": 3,
+    "proofReimbursement": "25000000",
+    "outcomeReward": "100000000",
+    "commitBond": "10000000",
+    "rewardOutcomeThreshold": 3
+  },
+  "sourceNetworks": {
+    "3": {
+      "evmChainId": 1,
+      "rpcUrlEnvironment": "ETH_MAINNET_RPC_URL"
+    }
+  },
+  "transactionPolicy": {
+    "targetConfirmations": 6,
+    "maximumReceiptPolls": 24,
+    "feePolicy": {
+      "transactionType": "eip1559",
+      "maximumGasLimit": "3000000",
+      "maximumFeePerGas": "100000000000",
+      "maximumPriorityFeePerGas": "5000000000"
+    }
+  },
+  "requirements": {
+    "minimumNativeWei": {
+      "deployer": "1000000000000000000",
+      "lender": "1000000000000000000",
+      "borrower": "1000000000000000000",
+      "hunter": "1000000000000000000"
+    }
+  }
+}
