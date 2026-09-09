@@ -126,15 +126,19 @@ function summarizeFacility(value, index) {
   const facility = object(value, `facilities[${index}]`);
   const status = safeCount(facility.status, `facilities[${index}].status`);
   if (status > 5) throw new TypeError(`Invalid facilities[${index}].status`);
-  const policyCount = safeCount(
-    facility.policyCount,
-    `facilities[${index}].policyCount`,
+  const registeredPolicies = safeCount(
+    facility.registeredPolicies,
+    `facilities[${index}].registeredPolicies`,
+  );
+  const appliedEffects = safeCount(
+    facility.appliedEffects,
+    `facilities[${index}].appliedEffects`,
   );
   const configuredPolicies = safeCount(
     facility.multiChainPoliciesConfigured,
     `facilities[${index}].multiChainPoliciesConfigured`,
   );
-  if (configuredPolicies > policyCount) {
+  if (configuredPolicies > registeredPolicies) {
     throw new TypeError(`Inconsistent facilities[${index}] policy counts`);
   }
   const commitment = bytes32(
@@ -142,12 +146,13 @@ function summarizeFacility(value, index) {
     `facilities[${index}].policySetCommitment`,
   );
   const configured =
-    policyCount > 0 && configuredPolicies > 0 && commitment !== ZERO_HASH;
+    registeredPolicies > 0 && configuredPolicies > 0 && commitment !== ZERO_HASH;
   const activated = configured && ACTIVATED_STATUSES.has(status);
   return {
     address: address(facility.address, `facilities[${index}].address`),
     status,
-    policyCount,
+    registeredPolicies,
+    appliedEffects,
     configuredPolicies,
     policySetCommitment: commitment,
     configured,

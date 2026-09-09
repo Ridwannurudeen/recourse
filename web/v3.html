@@ -46,7 +46,7 @@
         <h1 id="v3-state-title">Checking V3 deployment truth</h1>
         <p id="v3-state-copy">
           Pinning core code, wiring, factory inventory, registry releases, and
-          proof-job counts to one CC3 block.
+          proof-job counts to one finalized CC3 block.
         </p>
         <button class="obs-button" id="v3-retry" type="button" hidden>
           Retry RPC
@@ -73,7 +73,7 @@
           </div>
           <div class="obs-anchor">
             <p class="obs-label">
-              <span class="obs-live" aria-hidden="true"></span>State anchor
+              <span class="obs-live" aria-hidden="true"></span>Finalized state anchor
             </p>
             <strong id="v3-block"></strong>
             <time id="v3-block-time"></time>
@@ -146,8 +146,9 @@
                 <tr>
                   <th>Facility</th>
                   <th>Status</th>
-                  <th class="obs-num">Policies</th>
-                  <th class="obs-num">V3 configs</th>
+                  <th class="obs-num">Registered</th>
+                  <th class="obs-num">Configured</th>
+                  <th class="obs-num">Applied effects</th>
                   <th>Truth</th>
                 </tr>
               </thead>

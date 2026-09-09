@@ -72,7 +72,8 @@ test("V3 summary separates deployed, empty, configured, activated, and external-
         {
           address: ADDRESS("9"),
           status: 1,
-          policyCount: 1,
+          registeredPolicies: 1,
+          appliedEffects: 1,
           policySetCommitment: HASH("99"),
           multiChainPoliciesConfigured: 1,
         },
@@ -96,7 +97,8 @@ test("V3 summary never upgrades cancelled or incomplete inventory into activatio
         {
           address: ADDRESS("9"),
           status: 4,
-          policyCount: 1,
+          registeredPolicies: 1,
+          appliedEffects: 1,
           policySetCommitment: HASH("99"),
           multiChainPoliciesConfigured: 1,
         },
@@ -115,6 +117,44 @@ test("V3 summary never upgrades cancelled or incomplete inventory into activatio
         }),
       ),
     /Incomplete facility inventory/,
+  );
+});
+
+test("V3 activates registered and configured policies before any effects are applied", () => {
+  const input = snapshot({
+    factory: { ...snapshot().factory, facilityCount: 1 },
+    facilities: [
+      {
+        address: "0x00B50626C4AA42d22ca01AAEa8649f253aEc5B1e",
+        status: 1,
+        registeredPolicies: 1,
+        multiChainPoliciesConfigured: 1,
+        appliedEffects: 0,
+        policySetCommitment: HASH("99"),
+      },
+    ],
+  });
+  const summary = summarizeV3Snapshot(input);
+  assert.equal(summary.facilities[0].truth, DeploymentTruth.Activated);
+  assert.equal(summary.facilities[0].registeredPolicies, 1);
+  assert.equal(summary.facilities[0].configuredPolicies, 1);
+  assert.equal(summary.facilities[0].appliedEffects, 0);
+  assert.equal(summary.configuredFacilities, 1);
+  assert.equal(summary.activatedFacilities, 1);
+  assert.equal(summary.factoryState, DeploymentTruth.Activated);
+
+  input.facilities[0].multiChainPoliciesConfigured = 2;
+  assert.throws(() => summarizeV3Snapshot(input), /Inconsistent .* policy counts/);
+  input.facilities[0].multiChainPoliciesConfigured = 0;
+  assert.equal(
+    summarizeV3Snapshot(input).facilities[0].truth,
+    DeploymentTruth.Deployed,
+  );
+  input.facilities[0].multiChainPoliciesConfigured = 1;
+  input.facilities[0].policySetCommitment = HASH("00");
+  assert.equal(
+    summarizeV3Snapshot(input).facilities[0].truth,
+    DeploymentTruth.Deployed,
   );
 });
 
@@ -196,6 +236,19 @@ test("V3 observatory is walletless, safe-DOM, and names every truth boundary", a
     assert.ok(script.includes(address));
   }
   assert.ok(script.includes(deployment.sourceCommit));
+  assert.match(
+    script,
+    new RegExp(`deploymentBlock: ${deployment.deploymentBlocks.PolicyKernelV2}`),
+  );
+  assert.match(script, /provider\.getBlock\("finalized"\)/);
+  assert.doesNotMatch(script, /provider\.getBlockNumber\(/);
+  assert.match(script, /one-block hash anchor · finalized/i);
+  assert.match(script, /kernel\.filters\.PolicyRegistered\(address\)/);
+  assert.match(script, /DEPLOYMENT\.deploymentBlock,\s*blockTag/);
+  assert.doesNotMatch(script, /policyIdAt/);
+  assert.match(html, /Registered/);
+  assert.match(html, /Configured/);
+  assert.match(html, /Applied effects/);
   assert.match(html, /href="#main"/);
   for (const page of [index, horizon, operator, portfolio]) {
     assert.match(page, /href="\.\/v3\.html"/);

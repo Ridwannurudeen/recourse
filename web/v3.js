@@ -7,6 +7,8 @@ import {
 // deployments-v3-current.json sourceCommit: 90d8b05af38940ffeb55d974401641a327176b9e
 const DEPLOYMENT = Object.freeze({
   chainId: 102031,
+  // PolicyKernelV2 creation block in deployments-v3-current.json.
+  deploymentBlock: 5458992,
   rpcUrl: "https://rpc.cc3-testnet.creditcoin.network",
   contracts: Object.freeze({
     PolicyKernelV2: "0x69d1715F117f79aB5E190d48666510B8A39Af6dB",
@@ -33,6 +35,7 @@ const FACTORY_ABI = [
   "function creationPaused() view returns (bool)",
 ];
 const KERNEL_ABI = [
+  "event PolicyRegistered(address indexed facility,uint256 indexed policyId,address indexed evaluator,bytes32 configHash,bytes manifest)",
   "function proofJobs() view returns (address)",
   "function safeStaleProofRelease() pure returns (bool)",
   "function policySetCommitment(address facility) view returns (bytes32)",
@@ -41,7 +44,6 @@ const KERNEL_ABI = [
 const FACILITY_ABI = [
   "function status() view returns (uint8)",
   "function policyCount() view returns (uint256)",
-  "function policyIdAt(uint256 index) view returns (uint256)",
 ];
 const MULTI_CHAIN_POLICY_ABI = [
   "function isConfigured(address facility,uint256 policyId) view returns (bool)",
@@ -136,19 +138,24 @@ function truthItem(label, truth, detail) {
 
 async function readFacility(address, blockTag, kernel, multiChainPolicy) {
   const facility = new Contract(address, FACILITY_ABI, provider);
-  const [statusValue, countValue, policySetCommitment] = await Promise.all([
-    facility.status({ blockTag }),
-    facility.policyCount({ blockTag }),
-    kernel.policySetCommitment(address, { blockTag }),
-  ]);
-  const policyCount = safeNumber(countValue, `${address} policy count`);
-  if (policyCount > 32) {
-    throw new Error(`${address} policy count exceeds the V3 read bound`);
+  const [statusValue, countValue, policySetCommitment, registrations] =
+    await Promise.all([
+      facility.status({ blockTag }),
+      facility.policyCount({ blockTag }),
+      kernel.policySetCommitment(address, { blockTag }),
+      kernel.queryFilter(
+        kernel.filters.PolicyRegistered(address),
+        DEPLOYMENT.deploymentBlock,
+        blockTag,
+      ),
+    ]);
+  const appliedEffects = safeNumber(countValue, `${address} applied effects`);
+  const registeredPolicies = registrations.length;
+  if (registeredPolicies > 32) {
+    throw new Error(`${address} registration count exceeds the V3 read bound`);
   }
-  const policyIds = await Promise.all(
-    Array.from({ length: policyCount }, (_, index) =>
-      facility.policyIdAt(index, { blockTag }),
-    ),
+  const policyIds = registrations.map(
+    (registration) => registration.args.policyId,
   );
   const configured = await Promise.all(
     policyIds.map(async (policyId) => {
@@ -166,7 +173,8 @@ async function readFacility(address, blockTag, kernel, multiChainPolicy) {
   return {
     address,
     status: safeNumber(statusValue, `${address} status`),
-    policyCount,
+    registeredPolicies,
+    appliedEffects,
     policySetCommitment,
     multiChainPoliciesConfigured: configured.filter(Boolean).length,
   };
@@ -298,7 +306,7 @@ function render(summary) {
       `current core ${summary.coreDeployment}`,
       truthTone(summary.coreDeployment),
     ),
-    badge("one-block hash anchor", "good"),
+    badge("one-block hash anchor · finalized", "good"),
     badge("single RPC endpoint", "warn"),
     badge(
       summary.creationPaused ? "creation paused" : "creation open",
@@ -371,8 +379,9 @@ function render(summary) {
     row.append(
       cell("Facility", shortHex(facility.address), "obs-address"),
       cell("Status", STATUS_LABELS[facility.status]),
-      cell("Policies", facility.policyCount, "obs-num"),
-      cell("V3 configs", facility.configuredPolicies, "obs-num"),
+      cell("Registered", facility.registeredPolicies, "obs-num"),
+      cell("Configured", facility.configuredPolicies, "obs-num"),
+      cell("Applied effects", facility.appliedEffects, "obs-num"),
       cell("Truth", facility.truth),
     );
     facilities.append(row);
@@ -418,10 +427,10 @@ async function refresh() {
   setText("v3-state-title", "Checking V3 deployment truth");
   setText(
     "v3-state-copy",
-    "Pinning core code, wiring, factory inventory, registry releases, and proof-job counts to one CC3 block.",
+    "Pinning core code, wiring, factory inventory, registry releases, and proof-job counts to one finalized CC3 block.",
   );
   try {
-    const blockNumber = await provider.getBlockNumber();
+    const blockNumber = (await provider.getBlock("finalized")).number;
     const anchored = await anchorV3Snapshot(
       provider,
       DEPLOYMENT.chainId,
