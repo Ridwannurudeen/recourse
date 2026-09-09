@@ -164,6 +164,101 @@ test("portfolio inputs require a Git-tracked config and help rejects implicit br
   );
 });
 
+test("portfolio CLI loads synthetic signer variables from dotenv before signer creation", (t) => {
+  const directory = mkdtempSync(join(tmpdir(), "recourse-portfolio-dotenv-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const variables = [...new Set(Object.values(fixture().config.signerEnvironment))];
+  const wallets = variables.map(() => Wallet.createRandom());
+  const syntheticPath = join(directory, "synthetic.config");
+  const emptyPath = join(directory, "empty.config");
+  writeFileSync(
+    syntheticPath,
+    variables
+      .map((variable, index) => `${variable}=${wallets[index].privateKey}`)
+      .join("\n"),
+  );
+  writeFileSync(emptyPath, "");
+  const env = {
+    ...process.env,
+    DOTENV_CONFIG_QUIET: "true",
+    DOTENV_CONFIG_DEBUG: "false",
+  };
+  for (const variable of variables) delete env[variable];
+  delete env.NODE_OPTIONS;
+  delete env.DOTENV_KEY;
+  const script = `
+    import assert from "node:assert/strict";
+    import { writeFileSync } from "node:fs";
+    import { join } from "node:path";
+    import { AbiCoder, Wallet, keccak256 } from "ethers";
+    import { runPortfolioActivation } from "./scripts/activate-v3-portfolio.mjs";
+    import { createPortfolioApproval } from "./scripts/lib/v3-portfolio-activation.mjs";
+    import { chainFixture, fixture, repositoryState } from "./test/helpers/v3-portfolio-fixture.mjs";
+    const values = fixture();
+    const registry = values.manifests.activation.registry;
+    registry.runtimeCodeHash = keccak256("0x60006000");
+    registry.runtimeVariantId = keccak256(AbiCoder.defaultAbiCoder().encode(
+      ["bytes32", "bytes32", "bytes32"],
+      [registry.releaseId, registry.runtimeCodeHash, registry.constructorArgumentsHash],
+    ));
+    const f = await chainFixture(false, 0, undefined, values);
+    const directory = process.argv[1];
+    const approval = createPortfolioApproval({
+      ...f, targetBlock: f.config.qualificationBlock, repositoryState,
+    });
+    const approvalPath = join(directory, "approval.json");
+    writeFileSync(approvalPath, JSON.stringify(approval));
+    Wallet.prototype.signTransaction = async () => {
+      throw new Error("Unexpected signing attempt");
+    };
+    try {
+      await runPortfolioActivation([
+        "--manifest", join(directory, "allocation.json"),
+        "--live-check", "--broadcast", "--approved-plan", approvalPath,
+        "--approval-commitment", approval.approvalCommitment,
+      ], {
+        inspectRepository: () => repositoryState,
+        readInputs: () => f,
+        createProvider: () => ({ ...f.provider, destroy() {} }),
+        createContracts: () => f.contracts,
+        now: () => f.block.timestamp,
+        log: () => {},
+      });
+      throw new Error("Expected signer guard to stop execution");
+    } catch (error) {
+      console.log(error.message);
+      if (error.message !== "manager signer address mismatch") process.exit(1);
+    }
+    const addresses = [...new Set(Object.values(f.config.signerEnvironment))].map(
+      (variable) => new Wallet(process.env[variable]).address,
+    );
+    assert.deepEqual(addresses, JSON.parse(process.argv[2]));
+  `;
+  for (const [path, expectedStatus, expectedMessage] of [
+    [emptyPath, 1, "DEPLOYER_PRIVATE_KEY must contain a valid private key"],
+    [syntheticPath, 0, "manager signer address mismatch"],
+  ]) {
+    const result = spawnSync(
+      process.execPath,
+      [
+        "--input-type=module",
+        "--eval",
+        script,
+        directory,
+        JSON.stringify(wallets.map((wallet) => wallet.address)),
+      ],
+      {
+        encoding: "utf8",
+        env: { ...env, DOTENV_CONFIG_PATH: path },
+        timeout: 30000,
+      },
+    );
+    assert.equal(result.error, undefined);
+    assert.equal(result.stdout.trim(), expectedMessage);
+    assert.equal(result.status, expectedStatus, result.stderr);
+  }
+});
+
 test("portfolio recovery qualifies every transaction prefix and permits completed finalization after the funding deadline", async () => {
   for (let prefix = 0; prefix <= 13; prefix += 1) {
     const f = await chainFixture(true, prefix);

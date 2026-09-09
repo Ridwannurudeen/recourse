@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { existsSync, readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { JsonRpcProvider, Wallet, getAddress } from "ethers";
@@ -40,7 +41,7 @@ Default: deterministic offline plan; no RPC, signer, or file writes.
   --help, -h                 Show this help
 
 Prerequisite manifests are pinned in the tracked config. Private keys are read
-from the configured process environment only when broadcasting. No .env is read.`;
+from the configured process environment only when broadcasting. The repository .env is loaded.`;
 
 function json(value) {
   return JSON.stringify(
