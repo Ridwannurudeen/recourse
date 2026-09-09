@@ -10,7 +10,7 @@
     <meta name="color-scheme" content="dark" />
     <meta
       name="description"
-      content="Block-anchored historical deployment, activation, and external-gate truth for the Recourse V3 core on Creditcoin CC3 testnet."
+      content="Block-anchored current deployment, activation, and external-gate truth for the Recourse V3 core on Creditcoin CC3 testnet."
     />
     <title>Recourse · V3 observatory</title>
     <link rel="icon" href="data:," />
@@ -57,17 +57,18 @@
         <section class="obs-intro obs-v3-intro" aria-labelledby="v3-title">
           <div>
             <p class="obs-eyebrow">
-              Historical V3 core · deployment versus compatibility
+              Current V3 core · deployment and activation
             </p>
             <h1 id="v3-title">
-              Historical core found. The hardened pilot is not live.
+              Checking the current core and capped testnet pilot.
             </h1>
             <p class="obs-intro-copy">
-              These addresses belong to the inactive deployment recorded in
-              deployments-v3.json. They predate the hardened source-ordering
-              interface, so the current build requires a fresh deployment. This
-              terminal reports the historical on-chain state without treating it
-              as current-build compatibility.
+              These addresses belong to the current core recorded in
+              <a href="../deployments-v3-current.json">deployments-v3-current.json</a>.
+              The capped testnet pilot activation is recorded in
+              <a href="../activation-v3-current.json">activation-v3-current.json</a>.
+              This terminal checks deployment and facility state at the displayed
+              block; manifest records alone do not establish current state.
             </p>
           </div>
           <div class="obs-anchor">
@@ -109,7 +110,7 @@
           <div class="obs-section-heading">
             <div>
               <p class="obs-eyebrow">Runtime code evidence</p>
-              <h2 id="v3-core-title">Historical core addresses</h2>
+              <h2 id="v3-core-title">Current core addresses</h2>
             </div>
             <p class="obs-section-note">
               Code presence and kernel-to-proof-jobs wiring are checked at the
@@ -153,7 +154,7 @@
               <tbody id="v3-facilities"></tbody>
             </table>
             <p class="obs-empty" id="v3-facilities-empty" hidden>
-              No live pilot exists: the historical capped factory contains no
+              No activated pilot: the current capped factory contains no
               facilities at this anchored block.
             </p>
           </div>
@@ -193,6 +194,16 @@
             No market, reputation, or capital claim without evidence.
           </h2>
           <div>
+            <p>
+              The activated facility is a fixed-supply demo-token testnet
+              demonstration, not a live pilot with a counterparty. There is no
+              independent audit. Items 5–6 are blocked on writability; items 9–10
+              are not deployed.
+            </p>
+            <p>
+              The <a href="../deployments-v3.json">superseded historical core</a>
+              remains a separate deployment record.
+            </p>
             <p>
               Operator quotes, agreements, settlements, and address history are
               shown only after enumerable on-chain records exist. No activity

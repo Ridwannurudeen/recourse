@@ -179,10 +179,23 @@ test("V3 observatory is walletless, safe-DOM, and names every truth boundary", a
   assert.match(html, /configured/i);
   assert.match(html, /activated/i);
   assert.match(html, /external.gated/i);
-  assert.match(html, /no live pilot/i);
+  assert.match(html, /not a live pilot with a counterparty/i);
+  assert.match(html, /current core/i);
+  assert.match(html, /superseded/i);
   assert.match(html, /historical/i);
-  assert.match(html, /fresh deployment/i);
-  assert.match(script, /historical core/i);
+  assert.match(html, /href="\.\.\/deployments-v3-current\.json"/);
+  assert.match(html, /href="\.\.\/activation-v3-current\.json"/);
+  assert.match(script, /current core/i);
+  const deployment = JSON.parse(
+    await readFile(
+      new URL("../deployments-v3-current.json", import.meta.url),
+      "utf8",
+    ),
+  );
+  for (const address of Object.values(deployment.contracts)) {
+    assert.ok(script.includes(address));
+  }
+  assert.ok(script.includes(deployment.sourceCommit));
   assert.match(html, /href="#main"/);
   for (const page of [index, horizon, operator, portfolio]) {
     assert.match(page, /href="\.\/v3\.html"/);

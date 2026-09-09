@@ -4,16 +4,17 @@ import {
   summarizeV3Snapshot,
 } from "./v3-core.mjs";
 
+// deployments-v3-current.json sourceCommit: 90d8b05af38940ffeb55d974401641a327176b9e
 const DEPLOYMENT = Object.freeze({
   chainId: 102031,
   rpcUrl: "https://rpc.cc3-testnet.creditcoin.network",
   contracts: Object.freeze({
-    PolicyKernelV2: "0xC96EEf1D5105f2D1f44ecBf998a5989bd27912C7",
-    VerifiedCreditStateV1: "0x09E8e25ad1cDE0937A58B3a2629bF0323aDe11Eb",
-    PolicyRegistryV1: "0x07459CC8065e46BC3E5F519c715e71DDb10f6c30",
-    CappedPilotFactoryV1: "0x3c69a7AB4D4b76C0A8139063E44E08FBdA2c474D",
-    MultiChainEventPolicyV1: "0x82C6B7f5a4E1cc41d6e10De3506F73B888a4Ebab",
-    ProofJobsV1: "0x1e2B21006dbce769fA8608aD86A7B8B94Bd28485",
+    PolicyKernelV2: "0x69d1715F117f79aB5E190d48666510B8A39Af6dB",
+    VerifiedCreditStateV1: "0x55867EB6A48B0DA0AAE377f18d5254500FFb9678",
+    PolicyRegistryV1: "0xFb5B0d26140A8577015388E206A06fc6e1622c28",
+    CappedPilotFactoryV1: "0x73afEFF5A629B6708EAbf1AD0bce753E3fb7973B",
+    MultiChainEventPolicyV1: "0x2A56b080906ac46d5eFD9B6559dF0739F6D6CBB6",
+    ProofJobsV1: "0x0C6C15da198EA9F828d0e3199508187b1a79e9Cf",
   }),
 });
 
@@ -275,12 +276,16 @@ async function readPinned(blockTag, anchor) {
 
 function render(summary) {
   const noPilot = summary.facilityCount === 0;
+  const activePilot = summary.facilities.some(
+    (facility) =>
+      facility.truth === DeploymentTruth.Activated && facility.status === 1,
+  );
   setText(
     "v3-title",
     summary.coreDeployment === DeploymentTruth.Deployed
-      ? noPilot
-        ? "Historical core found. The hardened pilot is not live."
-        : "Historical core found. Its pilot state is enumerable."
+      ? activePilot
+        ? "Current core found. A capped testnet pilot facility is active."
+        : "Current core found. No activated pilot."
       : "V3 core verification is incomplete.",
   );
   setText("v3-block", summary.anchor.blockNumber.toLocaleString("en-US"));
@@ -290,7 +295,7 @@ function render(summary) {
   );
   byId("v3-badges").replaceChildren(
     badge(
-      `historical core ${summary.coreDeployment}`,
+      `current core ${summary.coreDeployment}`,
       truthTone(summary.coreDeployment),
     ),
     badge("one-block hash anchor", "good"),
@@ -300,15 +305,15 @@ function render(summary) {
       summary.creationPaused ? "warn" : "good",
     ),
     badge(
-      noPilot ? "no live pilot" : `${summary.facilityCount} factory entries`,
+      noPilot ? "no activated pilot" : `${summary.facilityCount} factory entries`,
       noPilot ? "warn" : "good",
     ),
   );
   byId("v3-truth-rail").replaceChildren(
     truthItem(
-      "Historical core",
+      "Current core",
       summary.coreDeployment,
-      "Runtime code + wiring; current compatibility unclaimed",
+      "Runtime code + wiring; artifact compatibility unclaimed",
     ),
     truthItem(
       "Factory",
