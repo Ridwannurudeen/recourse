@@ -242,6 +242,44 @@ Keep separate filenames for all four generations. A manifest for one
 generation cannot satisfy another generation's prerequisite or authorization
 boundary.
 
+## Portfolio pool activation
+
+`npm run activate:v3-portfolio` takes a deployed portfolio core
+(`deployments-v3-portfolio-core-current.json`) through one fixed-vintage
+allocation with the same discipline as the pilot activation: a git-tracked
+reviewed config (`config/v3-portfolio-activation-cc3.json` from
+`config/v3-portfolio-activation.example.json`, pinning the portfolio, core, and
+activation manifests by SHA-256), a deterministic offline plan by default,
+`--live-check` signerless qualification, `--write-plan` for a 30-minute approval
+envelope, and `--broadcast --approved-plan <file> --approval-commitment
+<digest>` executing thirteen transactions across the manager/issuer, investor,
+and borrower signers named by environment variable in the config. The journal
+`<manifest>.activation-journal.json` persists every signed raw transaction; only
+the same bytes may be rebroadcast. If the approval expires or a preflight
+refuses after partial progress, rerun `--live-check --write-plan` with a new
+filename: the renewal is bound to the confirmed journal checkpoint and resumes
+at the next step.
+
+Lessons from the first live run on 2026-09-09: the CLI loads the repository
+`.env` at import like the pilot tool (a missing environment fails closed before
+signing with `DEPLOYER_PRIVATE_KEY must contain a valid private key`), and every
+state snapshot is anchored on the `finalized` block after waiting for it to
+include the last confirmed receipt, because a `latest` snapshot on CC3 can be
+replaced within a block or two and then fails the canonical re-read check. Final
+verification requires all thirteen canonical receipts, an Active facility with
+exact lender funding and bond, mandate eligibility, the required kernel
+commitment, and reconciled asset movements before
+`allocation-v3-portfolio-current.json` is written with status
+`allocated-activated`.
+
+```sh
+npm run activate:v3-portfolio -- --help
+npm run activate:v3-portfolio
+npm run activate:v3-portfolio -- --live-check --write-plan /secure/path/portfolio-plan.json
+npm run activate:v3-portfolio -- --live-check --broadcast \
+  --approved-plan /secure/path/portfolio-plan.json --approval-commitment <digest>
+```
+
 ## Provision a read-only release
 
 Set `RELEASE_SHA` to the exact commit that passed the full test suite, and stage

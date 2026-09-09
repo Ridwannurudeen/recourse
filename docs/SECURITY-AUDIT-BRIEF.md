@@ -200,7 +200,7 @@ npm --prefix sdk run pack:check
 git diff --check
 ```
 
-The release baseline is 392 Forge tests, 280 root Node tests (279 passes and one
+The release baseline is 392 Forge tests, 315 root Node tests (314 passes and one
 Windows symlink-permission skip), and 44 SDK tests followed by strict declaration
 type-checking. Each of twelve invariant checks (eight distinct properties)
 completes 256 runs totaling 128,000 calls, with zero handler reverts. A different
@@ -222,7 +222,7 @@ The current V3 core and capped testnet facility are separately recorded in
 `deployments-v3-current.json` and `activation-v3-current.json`. The qualified
 operator verifier and empty market, and the fixed-vintage pool, pool-owned
 factory, and zero-mode mandate are recorded in their three current extension
-manifests. The pool remains Configuring with no allocation exercised; the
+manifests. The pool holds one project-funded testnet allocation recorded in `allocation-v3-portfolio-current.json`; the
 verifier has one dedicated project-operated EOA attestor. These deployments
 were outside the September internal review's deployed scope. No live USC route,
 independent attestation, external capital, or completed service is established

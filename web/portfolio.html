@@ -47,15 +47,17 @@
       >
         <div class="obs-truth-heading">
           <div>
-            <p class="obs-eyebrow">Capital pool · committed deployment</p>
+            <p class="obs-eyebrow">Capital pool · committed allocation</p>
             <h1 id="portfolio-pool-source-title">
-              Deployed · Configuring · no facilities, no capital, no allocation
+              Active · 1 facility allocated · project-funded testnet
             </h1>
           </div>
           <p>
-            Committed manifest qualification at block 5459807. The pool was
-            deployed at block 5459775; these recorded states are separate from
-            the finalized RPC observation below.
+            Committed allocation verified at block 5460383 in
+            <a href="../allocation-v3-portfolio-current.json">allocation-v3-portfolio-current.json</a>.
+            Investor and borrower used project-operated test tokens; this is
+            not lender demand or external capital. These recorded states are
+            separate from the finalized RPC observation below.
           </p>
         </div>
         <div class="obs-truth-rail" aria-label="Portfolio pool truth state">
@@ -64,20 +66,20 @@
             ><small>Compiled local contract and exact SDK ABI.</small>
           </div>
           <div class="obs-truth-item" data-truth="deployed">
-            <span>Deployment</span><strong>Deployed · block 5459775</strong
+            <span>Pool</span><strong>Recorded Active · block 5460383</strong
             ><small>0x7dd538A9ab77a4d2953b28f3bCe710145a0eC8C2</small>
           </div>
-          <div class="obs-truth-item" data-truth="configured">
-            <span>Lifecycle</span><strong>Configuring — not activated</strong
-            ><small>Mandate bound; no facilities.</small>
+          <div class="obs-truth-item" data-truth="activated">
+            <span>Facility</span><strong>Borrower activated the facility</strong
+            ><small>0x0C874e56AD2dC9789A63a9Bc63c08a5F6D3C82C8</small>
           </div>
-          <div class="obs-truth-item" data-truth="empty">
-            <span>Capital</span><strong>None (0 deposits, 0 allocations)</strong
-            ><small>Zero asset balance at manifest qualification.</small>
+          <div class="obs-truth-item" data-truth="activated">
+            <span>Capital</span><strong>100,000 rUSD deposited and allocated</strong
+            ><small>20,000 rUSD bond posted; project-operated test tokens.</small>
           </div>
-          <div class="obs-truth-item" data-truth="external-gated">
-            <span>Execution</span><strong>Allocation path not exercised</strong
-            ><small>No action adapter required by this mandate</small>
+          <div class="obs-truth-item" data-truth="activated">
+            <span>Execution</span><strong>Allocation path exercised</strong
+            ><small>Issuer-attested policy deployment; no action adapter required by this mandate.</small>
           </div>
         </div>
         <ol class="obs-pool-lifecycle" aria-label="Portfolio pool lifecycle">

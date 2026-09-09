@@ -600,7 +600,7 @@ test("observatory pages keep external data on safe text DOM paths and expose sta
   assert.doesNotMatch(operatorJs, /URLSearchParams/);
 });
 
-test("portfolio observatory distinguishes committed deployment from observed RPC state", async () => {
+test("portfolio observatory distinguishes committed allocation from observed RPC state", async () => {
   const html = await readFile(
     new URL("../web/portfolio.html", import.meta.url),
     "utf8",
@@ -610,12 +610,16 @@ test("portfolio observatory distinguishes committed deployment from observed RPC
   assert.ok(sourcePanel >= 0 && sourcePanel < rpcState);
   assert.match(
     html,
-    /Deployed · Configuring · no facilities, no capital, no allocation/,
+    /Active · 1 facility allocated · project-funded testnet/,
   );
   assert.match(html, /0x7dd538A9ab77a4d2953b28f3bCe710145a0eC8C2/);
-  assert.match(html, /None \(0 deposits, 0 allocations\)/);
-  assert.match(html, /Allocation path not exercised/);
-  assert.match(html, /Committed manifest qualification/);
+  assert.match(html, /100,000 rUSD deposited and allocated/);
+  assert.match(html, /20,000 rUSD bond posted/);
+  assert.match(html, /Borrower activated the facility/);
+  assert.match(html, /Committed allocation verified at block 5460383/);
+  assert.match(html, /0x0C874e56AD2dC9789A63a9Bc63c08a5F6D3C82C8/);
+  assert.match(html, /href="\.\.\/allocation-v3-portfolio-current\.json"/);
+  assert.match(html, /not lender demand or external capital/);
   assert.match(html, /id="portfolio-pool-observed"/);
   for (const status of [
     "Configuring",

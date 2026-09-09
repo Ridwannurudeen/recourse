@@ -75,10 +75,16 @@ The [portfolio core manifest](../deployments-v3-portfolio-core-current.json) rec
 PortfolioPoolV1 `0x7dd538A9ab77a4d2953b28f3bCe710145a0eC8C2`, its dedicated
 CappedPilotFactoryV1 `0xA5997C4c212eE27B774a7dBa1E5081a9355A16c0`, and
 PortfolioMandateV1 `0x49306adA3decC50D08D11B403A120cd6FD5501D3`, deployed and
-qualified in Configuring state against the activated release and evidence policy.
+qualified initially in Configuring state against the activated release and evidence policy.
 The mandate requires no action adapter in zero-kind mode; nonzero kinds retain exact
-matching. Allocation has not been exercised: no investors, capital, or completed work
-are demonstrated by these deployments.
+matching. The subsequent [allocation manifest](../allocation-v3-portfolio-current.json)
+records a project-funded testnet pool allocation of 100,000 rUSD to newly created
+pool-owned facility `0x0C874e56AD2dC9789A63a9Bc63c08a5F6D3C82C8`, backed by a
+20,000 rUSD borrower bond and issuer-attested policy deployment. The borrower then
+activated the facility; the pool and facility were verified Active at block 5,460,383.
+Investor and borrower are project wallets using project-operated test tokens. This
+shows the allocation path, not lender demand, external capital, servicing performance,
+profitability, production readiness, completed cures, or audited loss accounting.
 
 ## Attestcoin Protocol Integration Summary
 

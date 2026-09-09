@@ -285,21 +285,29 @@ funding; only the manager can forward a publish retry or policy-authorized
 replacement, and that bounded servicing path remains available after pool
 finalization so economic closeout cannot strand an outstanding remedy.
 
-`deployments-v3-portfolio-core-current.json` records the fixed-vintage pool,
-its dedicated pool-owned `CappedPilotFactoryV1`, and zero-mode mandate as deployed
-and qualified on CC3 in `Configuring` state. The mandate reuses the activated
-release, exact policy-set commitment, and evidence kind `1`; no action adapter is
-required by this mandate. Qualification records zero facilities, zero pool token
-balance, and zero share supply. Allocation has not been exercised.
+`deployments-v3-portfolio-core-current.json` records the fixed-vintage pool, its
+dedicated pool-owned `CappedPilotFactoryV1`, and zero-mode mandate as deployed
+and qualified on CC3, initially in `Configuring` state. The mandate reuses the
+activated release, exact policy-set commitment, and evidence kind `1`; no action
+adapter is required by this mandate.
 
-The remaining allocation steps are: create a facility through the pool;
-configure and register its policy; record the issuer-attested policy deployment;
-register the candidate and investor; open funding and deposit; post the borrower
-bond; activate the pool; and allocate the exact facility limit. Facility activation
-must be verified separately. The pool is uncapitalized, unaudited, and not an
-evergreen NAV product or evidence of lender demand. Shares lock after activation;
-valuation inputs, custody, legal structure, and real servicing history remain
-external gates before capital use.
+`allocation-v3-portfolio-current.json` records the subsequent 13-transaction
+allocation, executed by `npm run activate:v3-portfolio` and verified at block
+5460383: the pool created facility `0x0C874e56AD2dC9789A63a9Bc63c08a5F6D3C82C8`
+through its own factory; configured and registered policy `1` with the activated
+policy configuration, reproducing the required policy-set commitment; the issuer
+recorded the policy deployment; the candidate and one investor were registered;
+funding opened; the investor deposited 100,000 rUSD; the borrower posted the
+20,000 rUSD bond; the pool activated and allocated the exact 100,000 rUSD
+facility limit after the mandate evaluated Eligible on chain; and the borrower
+activated the facility. The investor and borrower are project wallets using
+project-operated test tokens: this demonstrates the allocation path, not lender
+demand or external capital.
+
+The pool is unaudited and not an evergreen NAV product; it holds one
+project-funded testnet vintage. Shares lock after activation; valuation inputs,
+custody, legal structure, real servicing history, and drawdown, repayment,
+default, and recovery evidence remain external gates before capital use.
 
 ## Separate V3 extension deployment workflow
 
@@ -315,6 +323,12 @@ the market also binds the token runtime. Portfolio core binds a fresh V3-core
 manifest, a pinned asset runtime, and the required registry release and evidence
 kind before deployment. A nonzero action-adapter kind requires an exact declaration;
 zero means no adapter is required.
+
+`npm run activate:v3-portfolio` applies the same tracked-config, offline-plan,
+live-check, approval-envelope, per-signer journal, renewal, and finalized-block
+verification discipline to the pool lifecycle (create, configure and register,
+record, admit, fund, bond, activate, allocate, activate facility) and writes
+`allocation-v3-portfolio-current.json`.
 
 The default mode is deterministic and offline. `--live-check --write-plan`
 creates a 30-minute approval candidate binding the full qualification snapshot,

@@ -164,12 +164,11 @@ zero handler reverts. No RPC, signing, or broadcast was part of these checks.
 
 The committed verifier, market, and portfolio-core manifests record six
 qualified CC3 transactions. The operator verifier and empty market are
-deployed with one dedicated project-operated EOA attestor. The fixed-vintage
-pool, dedicated pool-owned capped factory, and zero-mode mandate are deployed
-and qualified in Configuring state against the activated release, with no
-adapter required by the mandate. Allocation has not been exercised. No
-investors, capital, service quotes, or completed work are demonstrated by
-deployment. See `deployments-v3-operator-service-verifier-current.json`,
+deployed with one dedicated project-operated EOA attestor. The fixed-vintage pool, dedicated pool-owned capped factory, and zero-mode
+mandate are deployed and qualified against the activated release, with no
+adapter required by the mandate; the allocation addendum below records the
+subsequent project-funded testnet allocation. No service quotes or completed
+operator work are demonstrated by deployment. See `deployments-v3-operator-service-verifier-current.json`,
 `deployments-v3-operator-market-current.json`, and
 `deployments-v3-portfolio-core-current.json` at the repository root.
 
@@ -181,3 +180,44 @@ evergreen NAV, cross-chain remedy execution, Attestcoin writability, completed
 cures, and audited portfolio loss accounting remain unsupported. Legal and
 custody review, external demand, a production audit, and real servicing
 history remain open.
+
+## Portfolio activation tooling and allocation addendum (2026-09-10)
+
+`scripts/activate-v3-portfolio.mjs` and
+`scripts/lib/v3-portfolio-activation.mjs` (commits `5ccefc7`, `045884f`,
+`c27a457`, `1f6e232`, `56f57c0`) add a guarded 13-transaction portfolio
+activation flow mirroring the pilot activator: tracked config, deterministic
+offline plan, signerless live-check, 30-minute approval envelope, per-signer
+journals with persisted raw transactions, renewal bound to the journal
+checkpoint, block-time receipt polling with the time-budget guard, and final
+verification before the manifest is written.
+
+The first internal review (Task AB) returned NO-GO with one medium recovery
+finding (the final borrower activation could not be resumed once the pool
+funding safety window closed, although that step has no pool deadline), one
+medium test-strength finding (no test ran the real orchestration), and one low
+finding (no explicit `factory.isFacility` read). Commit `c27a457` fixed all
+three and the re-review (Task AE) returned GO. Two further fixes were made
+during the live run: `1f6e232` loads the repository environment exactly as the
+pilot tool does (the first live attempt failed closed before signing because no
+key was loaded), and `56f57c0` anchors preflight and final snapshots on the
+finalized block after a CC3 head fork invalidated a `latest` snapshot between
+step 1 and step 2 (nothing was sent; the run resumed from the journal checkpoint
+with a renewal plan). Those two fixes were reviewed by the orchestrator after
+the run, not by the independent reviewer, because the review budget was
+exhausted; the independent verdict is pending.
+
+`allocation-v3-portfolio-current.json` records the completed run: 13 canonical
+transactions in blocks 5460217-5460379, facility
+`0x0C874e56AD2dC9789A63a9Bc63c08a5F6D3C82C8` Active with 100,000 rUSD lender
+funding and a 20,000 rUSD bond, pool Active with one allocation, mandate
+Eligible, kernel commitment equal to the required policy set, reconciled asset
+movements, and verification at block 5460383. Investor and borrower are project
+wallets using project-operated test tokens. The activation tooling and the
+allocation were not part of the September internal review; drawdown, repayment,
+default, recovery, servicing performance, and audited loss accounting remain
+undemonstrated.
+
+After these changes the suites pass 392 Forge tests, 315 root Node tests (314
+passes and one Windows symlink-permission skip), and 44 SDK tests with strict
+declaration type-checking.
