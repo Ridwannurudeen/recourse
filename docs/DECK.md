@@ -69,7 +69,7 @@ Sources: [integration note — Two deployed generations](attestcoin-integration.
 
 ## 7. What is live today
 
-The repository records two live application generations on **CC3 Testnet**: the original covenant facility and the additive Horizon 1 generation.
+The repository records the original covenant facility, the additive Horizon 1 generation, and the hardened V3 core on **CC3 Testnet**.
 
 Horizon 1 comprises **seven contracts**: Policy Kernel, kernel-created Verified Credit State, ERC-20 facility factory, event-history policy, Proof Jobs market, demonstration facility, and demo token.
 
@@ -77,9 +77,11 @@ The demonstration facility is recorded as Active. Its denomination asset is a **
 
 The public Horizon 1 console reads factory, facility, policy, credit-state, and proof-job data at a pinned CC3 block. It requests no wallet and submits no transaction.
 
-**The hardened V3 build is not deployed.** The historical `deployments-v3.json` core is inactive and superseded; current activation tooling rejects it. A fresh full-core deployment and qualification are required. V3 execution is not installed or enabled.
+**The hardened V3 core is deployed and qualified.** `deployments-v3-current.json` records six contracts from reviewed source commit `90d8b05af38940ffeb55d974401641a327176b9e`, with all six runtime code hashes verified at CC3 block **5,459,080**. The historical `deployments-v3.json` core remains inactive and superseded.
 
-Sources: [Horizon 1 technical note](HORIZON1.md), [Horizon 1 manifest](../deployments-horizon1.json), [README](../README.md), [public console](https://ridwan.gudman.xyz/recourse/horizon1.html).
+`activation-v3-current.json` records capped pilot facility `0x00B50626C4AA42d22ca01AAEa8649f253aEc5B1e` as **Active**, with policy **1**, registry release `0xad31a01779b7c8c8651e1fecbb15b6d177c25dbd637c99d7496c2c2a0b7d221a`, and proof job **1**. Its Ethereum source window is **25,944,522–26,024,522**, maturity is CC3 block **5,554,121**, and proof-job expiry is Unix timestamp **1792497600**. This is a fixed-supply demo-token testnet activation with no draw recorded, not a live pilot with a counterparty. There is no design partner, independent audit, or production asset or custody decision; V3 operator execution remains uninstalled and disabled.
+
+Sources: [current V3 core manifest](../deployments-v3-current.json), [pilot activation manifest](../activation-v3-current.json), [Horizon 1 technical note](HORIZON1.md), [Horizon 1 manifest](../deployments-horizon1.json), [README](../README.md), [public console](https://ridwan.gudman.xyz/recourse/horizon1.html).
 
 ## 8. Architecture: evidence becomes credit state
 
@@ -105,7 +107,7 @@ Sources: [integration note — Horizon 1 and protocol limits](attestcoin-integra
 | Operator-service market with separately priced services, sponsor-bound acceptance, operator-bond and sponsor-payment escrow, settlement, expiry, and pull withdrawals. Reference operator with bounded scans, reorg recovery, execution gates, and durable transaction journals. | The market is undeployed and unopened. No V3 execution service is enabled; no independently qualified production service verifier, matching service, customers, reputation, or profitability evidence exists. |
 | Fixed-vintage, single-asset portfolio pool with mandate checks, exact allocation, explicit loss accounting, recovery distribution, and bounded service spending. | The pool is undeployed, unaudited, and uncapitalized. It is not an evergreen NAV product. Lender demand, custody and legal review, valuation inputs, and real servicing history remain gates. |
 
-The deployed Horizon 1 Proof Jobs contract is distinct from the source-only operator-service market. There is **no design partner, no customer, no live pilot facility, no capital deployed, and no published integration**. The SDK remains unpublished.
+The deployed Horizon 1 and current V3 Proof Jobs contracts are distinct from the source-only operator-service market. Item 9 remains undeployed because no deployment path produces its required `operator-service-verifier-v1` prerequisite manifest, and choosing the verifier's attestor remains a governance decision. There is **no design partner, no customer, no live pilot with a counterparty, no production capital deployed, and no external integration**. The capped V3 facility is an activated demo-token testnet demonstration. SDK **0.1.0 is published** for interface discovery and testnet integration; its interfaces are not frozen.
 
 Sources: [roadmap items 7, 9, and 10](ROADMAP.md), [internal review — Status and exclusions](SECURITY-REVIEW-2026-09.md#status-and-exclusions).
 
@@ -115,7 +117,7 @@ Sources: [roadmap items 7, 9, and 10](ROADMAP.md), [internal review — Status a
 
 The review records Slither **0.11.5**, **126 manually triaged findings**, and remediation of all **4 HIGH** and **15 MEDIUM** findings identified by the internal review. Static-analysis findings and review severity counts describe different sets; they are not additive assurance metrics.
 
-For this draft, `npm test` passed **376 Forge tests, 214 root Node tests, and 39 SDK tests**, followed by strict SDK declaration compilation. **One root Node test was skipped.** Coverage includes proof validation, replay resistance, policy ordering, asset conservation, loss settlement, operator recovery, deployment qualification, and SDK encoding. These results are not a substitute for independent review.
+For this draft, `npm test` passed **376 Forge tests, 264 root Node tests, and 39 SDK tests**, followed by strict SDK declaration compilation. **One root Node test was skipped.** Coverage includes proof validation, replay resistance, policy ordering, asset conservation, loss settlement, operator recovery, deployment qualification, and SDK encoding. These results are not a substitute for independent review.
 
 The internal review did not deploy or activate V3, install a signer, publish a package, or move capital. An independent reviewer must assess an exact clean release and produce evidence for that specific scope. The internal report cannot satisfy the independent-audit readiness gate.
 
@@ -125,9 +127,9 @@ Sources: [internal security review](SECURITY-REVIEW-2026-09.md), [README — Tes
 
 | Horizon | Delivered scope | Gates to the next outcome |
 | --- | --- | --- |
-| **1 — Pilotable credit system; items 1–4** | Kernel, credit state, and Proof Jobs deployed; capped pilot stack built locally. | No pilot has run. Fresh hardened V3 deployment, independent audit, design partner, legal review, production asset and custody decisions, and production watcher readiness. |
-| **2 — Close the loop; items 5–7** | Remedy coordination, pinned USC transport, acknowledgement/cure lifecycle, SDK, and registry foundations built locally. | Cross-chain remedy delivery for items 5 and 6 is blocked: repository documentation describes Attestcoin writability as still undergoing testing and audits and not live on testnet. A verified live route, authorized receivers, acknowledgement proofs, and route-specific review are required. SDK publication and external integrations remain separate gates. |
-| **3 — Credit coordination; items 8–10** | Bounded multi-chain event policy, operator-service market, and fixed-vintage pool built locally. | Add only provisioned chains with customer need. Audit, operator economics, lender demand, legal/custody decisions, real servicing history, and supported routes must precede market opening and capital allocation. |
+| **1 — Pilotable credit system; items 1–4** | Hardened V3 core deployed and qualified; capped demo-token pilot facility activated on CC3 Testnet. | No live pilot with a counterparty. Independent audit, design partner, legal review, production asset and custody decisions, and production watcher readiness remain gates. |
+| **2 — Close the loop; items 5–7** | Remedy coordination, pinned USC transport, and acknowledgement/cure lifecycle built locally; registry deployed and SDK 0.1.0 published for interface discovery and testnet integration. | Items 5 and 6 remain blocked on Attestcoin writability. A verified live route, authorized receivers, acknowledgement proofs, and route-specific review are required. SDK interfaces are not frozen; no external integration exists. |
+| **3 — Credit coordination; items 8–10** | Bounded multi-chain event policy deployed with V3; operator-service market and fixed-vintage pool built locally but undeployed. | Item 9 lacks a deployment path for its verifier prerequisite manifest and a governance decision on its attestor. Item 10 is held at the action-adapter design gate described on slide 13. Audit, operator economics, lender demand, legal/custody decisions, real servicing history, and supported routes must precede market opening and capital allocation. |
 
 Cross-chain remedies are **not delivered as a live product**. Local lifecycle code cannot establish transport availability or destination execution authority.
 
@@ -152,7 +154,9 @@ Source: [roadmap — Deliberate cut list](ROADMAP.md#what-we-are-deliberately-no
 - A **design partner** accepts the lender-borrower workflow, bounded remedies, monitoring economics, and pilot budget.
 - **Legal review** establishes the facility terms and permitted consequences.
 - **Production asset and custody decisions** are complete, including who controls each programmable account and authorized receiver.
-- The hardened build is freshly deployed and qualified; production monitoring, recovery, and incident procedures are rehearsed before value is entrusted to it.
+- The exact production release is deployed and qualified, and production monitoring, recovery, and incident procedures are rehearsed before value is entrusted to it. The current hardened V3 deployment and activation are on testnet.
+
+Item 10 is deliberately undeployed because of a design gate: `PortfolioMandateV1` requires a nonzero action-adapter kind declared by the facility's registry release, but the activated release declares no action adapters while items 5–6 await Attestcoin writability. A pool deployed today could not allocate to this facility (`MissingActionAdapter`).
 
 The target is a capped bilateral facility with meaningful servicing evidence before portfolio expansion. These are unmet gates, not implied commitments or traction. The demonstrated testnet history is not production performance.
 

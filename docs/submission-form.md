@@ -3,7 +3,7 @@
 Everything the BUIDL CTC 2026 Fall form asks for, ready to paste. Nothing here is
 submitted automatically; the owner submits.
 
-**Deadline:** 2026-09-06 23:59 ET. Internal cut-off: Sept 5.
+**Deadline:** 2026-09-13 23:59 ET (extended). Internal cut-off: Sept 12.
 
 ---
 
@@ -42,7 +42,8 @@ indices and batch continuity to all be verified on-chain inside a single adjudic
 
 The proof does not release an escrow. It changes credit risk.
 
-Two generations are live on CC3. The team-audited v1 contracts enforce the original
+The original and Horizon 1 generations are live on CC3 alongside the hardened V3 core.
+The team-audited v1 contracts enforce the original
 covenant facility, including a real autonomous mainnet catch: its policy window was
 configured on CC3 before the qualifying Ethereum block was mined, then the unattended
 operator detected the USDC outflow, built the Attestcoin proof, and submitted the breach.
@@ -51,15 +52,29 @@ commit/reveal proof-job market, and an ERC-20 facility factory. Seven Horizon 1 
 deployed on CC3 around an Active demonstration facility denominated in a fixed-supply testnet
 token. The contracts have not been independently audited.
 
-These testnet demonstrations are separate from the current V3 roadmap build.
-The recorded inactive V3 core predates the current interfaces and must be freshly
-redeployed before activation. The current V3 build is undeployed: there is no design
-partner, live pilot facility, published SDK, opened operator market, or capitalized
-portfolio pool.
+The hardened V3 core is now deployed and qualified on CC3 Testnet: the current
+[core manifest](../deployments-v3-current.json) records six contracts from reviewed
+source commit `90d8b05af38940ffeb55d974401641a327176b9e`, with all six runtime code
+hashes verified. The historical `deployments-v3.json` core remains inactive and superseded.
+The [activation manifest](../activation-v3-current.json) records capped facility
+`0x00B50626C4AA42d22ca01AAEa8649f253aEc5B1e` as Active, policy 1, registry release
+`0xad31a01779b7c8c8651e1fecbb15b6d177c25dbd637c99d7496c2c2a0b7d221a`, and proof job 1.
+Its Ethereum source window is 25,944,522–26,024,522, maturity is CC3 block 5,554,121,
+and proof-job expiry is Unix timestamp 1792497600. This is a fixed-supply demo-token
+testnet demonstration with no draw recorded. There is no design partner, live pilot
+with a counterparty, independent audit, or production asset or custody decision.
+Items 5–6 remain blocked on Attestcoin writability. SDK 0.1.0 is published for interface
+discovery and testnet integration; interfaces are not frozen and no external integration exists.
+Item 9's operator market remains undeployed: no deployment path produces its required
+`operator-service-verifier-v1` prerequisite manifest, and the verifier's attestor is a
+governance decision. Item 10's portfolio pool is deliberately undeployed at a design gate:
+its mandate requires a nonzero action-adapter kind declared by the facility's registry
+release, but the activated release declares none while items 5–6 await Attestcoin writability.
+A pool deployed today could not allocate to this facility (`MissingActionAdapter`).
 
 ## Attestcoin Protocol Integration Summary
 
-Recourse uses Attestcoin as the evidence and adjudication layer for both live generations.
+Recourse uses Attestcoin as the evidence and adjudication layer for its deployed generations.
 
 A hunter submits several real Ethereum mainnet transactions in one batch, sharing a single
 continuity proof. The adjudicator calls the BlockProver precompile's `verify` to establish

@@ -83,13 +83,29 @@ bytes directly. Normalize CRLF to LF before comparing source bytes with
 
 No deployment, activation, transaction broadcast, signer installation, package
 publication, or capital movement was performed as part of this review or its
-remediation. The reviewed V3 roadmap build remains undeployed. There is no
-independent audit, design partner, live pilot facility, published SDK, opened
-operator market, or capitalized portfolio pool. The existing public console and
-Horizon 1 operator remain read-only; neither is evidence that these gates have
-been met.
+remediation. At the close of that review, the reviewed V3 roadmap build remained
+undeployed, with no independent audit, design partner, live pilot facility,
+published SDK, opened operator market, or capitalized portfolio pool. The public
+console and Horizon 1 operator were read-only; neither established those gates.
+Subsequent deployment and activation are recorded separately in
+[`deployments-v3-current.json`](../deployments-v3-current.json) and
+[`activation-v3-current.json`](../activation-v3-current.json). The activated capped
+facility is a fixed-supply demo-token testnet demonstration, not a live pilot
+with a counterparty or independent-audit evidence.
 
 An independent reviewer must assess an exact clean remediation commit and
 produce the evidence specified in
 [`SECURITY-AUDIT-BRIEF.md`](SECURITY-AUDIT-BRIEF.md). This internal document is
 context for that review only.
+
+## Post-review defects found during the first live broadcast (2026-09-09)
+
+- `90d8b05` fixed approval validation that compared the approved qualification
+  with a fresh block for equality, which no later block could satisfy. The fix
+  permits later blocks while retaining the approved anchor and invariant checks.
+- `783768d` fixed receipt polling at 1 second × 24 polls, which could not cover
+  six 15-second confirmations. Polling now defaults to the CC3 block interval
+  and validates that the time budget covers the required confirmation depth.
+
+Both defects were found by running the release tools live, not by this review.
+They are release-tooling defects, not contract defects.

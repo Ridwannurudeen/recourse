@@ -71,15 +71,19 @@ by the one-time `PolicyKernelV2.setProofJobs` call. The sixth pinned artifact is
 
 The plan expires 30 minutes after its chain timestamp. Treat the written file as
 a review candidate until an accountable human separately approves that exact
-plan and its fee ceilings. Do not edit or regenerate an approved file. While it
-is still valid, broadcast only by supplying that exact file:
+plan and its fee ceilings. The approver records the plan file's
+`approvalCommitment` field outside the file; supply that recorded digest as
+`--approval-commitment <digest>` for core, activation, and extension broadcasts.
+Do not edit or regenerate an approved file. While it is still valid, broadcast
+only by supplying that exact file and the externally recorded digest:
 
 ```sh
 npm run deploy:v3 -- \
   --manifest deployments-v3-current.json \
   --live-check \
   --broadcast \
-  --approved-plan /secure/path/v3-deployment-plan.json
+  --approved-plan /secure/path/v3-deployment-plan.json \
+  --approval-commitment <digest>
 ```
 
 Broadcast mode loads the signer only after approval validation and requalifies
@@ -121,7 +125,23 @@ final qualification compare its executable runtime around every immutable, and
 final qualification applies the same check to the created
 `RecourseFacilityV3`. Exact factory getter checks bind all constructor values,
 so a stale factory that creates an older facility cannot qualify. Verify the
-handoff offline before any live check:
+handoff offline before any live check. The activation config must already be
+git-tracked and clean, even for the offline dry run: commit a new reviewed config
+before its first validation.
+
+Activation `--live-check` requires `CREDITCOIN_ATTESTATION_RPC_URL`, with a
+different URL from `CREDITCOIN_RPC_URL`. The installed USC SDK reads the
+attestation precompile at the `finalized` block tag. The public endpoint
+`https://102031.rpc.thirdweb.com` returned chain ID `0x18e8f` (`102031`) and
+successfully served that finalized attestation read on 2026-09-09. The Blockscout
+`https://creditcoin-testnet.blockscout.com/api/eth-rpc` proxy rejects the same
+tag with `Invalid block number`; do not use it for attestation reads. Recheck
+endpoint capabilities before a later activation.
+
+```text
+CREDITCOIN_RPC_URL=https://rpc.cc3-testnet.creditcoin.network
+CREDITCOIN_ATTESTATION_RPC_URL=https://102031.rpc.thirdweb.com
+```
 
 ```sh
 npm run activate:v3 -- --help
@@ -132,7 +152,8 @@ npm run activate:v3 -- \
 
 Then use those exact two arguments for `--live-check --write-plan`; after the
 resulting file and fee ceilings receive explicit human approval, use them again
-with `--live-check --broadcast --approved-plan`. Do not activate against the
+with `--live-check --broadcast --approved-plan /secure/path/v3-activation-plan.json --approval-commitment <digest>`.
+Do not activate against the
 checked-in historical manifest, and do not substitute a manifest after the plan
 has been reviewed.
 
@@ -176,7 +197,8 @@ npm run deploy:v3-extension -- \
   --manifest deployments-v3-extension-current.json \
   --live-check \
   --broadcast \
-  --approved-plan /secure/path/v3-extension-plan.json
+  --approved-plan /secure/path/v3-extension-plan.json \
+  --approval-commitment <digest>
 ```
 
 The approved envelope binds its full issue/expiry window, live qualification,

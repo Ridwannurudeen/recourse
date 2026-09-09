@@ -1,7 +1,8 @@
 # Capped pilot readiness and operator runbook
 
-This runbook covers the local readiness gate and proof-job operator. It does not
-claim that a pilot has run or that Recourse is production-ready.
+This runbook covers the local readiness gate and proof-job operator. The activated
+capped V3 facility is a testnet demonstration, not a live pilot with a counterparty
+or a claim that Recourse is production-ready.
 
 ## Readiness evidence
 
@@ -33,8 +34,23 @@ does not authorize deployment, funding, or transaction execution.
 
 `deployments-v3.json` is a historical inactive record. Its kernel, multi-chain
 policy, and policy-set commitment predate the hardened current build, so the
-activation preflight rejects it. Preserve that file. Deploy a reviewed current
-core to a new manifest such as `deployments-v3-current.json`. The deployment
+activation preflight rejects it. Preserve that file. The hardened core is now
+deployed on CC3 Testnet in [`deployments-v3-current.json`](../deployments-v3-current.json)
+(schema version 2, `deployed-qualified`), from reviewed source commit
+`90d8b05af38940ffeb55d974401641a327176b9e`, with runtime code hashes verified for
+all six contracts at block 5459080.
+
+[`activation-v3-current.json`](../activation-v3-current.json) records the capped
+facility `0x00B50626C4AA42d22ca01AAEa8649f253aEc5B1e` as Active, with policy 1,
+registry release `0xad31a01779b7c8c8651e1fecbb15b6d177c25dbd637c99d7496c2c2a0b7d221a`,
+and open proof job 1. Its Ethereum source window is blocks 25944522–26024522
+(source chain key 3), its CC3 maturity block is 5554121, and proof-job expiry is
+Unix timestamp 1792497600. The recorded facility has a 100,000 rUSD limit,
+20,000 rUSD borrower bond, no drawn principal, and 175 rUSD proof-job escrow.
+rUSD is the fixed-supply demo token. There is still no design partner, live pilot
+with a counterparty, independent audit, or production asset or custody decision.
+
+For subsequent separately approved deployments, use a new manifest. The deployment
 command is offline by default and does not read an RPC, load a signer, write a
 file, or broadcast. Use `--live-check` for signerless qualification, then
 `--live-check --write-plan <new-path>` to write the exact candidate plan for
@@ -43,7 +59,7 @@ scope at its exact commit, six pinned artifacts, live anchor, capped fees, and
 exactly six transactions: five creations followed by `setProofJobs`.
 
 An approved plan expires 30 minutes after its chain timestamp. Broadcast
-requires `--live-check --broadcast --approved-plan <exact-path>` with the same
+requires `--live-check --broadcast --approved-plan <exact-path> --approval-commitment <digest>` with the same
 explicit manifest and can sign only the approved transaction sequence. Before
 each send, the manifest-specific `.v3-deployment-journal.json` durably records
 the raw signed transaction. Recovery checks the recorded hash first and may

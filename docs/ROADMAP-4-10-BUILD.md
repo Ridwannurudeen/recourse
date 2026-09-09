@@ -38,16 +38,29 @@ The pilot package also contains:
   instance is installed and healthy; the V3 configuration and executable path
   are not installed or enabled.
 
-No pilot has run. A design partner, independent audit of the exact commit, legal
-review, pilot budget, production asset/custody decision, testnet rehearsal,
-production watcher, and accountable human approvals remain external gates.
+A capped testnet facility has been activated with the fixed-supply demo token;
+no live pilot with a counterparty has run. A design partner, independent audit
+of the exact scope, legal review, pilot budget, production asset/custody
+decision, production watcher, and production approvals remain external gates.
 
 The six-contract CC3 V3 core recorded in `deployments-v3.json` is a historical,
 inactive deployment with exactly zero facilities, zero configured policies, zero
 registry claims, and zero asset transfers. Its kernel and multi-chain policy
 predate the current frozen source-ordering mode and policy-set commitment. The
 current activation tooling rejects that bytecode, so the full six-contract core
-must be redeployed from the reviewed current commit before any activation.
+was redeployed from reviewed source commit
+`90d8b05af38940ffeb55d974401641a327176b9e`.
+`deployments-v3-current.json` records the fresh core as `deployed-qualified`
+on chain `102031`, with all six runtime code hashes verified at block `5459080`.
+
+`activation-v3-current.json` records active facility
+`0x00B50626C4AA42d22ca01AAEa8649f253aEc5B1e`, policy `1`, registry release
+`0xad31a01779b7c8c8651e1fecbb15b6d177c25dbd637c99d7496c2c2a0b7d221a`,
+and open proof job `1`, verified at block `5459248`. Its Ethereum mainnet source
+window is blocks `25944522` to `26024522`, facility maturity is CC3 block `5554121`,
+and proof-job expiry is Unix timestamp `1792497600`. The facility records
+100,000 demo tokens funded and a 20,000 demo-token borrower bond, with no drawn
+principal or outstanding debt at that verification block.
 
 The V3 core deployment command is `npm run deploy:v3`. Its default mode is
 offline: `npm run deploy:v3 -- --manifest deployments-v3-current.json` reads no
@@ -67,7 +80,7 @@ anchor, source commit, and artifact hash and expires 30 minutes after its chain
 timestamp.
 
 Broadcast requires the same manifest plus
-`--live-check --broadcast --approved-plan <exact-path>`; there is no unapproved
+`--live-check --broadcast --approved-plan <exact-path> --approval-commitment <digest>`; there is no unapproved
 broadcast path. The signer is admitted only after the exact plan is validated,
 and live state is requalified before each first signing or broadcast. Every raw
 signed transaction is durably persisted first in the manifest-specific
@@ -100,11 +113,10 @@ same file with `--core-manifest deployments-v3-current.json`. The historical
 manifest must never be overwritten or substituted after review. The exact
 handoff and approval commands are in `ops/README.md`.
 
-The checked-in guardian is the existing Horizon 1 hunter wallet only as a
-testnet candidate. Its owner has not accepted the immutable guardian duty, so
-the dry-run result is not authorization to use `--broadcast`. Confirm that role
-with the accountable owner, or replace it with an approved guardian, before any
-transaction is sent.
+The current activation manifest records the guardian and hunter as the same
+testnet address. This records the deployed role binding, not production role
+acceptance. Any future deployment still requires accountable role approval; a
+dry-run result alone does not authorize `--broadcast`.
 
 ## 5. Cross-chain remedy adapters
 
@@ -191,9 +203,11 @@ The plain-ESM SDK adds:
 - a local `PortfolioMandateV1` eligibility simulator matching the Solidity gate.
 
 The historical V3 registry deployment is empty and belongs to the superseded
-core. Current aggregate V3 readers require a fresh compatible full-core
-manifest. The SDK remains unpublished and its interfaces are not frozen.
-External integration and an independent audit remain open milestones.
+core. Current aggregate V3 readers use `deployments-v3-current.json`; the pilot
+issuer release and deployment are recorded in `activation-v3-current.json`.
+`recourse-protocol-sdk@0.1.0` is published for interface discovery and testnet
+integration. Its interfaces are not frozen; no external integration or
+independent audit has been completed.
 
 ## 8. Multi-chain portfolio policy
 
@@ -236,7 +250,10 @@ The operator daemon is a reference service implementation, not evidence of an
 open market. A Horizon 1 instance is installed and healthy in read-only mode;
 the V3 executable configuration and signer are not installed. There is no
 independently qualified production service verifier, live market quote, paid
-operator, customer, reputation system, or profitability claim.
+operator, customer, reputation system, or profitability claim. The market is not
+deployed because its required `operator-service-verifier-v1` manifest has no
+producer in the deployment tooling; the verifier attestor remains a governance
+decision.
 
 ## 10. Programmable credit portfolios
 
@@ -264,7 +281,11 @@ finalization so economic closeout cannot strand an outstanding remedy.
 The pool and its observatory are source-only. It is not deployed, capitalized,
 audited, evergreen, or evidence of lender demand. Shares lock after activation;
 valuation inputs, custody, legal structure, and real servicing history remain
-external gates before capital use.
+external gates before capital use. Deployment is deliberately blocked by a
+design gate: `PortfolioMandateV1` requires a nonzero action-adapter kind and a
+matching registry declaration, while the activated release declares no action
+adapters because items 5 and 6 await Attestcoin writability. A pool could be deployed
+but could not allocate against that release (`MissingActionAdapter`).
 
 ## Separate V3 extension deployment workflow
 

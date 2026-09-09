@@ -101,9 +101,14 @@ manifest plus runtime-code and anchored-state checks. The checked-in
 `deployments-v3.json` is a historical inactive deployment: its capped factory
 is empty, but its kernel and multi-chain policy predate the hardened
 source-ordering ABI and policy-set commitment. Current V3 readers and activation
-tooling must use a fresh, fully qualified deployment manifest and must not treat
-the historical addresses as compatible with the exported V3 interfaces. There
-is no live pilot facility. `OperatorMarketV1`, `PortfolioMandateV1`, and
+tooling should use [`deployments-v3-current.json`](../deployments-v3-current.json)
+for current interface discovery: it records the qualified hardened core and
+verified runtime code hashes for all six contracts. The historical addresses
+must not be treated as compatible with the exported V3 interfaces.
+[`activation-v3-current.json`](../activation-v3-current.json) records an activated
+capped facility denominated in the fixed-supply demo token; this is a testnet
+demonstration, with no design partner or live pilot with a counterparty.
+`OperatorMarketV1`, `PortfolioMandateV1`, and
 `PortfolioPoolV1` exports describe source-level capabilities only unless a
 separate verified deployment establishes live state. The pool API covers its
 configuring, funding, active, finalized, and cancelled lifecycle, but the
