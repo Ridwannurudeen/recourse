@@ -5,6 +5,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -15,6 +16,7 @@ import {
   ContractFactory,
   Interface,
   Transaction,
+  TypedDataEncoder,
   Wallet,
   ZeroAddress,
   getAddress,
@@ -70,9 +72,11 @@ const GENERATIONS = [
   "v3-closed-loop-v1",
   "v3-operator-market-v1",
   "v3-portfolio-core-v1",
+  "operator-service-verifier-v1",
 ];
 
 const ARTIFACT_NAMES = {
+  "operator-service-verifier-v1": ["OperatorServiceVerifierV1"],
   "v3-closed-loop-v1": ["ClosedLoopPolicyV1"],
   "v3-operator-market-v1": ["OperatorMarketV1"],
   "v3-portfolio-core-v1": [
@@ -83,6 +87,7 @@ const ARTIFACT_NAMES = {
 };
 
 const CONSTRUCTOR_TYPES = {
+  OperatorServiceVerifierV1: ["address"],
   ClosedLoopPolicyV1: ["address", "address"],
   OperatorMarketV1: ["address", "address", "uint256", "uint64", "uint64"],
   PortfolioPoolV1: [
@@ -126,6 +131,7 @@ const CONSTRUCTOR_TYPES = {
 };
 
 const IMMUTABLE_COUNTS = {
+  OperatorServiceVerifierV1: 8,
   ClosedLoopPolicyV1: 2,
   OperatorMarketV1: 5,
   PortfolioPoolV1: 9,
@@ -243,6 +249,7 @@ function prerequisiteManifests() {
 }
 
 function relevantManifests(generation, manifests = prerequisiteManifests()) {
+  if (generation === "operator-service-verifier-v1") return {};
   if (generation === "v3-closed-loop-v1") {
     return { core: manifests.core, remedy: manifests.remedy };
   }
@@ -291,6 +298,13 @@ function rawConfig(generation, deployer = ADDRESS("f1")) {
     },
     requirements: { minimumNativeWei: "1000000" },
   };
+  if (generation === "operator-service-verifier-v1") {
+    return {
+      ...common,
+      prerequisites: {},
+      operatorServiceVerifier: { attestor: ADDRESS("d2") },
+    };
+  }
   if (generation === "v3-closed-loop-v1") {
     return {
       ...common,
@@ -512,7 +526,45 @@ function deploymentProvider({ config, plan, artifacts, deployed = false }) {
 
 function contractFactory(config, plan, overrides = {}) {
   const contracts = new Map();
-  if (config.generation === "v3-closed-loop-v1") {
+  if (config.generation === "operator-service-verifier-v1") {
+    const address = plan.predictedContracts.OperatorServiceVerifierV1;
+    contracts.set(address, {
+      attestor: async () => config.operatorServiceVerifier.attestor,
+      eip712Domain: async () => [
+        "0x0f",
+        "Recourse Operator Service",
+        "1",
+        BigInt(CHAIN_ID),
+        address,
+        HASH("0"),
+        [],
+      ],
+      receiptDigestOf: async (...args) => {
+        assert.equal(args.length, 9);
+        assert.deepEqual(args[8], { blockTag: 600 });
+        const types = [
+          ["agreementId", "bytes32"],
+          ["serviceKind", "uint8"],
+          ["operator", "address"],
+          ["sponsor", "address"],
+          ["acceptedAt", "uint64"],
+          ["deliveryDeadline", "uint64"],
+          ["requirementsDigest", "bytes32"],
+          ["deliveryDigest", "bytes32"],
+        ];
+        return TypedDataEncoder.hash(
+          {
+            name: "Recourse Operator Service",
+            version: "1",
+            chainId: CHAIN_ID,
+            verifyingContract: address,
+          },
+          { ServiceReceipt: types.map(([name, type]) => ({ name, type })) },
+          Object.fromEntries(types.map(([name], index) => [name, args[index]])),
+        );
+      },
+    });
+  } else if (config.generation === "v3-closed-loop-v1") {
     contracts.set(plan.predictedContracts.ClosedLoopPolicyV1, {
       context: async () => POLICY_KERNEL,
       coordinator: async () => REMEDY_COORDINATOR,
@@ -672,7 +724,7 @@ async function liveFixture(generation = "v3-closed-loop-v1") {
   };
 }
 
-test("V3 extension config accepts only the three exact generations and binds prerequisite manifests", () => {
+test("V3 extension config accepts only the four exact generations and binds prerequisite manifests", () => {
   for (const generation of GENERATIONS) {
     const config = normalizedConfig(generation);
     assert.equal(config.generation, generation);
@@ -833,6 +885,7 @@ test("checked-in V3 extension examples are valid JSON but remain explicitly unau
     ["config/v3-closed-loop.example.json", "v3-closed-loop-v1"],
     ["config/v3-operator-market.example.json", "v3-operator-market-v1"],
     ["config/v3-portfolio-core.example.json", "v3-portfolio-core-v1"],
+    ["config/v3-operator-service-verifier.example.json", "operator-service-verifier-v1"],
   ];
   const objectShape = (value) => {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -945,6 +998,345 @@ test("artifact loading pins the exact generation set, raw hashes, and constructo
       () =>
         validateV3ExtensionConfig(extra, relevantManifests(extra.generation)),
       /artifact set|unexpected artifact|exact/,
+    );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("verifier config requires one attestor and no prerequisite or extra artifacts", () => {
+  const input = rawConfig("operator-service-verifier-v1");
+  const config = validateV3ExtensionConfig(input, {});
+  assert.deepEqual(config.prerequisites, {});
+  for (const field of ["asset", "roles", "core"]) {
+    assert.equal(config[field], undefined);
+  }
+  for (const attestor of [
+    undefined,
+    ZeroAddress,
+    "0x1234",
+    "REPLACE_WITH_REVIEWED_ATTESTOR_ADDRESS",
+  ]) {
+    const invalid = structuredClone(input);
+    invalid.operatorServiceVerifier.attestor = attestor;
+    assert.throws(() => validateV3ExtensionConfig(invalid, {}), /attestor/);
+  }
+  assert.throws(
+    () => validateV3ExtensionConfig({ ...input, chainId: 1 }, {}),
+    /chain/,
+  );
+  assert.throws(
+    () =>
+      validateV3ExtensionConfig(
+        {
+          ...input,
+          prerequisites: {
+            core: prerequisiteReference("core", prerequisiteManifests().core),
+          },
+        },
+        {},
+      ),
+    /prerequisite|exact/,
+  );
+  for (const artifacts of [
+    {},
+    {
+      ...input.artifacts,
+      ClosedLoopPolicyV1: input.artifacts.OperatorServiceVerifierV1,
+    },
+  ]) {
+    assert.throws(
+      () => validateV3ExtensionConfig({ ...input, artifacts }, {}),
+      /artifact|exact/,
+    );
+  }
+});
+
+test("verifier artifact loading rejects changed bytes, ABI, and immutable groups", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "recourse-verifier-artifacts-"));
+  const input = rawConfig("operator-service-verifier-v1");
+  const name = "OperatorServiceVerifierV1";
+  mkdirSync(join(directory, "artifacts"));
+  try {
+    const path = join(directory, input.artifacts[name].path);
+    const valid = artifact(name);
+    const raw = manifestBytes(valid);
+    writeFileSync(path, raw);
+    input.artifacts[name].keccak256 = keccak256(Buffer.from(raw));
+    const config = validateV3ExtensionConfig(input, {});
+    assert.deepEqual(
+      Object.keys(await readV3ExtensionArtifacts(config, directory)),
+      [name],
+    );
+    writeFileSync(path, `${raw} `);
+    await assert.rejects(
+      async () => readV3ExtensionArtifacts(config, directory),
+      /artifact hash mismatch/,
+    );
+    for (const [mutate, error] of [
+      [
+        (value) => {
+          value.abi[0].inputs[0].type = "uint256";
+        },
+        /constructor ABI mismatch/,
+      ],
+      [
+        (value) => {
+          delete value.deployedBytecode.immutableReferences[1];
+        },
+        /immutable-reference count mismatch/,
+      ],
+    ]) {
+      const invalid = structuredClone(valid);
+      mutate(invalid);
+      const bytes = manifestBytes(invalid);
+      writeFileSync(path, bytes);
+      input.artifacts[name].keccak256 = keccak256(Buffer.from(bytes));
+      await assert.rejects(
+        async () =>
+          readV3ExtensionArtifacts(
+            validateV3ExtensionConfig(input, {}),
+            directory,
+          ),
+        error,
+      );
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("verifier planning contains exactly one CREATE with its attestor and starting nonce", async () => {
+  const { config, plan } = await deploymentPlan("operator-service-verifier-v1");
+  const predicted = getCreateAddress({
+    from: config.deployer,
+    nonce: STARTING_NONCE,
+  });
+  assert.deepEqual(plan.predictedContracts, {
+    OperatorServiceVerifierV1: predicted,
+  });
+  assert.deepEqual(plan.prerequisites, {});
+  assert.deepEqual(
+    plan.steps.map(({ name, nonce, to }) => [name, nonce, to]),
+    [["OperatorServiceVerifierV1", STARTING_NONCE, null]],
+  );
+  assert.deepEqual(plan.constructors.OperatorServiceVerifierV1.values, [
+    config.operatorServiceVerifier.attestor,
+  ]);
+  assert.equal(plan.steps[0].predictedContract, predicted);
+  assert.equal(
+    plan.steps[0].data,
+    await deployData("OperatorServiceVerifierV1", [
+      config.operatorServiceVerifier.attestor,
+    ]),
+  );
+});
+
+test("verifier final qualification rejects wrong attestor, EIP-712 domain, digest, runtime, and chain", async () => {
+  const fixture = await deploymentPlan("operator-service-verifier-v1");
+  const { config, plan } = fixture;
+  const address = plan.predictedContracts.OperatorServiceVerifierV1;
+  const provider = deploymentProvider({ ...fixture, deployed: true });
+  const options = {
+    ...fixture,
+    provider,
+    contractFactory: contractFactory(config, plan),
+    deploymentComplete: true,
+  };
+  const qualified = await qualifyV3ExtensionDeployment(options);
+  assert.equal(
+    qualified.stateQualification.attestor,
+    config.operatorServiceVerifier.attestor,
+  );
+  assert.deepEqual(qualified.prerequisiteCodeHashes, {});
+  const domain = [
+    "0x0f",
+    "Recourse Operator Service",
+    "1",
+    BigInt(CHAIN_ID),
+    address,
+    HASH("0"),
+    [],
+  ];
+  for (const [index, value] of [
+    [0, "0x1f"],
+    [1, "Wrong domain"],
+    [2, "2"],
+    [3, 1n],
+    [4, ADDRESS("bad")],
+    [5, HASH("1")],
+    [6, [1n]],
+  ]) {
+    const changed = [...domain];
+    changed[index] = value;
+    await assert.rejects(
+      qualifyV3ExtensionDeployment({
+        ...options,
+        contractFactory: contractFactory(config, plan, {
+          [address]: { eip712Domain: async () => changed },
+        }),
+      }),
+      /domain|EIP-712|salt|extensions/i,
+    );
+  }
+  for (const [override, error] of [
+    [{ attestor: async () => ADDRESS("bad") }, /attestor/],
+    [{ receiptDigestOf: async () => HASH("f") }, /digest/i],
+  ]) {
+    await assert.rejects(
+      qualifyV3ExtensionDeployment({
+        ...options,
+        contractFactory: contractFactory(config, plan, { [address]: override }),
+      }),
+      error,
+    );
+  }
+  await assert.rejects(
+    qualifyV3ExtensionDeployment({
+      ...options,
+      provider: { ...provider, getNetwork: async () => ({ chainId: 1n }) },
+    }),
+    /chain/i,
+  );
+  await assert.rejects(
+    qualifyV3ExtensionDeployment({
+      ...options,
+      provider: { ...provider, getCode: async () => "0x60016000526001601ff3" },
+    }),
+    /runtime|bytecode/i,
+  );
+  const alteredArtifacts = structuredClone(fixture.artifacts);
+  delete alteredArtifacts.OperatorServiceVerifierV1.artifact.deployedBytecode
+    .immutableReferences[1];
+  await assert.rejects(
+    qualifyV3ExtensionDeployment({ ...options, artifacts: alteredArtifacts }),
+    /immutable/i,
+  );
+});
+
+test("verifier manifest retains qualified evidence and round-trips into market config", async () => {
+  const fixture = await liveFixture("operator-service-verifier-v1");
+  const { config, plan, executionPlan } = fixture;
+  const finalQualification = await qualifyV3ExtensionDeployment({
+    ...fixture,
+    provider: deploymentProvider({ ...fixture, deployed: true }),
+    contractFactory: contractFactory(config, plan),
+    deploymentComplete: true,
+  });
+  const steps = executionPlan.steps.map((step) => ({
+    ...step,
+    status: "confirmed",
+    receipt: {
+      hash: HASH("1"),
+      blockNumber: 550,
+      blockHash: HASH("e"),
+      contractAddress: step.predictedContract,
+    },
+  }));
+  const canonicalTransactions = Object.fromEntries(
+    steps.map((step) => [
+      step.name,
+      { ...step.receipt, dataHash: step.dataHash, nonce: step.nonce },
+    ]),
+  );
+  const options = {
+    config,
+    plan,
+    journal: {
+      steps,
+      executionPlan,
+      executionPlanCommitment: executionPlan.commitment,
+    },
+    finalQualification,
+    canonicalTransactions,
+    journalPath: "verifier-journal.json",
+  };
+  const manifest = JSON.parse(
+    JSON.stringify(buildV3ExtensionManifest(options)),
+  );
+  assert.equal(manifest.status, "deployed-qualified");
+  assert.deepEqual(manifest.contract, {
+    address: plan.predictedContracts.OperatorServiceVerifierV1,
+    runtimeCodeKeccak256:
+      finalQualification.runtimeQualification.OperatorServiceVerifierV1,
+  });
+  assert.deepEqual(manifest.contracts, plan.predictedContracts);
+  assert.equal(validateV3ExtensionManifest({ ...options, manifest }), manifest);
+  assert.throws(
+    () =>
+      buildV3ExtensionManifest({
+        ...options,
+        journal: {
+          ...options.journal,
+          steps: steps.map((step) => ({ ...step, status: "planned" })),
+        },
+      }),
+    /unfinished/,
+  );
+  assert.throws(
+    () =>
+      buildV3ExtensionManifest({
+        ...options,
+        finalQualification: fixture.qualification,
+      }),
+    /qualif|runtime|state/i,
+  );
+  assert.throws(
+    () =>
+      buildV3ExtensionManifest({ ...options, finalQualification: undefined }),
+    /qualif|runtime|state/i,
+  );
+  for (const changed of [
+    { stateQualification: undefined },
+    { planCommitment: HASH("f") },
+  ]) {
+    assert.throws(
+      () =>
+        buildV3ExtensionManifest({
+          ...options,
+          finalQualification: { ...finalQualification, ...changed },
+        }),
+      /qualif|manifest|state/i,
+    );
+  }
+  assert.throws(
+    () =>
+      buildV3ExtensionManifest({
+        ...options,
+        canonicalTransactions: undefined,
+      }),
+    /qualif|manifest|transaction/i,
+  );
+  for (const contract of [
+    undefined,
+    { ...manifest.contract, address: ADDRESS("bad") },
+    { ...manifest.contract, runtimeCodeKeccak256: HASH("f") },
+  ]) {
+    assert.throws(
+      () =>
+        validateV3ExtensionManifest({
+          ...options,
+          manifest: { ...manifest, contract },
+        }),
+      /manifest|contract/i,
+    );
+  }
+  const input = rawConfig("v3-operator-market-v1");
+  input.operatorMarket.verifier = manifest.contract.address;
+  input.prerequisites.verifier = prerequisiteReference("verifier", manifest);
+  const market = validateV3ExtensionConfig(input, { verifier: manifest });
+  assert.equal(market.operatorMarket.verifier, manifest.contract.address);
+  const directory = mkdtempSync(join(tmpdir(), "recourse-verifier-roundtrip-"));
+  try {
+    writeFileSync(join(directory, "verifier.json"), manifestBytes(manifest));
+    writeFileSync(join(directory, "market.json"), manifestBytes(input));
+    const loaded = await readV3ExtensionInputs(
+      join(directory, "market.json"),
+      directory,
+    );
+    assert.equal(
+      loaded.config.operatorMarket.verifier,
+      manifest.contract.address,
     );
   } finally {
     rmSync(directory, { recursive: true, force: true });
@@ -2498,4 +2890,72 @@ test("the extension deployment CLI exposes help without reading config or enviro
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /offline validation and planning/);
   assert.match(result.stdout, /--broadcast/);
+  assert.match(result.stdout, /operator-service-verifier-v1/);
+});
+
+test("verifier CLI plans offline without RPC environment or output files", () => {
+  const directory = mkdtempSync(join(tmpdir(), "recourse-verifier-cli-"));
+  try {
+    const input = rawConfig("operator-service-verifier-v1");
+    const raw = manifestBytes(artifact("OperatorServiceVerifierV1"));
+    input.artifacts.OperatorServiceVerifierV1.keccak256 = keccak256(
+      Buffer.from(raw),
+    );
+    mkdirSync(join(directory, "artifacts"));
+    writeFileSync(
+      join(directory, input.artifacts.OperatorServiceVerifierV1.path),
+      raw,
+    );
+    writeFileSync(join(directory, "verifier.json"), manifestBytes(input));
+    for (const args of [
+      ["init", "--quiet"],
+      ["-c", "core.autocrlf=false", "add", "."],
+      [
+        "-c",
+        "user.name=Recourse Test",
+        "-c",
+        "user.email=recourse-test@example.invalid",
+        "commit",
+        "--quiet",
+        "-m",
+        "baseline",
+      ],
+    ]) {
+      const git = spawnSync("git", args, {
+        cwd: directory,
+        encoding: "utf8",
+        windowsHide: true,
+      });
+      assert.equal(git.status, 0, git.stderr);
+    }
+    const before = readdirSync(directory, { recursive: true });
+    const result = spawnSync(
+      process.execPath,
+      [
+        join(process.cwd(), "scripts/deploy-v3-extension.mjs"),
+        "--config",
+        "verifier.json",
+      ],
+      {
+        cwd: directory,
+        encoding: "utf8",
+        env: { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot },
+        windowsHide: true,
+      },
+    );
+    assert.equal(result.status, 0, result.stderr);
+    const output = JSON.parse(result.stdout);
+    assert.equal(output.mode, "offline-dry-run");
+    assert.equal(output.generation, input.generation);
+    assert.equal(output.transactionsBroadcast, 0);
+    assert.equal(output.filesWritten, 0);
+    assert.equal(output.plan.steps.length, 1);
+    assert.equal(
+      output.plan.steps[0].predictedContract,
+      getCreateAddress({ from: input.deployer, nonce: STARTING_NONCE }),
+    );
+    assert.deepEqual(readdirSync(directory, { recursive: true }), before);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });

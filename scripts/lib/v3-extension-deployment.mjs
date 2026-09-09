@@ -2,6 +2,7 @@ import {
   Contract,
   ContractFactory,
   Interface,
+  TypedDataEncoder,
   ZeroAddress,
   getAddress,
   getCreateAddress,
@@ -25,6 +26,7 @@ import { verifyPinnedArtifactRuntime } from "./v3-activation.mjs";
 
 export const V3_EXTENSION_PLAN_VALIDITY_SECONDS = 1_800;
 export const V3_EXTENSION_GENERATIONS = Object.freeze([
+  "operator-service-verifier-v1",
   "v3-closed-loop-v1",
   "v3-operator-market-v1",
   "v3-portfolio-core-v1",
@@ -32,6 +34,8 @@ export const V3_EXTENSION_GENERATIONS = Object.freeze([
 export const V3_EXTENSION_USAGE = `Usage: node scripts/deploy-v3-extension.mjs [options]
 
 Default: deterministic offline validation and planning; no RPC, signer, file write, or broadcast.
+
+Generations: ${V3_EXTENSION_GENERATIONS.join(", ")}
 
 Options:
   --config <path>             Exact extension config (required)
@@ -45,6 +49,13 @@ Options:
   --help, -h                  Show this help and exit`;
 
 const GENERATION_SPECS = Object.freeze({
+  "operator-service-verifier-v1": Object.freeze({
+    artifacts: Object.freeze(["OperatorServiceVerifierV1"]),
+    prerequisites: Object.freeze([]),
+    constructorTypes: Object.freeze({
+      OperatorServiceVerifierV1: Object.freeze(["address"]),
+    }),
+  }),
   "v3-closed-loop-v1": Object.freeze({
     artifacts: Object.freeze(["ClosedLoopPolicyV1"]),
     prerequisites: Object.freeze(["core", "remedy"]),
@@ -126,6 +137,7 @@ const POLICY_REGISTRY_ABI = Object.freeze([
   "function actionAdapterAt(bytes32 releaseId,uint256 index) view returns ((bytes32 adapterKind,bytes32 specificationHash,string metadataURI))",
 ]);
 const IMMUTABLE_COUNTS = Object.freeze({
+  OperatorServiceVerifierV1: 8,
   ClosedLoopPolicyV1: 2,
   OperatorMarketV1: 5,
   PortfolioPoolV1: 9,
@@ -847,7 +859,18 @@ export function validateV3ExtensionConfig(input, prerequisiteManifests = {}) {
       ),
     },
   };
-  if (value.generation === "v3-closed-loop-v1") {
+  if (value.generation === "operator-service-verifier-v1") {
+    if (chainId !== 102031) {
+      throw new Error("operator service verifier chainId must be 102031");
+    }
+    const verifier = object(
+      value.operatorServiceVerifier,
+      "operatorServiceVerifier",
+    );
+    normalized.operatorServiceVerifier = {
+      attestor: address(verifier.attestor, "operatorServiceVerifier.attestor"),
+    };
+  } else if (value.generation === "v3-closed-loop-v1") {
     normalized.closedLoop = normalizeClosedLoop(value.closedLoop, bindings);
   } else if (value.generation === "v3-operator-market-v1") {
     normalized.asset = normalizeAsset(value.asset, "asset", {
@@ -1104,6 +1127,40 @@ export async function buildV3ExtensionDeploymentPlan({
   repositoryState,
 }) {
   const nonce = config.expectedStartingNonce;
+  if (config.generation === "operator-service-verifier-v1") {
+    const predicted = getCreateAddress({ from: config.deployer, nonce });
+    const values = [config.operatorServiceVerifier.attestor];
+    const data = await deploymentData(
+      artifacts.OperatorServiceVerifierV1,
+      values,
+    );
+    return assertPlan(
+      config,
+      basePlan(
+        config,
+        artifacts,
+        { OperatorServiceVerifierV1: predicted },
+        {
+          OperatorServiceVerifierV1: constructorRecord(
+            GENERATION_SPECS[config.generation].constructorTypes
+              .OperatorServiceVerifierV1,
+            values,
+          ),
+        },
+        [
+          planStep({
+            order: 1,
+            name: "OperatorServiceVerifierV1",
+            config,
+            nonce,
+            data,
+            predictedContract: predicted,
+          }),
+        ],
+        repositoryState,
+      ),
+    );
+  }
   if (config.generation === "v3-closed-loop-v1") {
     const predicted = getCreateAddress({ from: config.deployer, nonce });
     const values = [
@@ -1988,6 +2045,111 @@ function callOptions(blockNumber) {
   return { blockTag: blockNumber };
 }
 
+async function qualifyOperatorServiceVerifierState({
+  config,
+  plan,
+  artifacts,
+  provider,
+  contractFactory,
+  blockNumber,
+  liveCode,
+}) {
+  const runtime = verifyPinnedArtifactRuntime({
+    artifact: artifacts.OperatorServiceVerifierV1.artifact,
+    liveCode,
+    label: "OperatorServiceVerifierV1",
+    immutableCount: IMMUTABLE_COUNTS.OperatorServiceVerifierV1,
+  });
+  const verifierAddress = plan.predictedContracts.OperatorServiceVerifierV1;
+  const verifier = contractFactory(
+    verifierAddress,
+    artifacts.OperatorServiceVerifierV1.artifact.abi,
+    provider,
+  );
+  const [attestor, domainResult] = await Promise.all([
+    verifier.attestor(callOptions(blockNumber)),
+    verifier.eip712Domain(callOptions(blockNumber)),
+  ]);
+  sameAddress(
+    attestor,
+    config.operatorServiceVerifier.attestor,
+    "operator service verifier attestor",
+  );
+  const [fields, name, version, chainId, verifyingContract, salt, extensions] =
+    domainResult;
+  if (
+    fields !== "0x0f" ||
+    name !== "Recourse Operator Service" ||
+    version !== "1" ||
+    salt !== `0x${"0".repeat(64)}` ||
+    extensions.length !== 0
+  ) {
+    throw new Error("operator service verifier EIP-712 domain mismatch");
+  }
+  sameValue(chainId, 102031, "operator service verifier domain chainId");
+  sameAddress(
+    verifyingContract,
+    verifierAddress,
+    "operator service verifier domain verifyingContract",
+  );
+  const domain = {
+    name,
+    version,
+    chainId: Number(chainId),
+    verifyingContract: getAddress(verifyingContract),
+  };
+  const receipt = {
+    agreementId: keccak256(
+      toUtf8Bytes("Recourse Operator Service qualification agreement"),
+    ),
+    serviceKind: 1,
+    operator: config.deployer,
+    sponsor: config.operatorServiceVerifier.attestor,
+    acceptedAt: 1,
+    deliveryDeadline: 2,
+    requirementsDigest: keccak256(
+      toUtf8Bytes("Recourse Operator Service qualification requirements"),
+    ),
+    deliveryDigest: keccak256(
+      toUtf8Bytes("Recourse Operator Service qualification delivery"),
+    ),
+  };
+  const expectedDigest = TypedDataEncoder.hash(
+    domain,
+    {
+      ServiceReceipt: [
+        { name: "agreementId", type: "bytes32" },
+        { name: "serviceKind", type: "uint8" },
+        { name: "operator", type: "address" },
+        { name: "sponsor", type: "address" },
+        { name: "acceptedAt", type: "uint64" },
+        { name: "deliveryDeadline", type: "uint64" },
+        { name: "requirementsDigest", type: "bytes32" },
+        { name: "deliveryDigest", type: "bytes32" },
+      ],
+    },
+    receipt,
+  );
+  const actualDigest = digest(
+    await verifier.receiptDigestOf(
+      ...Object.values(receipt),
+      callOptions(blockNumber),
+    ),
+    "operator service verifier receipt digest",
+  );
+  if (actualDigest !== expectedDigest) {
+    throw new Error("operator service verifier receipt digest mismatch");
+  }
+  return {
+    runtimeCodeHashes: { OperatorServiceVerifierV1: runtime.runtimeCodeHash },
+    state: {
+      attestor: getAddress(attestor),
+      domain,
+      receiptDigest: { ...receipt, digest: actualDigest },
+    },
+  };
+}
+
 async function qualifyClosedLoopState({
   config,
   plan,
@@ -2496,22 +2658,24 @@ export async function qualifyV3ExtensionDeployment({
     );
   }
   const prerequisiteAddresses =
-    config.generation === "v3-closed-loop-v1"
-      ? {
-          policyKernel: config.bindings.policyKernel,
-          remedyCoordinator: config.bindings.remedyCoordinator,
-          remedyTransport: config.bindings.remedyTransport,
-        }
-      : config.generation === "v3-operator-market-v1"
+    config.generation === "operator-service-verifier-v1"
+      ? {}
+      : config.generation === "v3-closed-loop-v1"
         ? {
-            token: config.asset.address,
-            operatorVerifier: config.bindings.operatorVerifier,
-          }
-        : {
-            asset: config.asset.address,
             policyKernel: config.bindings.policyKernel,
-            policyRegistry: config.bindings.policyRegistry,
-          };
+            remedyCoordinator: config.bindings.remedyCoordinator,
+            remedyTransport: config.bindings.remedyTransport,
+          }
+        : config.generation === "v3-operator-market-v1"
+          ? {
+              token: config.asset.address,
+              operatorVerifier: config.bindings.operatorVerifier,
+            }
+          : {
+              asset: config.asset.address,
+              policyKernel: config.bindings.policyKernel,
+              policyRegistry: config.bindings.policyRegistry,
+            };
   const prerequisiteCodeHashes = {};
   for (const [name, addressValue] of Object.entries(prerequisiteAddresses)) {
     const result = await codeHash(provider, addressValue, name, block.number);
@@ -2653,7 +2817,17 @@ export async function qualifyV3ExtensionDeployment({
   let stateQualification;
   if (deploymentComplete) {
     let result;
-    if (config.generation === "v3-closed-loop-v1") {
+    if (config.generation === "operator-service-verifier-v1") {
+      result = await qualifyOperatorServiceVerifierState({
+        config,
+        plan,
+        artifacts,
+        provider,
+        contractFactory,
+        blockNumber: block.number,
+        liveCode: liveCodes.OperatorServiceVerifierV1,
+      });
+    } else if (config.generation === "v3-closed-loop-v1") {
       result = await qualifyClosedLoopState({
         config,
         plan,
@@ -2822,7 +2996,7 @@ export function buildV3ExtensionManifest({
       },
     ]),
   );
-  return {
+  const manifest = {
     schemaVersion: 1,
     status: "deployed-qualified",
     generation: config.generation,
@@ -2839,6 +3013,17 @@ export function buildV3ExtensionManifest({
     artifactHashes: plan.artifactHashes,
     constructors: plan.constructors,
     contracts: plan.predictedContracts,
+    ...(config.generation === "operator-service-verifier-v1"
+      ? {
+          contract: {
+            address: plan.predictedContracts.OperatorServiceVerifierV1,
+            runtimeCodeKeccak256: nonzeroDigest(
+              finalQualification?.runtimeQualification?.OperatorServiceVerifierV1,
+              "operator service verifier qualified runtime hash",
+            ),
+          },
+        }
+      : {}),
     transactionPlan: plan.steps,
     executionPlan: journal.executionPlan,
     executionPlanCommitment: journal.executionPlanCommitment,
@@ -2847,6 +3032,16 @@ export function buildV3ExtensionManifest({
     finalQualification,
     journalPath: resolve(journalPath),
   };
+  if (config.generation === "operator-service-verifier-v1") {
+    validateV3ExtensionManifest({
+      manifest,
+      config,
+      plan,
+      finalQualification,
+      canonicalTransactions,
+    });
+  }
+  return manifest;
 }
 
 export function validateV3ExtensionManifest({
@@ -2900,5 +3095,19 @@ export function validateV3ExtensionManifest({
     plan,
     executionPlan: manifest.executionPlan,
   });
+  if (config.generation === "operator-service-verifier-v1") {
+    const verifier = normalizeVerifierManifest(manifest, config.chainId);
+    sameAddress(
+      verifier.verifier,
+      plan.predictedContracts.OperatorServiceVerifierV1,
+      "operator service verifier manifest address",
+    );
+    if (
+      verifier.runtimeCodeKeccak256 !==
+      finalQualification.runtimeQualification.OperatorServiceVerifierV1
+    ) {
+      throw new Error("operator service verifier manifest runtime hash mismatch");
+    }
+  }
   return manifest;
 }

@@ -120,6 +120,7 @@ test("checked-in deployment configurations pin every compiled local artifact", (
     "config/usc-remedy.example.json",
     "config/v3-closed-loop.example.json",
     "config/v3-operator-market.example.json",
+    "config/v3-operator-service-verifier.example.json",
     "config/v3-portfolio-core.example.json",
   ];
 
