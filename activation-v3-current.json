@@ -1,0 +1,623 @@
+{
+  "generation": "v3-pilot-activation",
+  "chainId": 102031,
+  "coreManifest": {
+    "path": "deployments-v3-current.json",
+    "sha256": "150e7a2b8674243a03d4d7f6b5660dbae7b4840117f4755a10d775c53f2bb9fa"
+  },
+  "core": {
+    "policyKernel": "0x69d1715F117f79aB5E190d48666510B8A39Af6dB",
+    "verifiedCreditState": "0x55867EB6A48B0DA0AAE377f18d5254500FFb9678",
+    "policyRegistry": "0xFb5B0d26140A8577015388E206A06fc6e1622c28",
+    "cappedPilotFactory": "0x73afEFF5A629B6708EAbf1AD0bce753E3fb7973B",
+    "multiChainEventPolicy": "0x2A56b080906ac46d5eFD9B6559dF0739F6D6CBB6",
+    "proofJobs": "0x0C6C15da198EA9F828d0e3199508187b1a79e9Cf"
+  },
+  "asset": {
+    "address": "0x3c6eF93E1d2C539c5EFefbBc51cc6a1E120fBf77",
+    "decimals": 6,
+    "symbol": "rUSD"
+  },
+  "roles": {
+    "deployer": "0xB9262d47B4d6d569A7C5230B3BF7De1080dD6e49",
+    "lender": "0x3d97e8eB57CBf459e22965162B5DEc182862e312",
+    "borrower": "0x1aBE54FE9aDB691Df093F1d3711ec3D5fCd99F1D",
+    "guardian": "0xa61B1518691dF7655226fF944b6f3Eade4E4B228",
+    "hunter": "0xa61B1518691dF7655226fF944b6f3Eade4E4B228"
+  },
+  "artifacts": {
+    "CappedPilotFactoryV1": {
+      "path": "out/CappedPilotFactoryV1.sol/CappedPilotFactoryV1.json",
+      "keccak256": "0x06c91f836e88a96dfe861ca2e14fa268db7cd87f9758a4788365c08d7c40c41b"
+    },
+    "MultiChainEventPolicyV1": {
+      "path": "out/MultiChainEventPolicyV1.sol/MultiChainEventPolicyV1.json",
+      "keccak256": "0x7a2babd43ad7a9d2a388c130a8ade1f03da08c3d1453ee41150ea4be774d51d2"
+    },
+    "RecourseFacilityV3": {
+      "path": "out/RecourseFacilityV3.sol/RecourseFacilityV3.json",
+      "keccak256": "0x5b4115fd15c1db98449c3892244abc46f459bb0367a462d16369b7d709179b9f"
+    }
+  },
+  "facility": {
+    "address": "0x00B50626C4AA42d22ca01AAEa8649f253aEc5B1e",
+    "asset": "0x3c6eF93E1d2C539c5EFefbBc51cc6a1E120fBf77",
+    "kernel": "0x69d1715F117f79aB5E190d48666510B8A39Af6dB",
+    "lender": "0x3d97e8eB57CBf459e22965162B5DEc182862e312",
+    "borrower": "0x1aBE54FE9aDB691Df093F1d3711ec3D5fCd99F1D",
+    "facilityLimit": "100000000000",
+    "facilityLimitUi": "100000.0",
+    "bondRequired": "20000000000",
+    "bondRequiredUi": "20000.0",
+    "drawFeeBps": 200,
+    "maturityBlock": 5554121,
+    "drawDelayBlocks": 10,
+    "status": "Active",
+    "statusCode": 1,
+    "lenderFunded": "100000000000",
+    "bondPosted": "20000000000",
+    "drawnPrincipal": "0",
+    "outstandingDebt": "0",
+    "policySetCommitment": "0x5e60af457a71d853e2662ac38099282de48319ae588ee69fc2633413c2b605de",
+    "createdAtBlock": 5459163,
+    "activatedAtBlock": 5459222
+  },
+  "policy": {
+    "policyId": "1",
+    "evaluator": "0x2A56b080906ac46d5eFD9B6559dF0739F6D6CBB6",
+    "configurationHash": "0xfabd947c704509605a6c8cebdf683dc8548af1647674d41399c7f660a6c64502",
+    "manifestHash": "0xfabd947c704509605a6c8cebdf683dc8548af1647674d41399c7f660a6c64502",
+    "configuration": {
+      "subject": "0x1aBE54FE9aDB691Df093F1d3711ec3D5fCd99F1D",
+      "freshnessPeriod": 86400,
+      "watchThreshold": 1,
+      "restrictedThreshold": 2,
+      "marginThreshold": 3,
+      "breachThreshold": 4,
+      "watchEffect": {
+        "outcome": 1,
+        "creditLimitBps": 10000,
+        "futureDrawFeeBps": 200,
+        "freezePendingDraw": false,
+        "requireFreshEvidence": false,
+        "terminate": false
+      },
+      "restrictedEffect": {
+        "outcome": 2,
+        "creditLimitBps": 7500,
+        "futureDrawFeeBps": 300,
+        "freezePendingDraw": true,
+        "requireFreshEvidence": true,
+        "terminate": false
+      },
+      "marginEffect": {
+        "outcome": 3,
+        "creditLimitBps": 5000,
+        "futureDrawFeeBps": 400,
+        "freezePendingDraw": true,
+        "requireFreshEvidence": true,
+        "terminate": false
+      },
+      "breachEffect": {
+        "outcome": 4,
+        "creditLimitBps": 0,
+        "futureDrawFeeBps": 400,
+        "freezePendingDraw": true,
+        "requireFreshEvidence": true,
+        "terminate": true
+      },
+      "rules": [
+        {
+          "sourceChain": 3,
+          "emitter": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+          "eventSignature": "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+          "startSourceBlock": 25944522,
+          "endSourceBlock": 26024522,
+          "topicCount": 3,
+          "subjectTopicIndex": 1,
+          "dataLength": 32,
+          "observedValueOffset": 0,
+          "observationKind": 4,
+          "riskWeight": 1
+        }
+      ]
+    },
+    "sourceNetworks": {
+      "3": {
+        "evmChainId": 1,
+        "rpcUrlEnvironment": "ETH_MAINNET_RPC_URL"
+      }
+    }
+  },
+  "registry": {
+    "packageName": "recourse-multi-chain-event-policy",
+    "version": "1.0.0-cc3-pilot",
+    "buildArtifactHash": "0x7a2babd43ad7a9d2a388c130a8ade1f03da08c3d1453ee41150ea4be774d51d2",
+    "metadataHash": "0xea0ece904b3a36e49a34fb989c8a2ae23d5f233b609ecb17299ec8f4e7342e7f",
+    "constructorArgumentsHash": "0x962093bdac65551de37e2ae2a207d9399e6e00a1c6eb59859cd34726e26ff811",
+    "runtimeCodeHash": "0xc397407830501e530f93337719cbea077b539e674a4485030114899144fab564",
+    "releaseId": "0xad31a01779b7c8c8651e1fecbb15b6d177c25dbd637c99d7496c2c2a0b7d221a",
+    "runtimeVariantId": "0x5eecd9ff7611455608425aaf62085ecf572b282c9b7612094e60763d77a2782a",
+    "releaseContentHash": "0x557c997d9ef41a4b7a1bbe0939fb7333a63a8bfcf68740d1666916a4d7c5e888",
+    "deploymentId": "0x72a81ea71eceba3f6bf653e36272cf359386eaca499c7fa5411c33ac3e55b254"
+  },
+  "proofJob": {
+    "address": "0x0C6C15da198EA9F828d0e3199508187b1a79e9Cf",
+    "jobId": "1",
+    "requirementsDigest": "0xfabd947c704509605a6c8cebdf683dc8548af1647674d41399c7f660a6c64502",
+    "expiry": 1792497600,
+    "revealWindowBlocks": 30,
+    "maxSuccessfulProofs": 3,
+    "proofReimbursement": "25000000",
+    "proofReimbursementUi": "25.0",
+    "outcomeReward": "100000000",
+    "outcomeRewardUi": "100.0",
+    "commitBond": "10000000",
+    "commitBondUi": "10.0",
+    "rewardOutcomeThreshold": 3,
+    "escrow": "175000000",
+    "escrowUi": "175.0",
+    "state": "Open",
+    "stateCode": 0
+  },
+  "transactions": {
+    "createFacility": {
+      "hash": "0x36531b51b674cfa8353e9a32607c4c65d5c92ace6299a6abd2d630bd26a85c91",
+      "blockNumber": 5459163,
+      "blockHash": "0x9c39f323690cc55fa6383bcfe44b1ff61b59302b5c5a98f74367b8ffaf5335e1"
+    },
+    "configurePolicy": {
+      "hash": "0x47aae68704ee76fa9da191097b4277fa11fad5f3a670404d245dd1de1e02217b",
+      "blockNumber": 5459169,
+      "blockHash": "0xcb51405c0c4bd4be1f5b3106fa4abde53c57443fb97eafbc2ef58368959e12ab"
+    },
+    "registerPolicy": {
+      "hash": "0x6b344dfe1e65b39c41fb2694185e9f11f16e480f7afeab76fd62530fbf094307",
+      "blockNumber": 5459176,
+      "blockHash": "0x8f5e2fc469ce221916c86f1142527279332f932b5c3fd9d04b0b22f44ee4e12f"
+    },
+    "publishRegistryRelease": {
+      "hash": "0xdce1eb4a99c6913b98957b9d1622cb1641796d9b45a1907b2f23e537cea85067",
+      "blockNumber": 5459183,
+      "blockHash": "0x0412126bb10e6a0a3c15d126e7c5f96bd6c06dc84a8a66fe35416fe86c3e0a79"
+    },
+    "recordRegistryDeployment": {
+      "hash": "0x192ea4e0459ed2a7250dc3357d9633991fd37d57a71ea7dd12031b6136a5ba0a",
+      "blockNumber": 5459189,
+      "blockHash": "0x78bae826127b5b569b4cceb490cf14ecf407c4157885bcfaaaa6750b9c77f3e9"
+    },
+    "approveFacilityFunding": {
+      "hash": "0xf1c871692b68ad848a233a88221633d6ee055c27bdb60a19e57ec38af2f378dd",
+      "blockNumber": 5459195,
+      "blockHash": "0x1cdeb85d1dbff66f53978b6ee43380f49e34f9a29e28af874dcfdbcd4c005582"
+    },
+    "fundFacility": {
+      "hash": "0x08fa5c4d55d7717c51899b4cea7414e24890abf2bc335dcda86a9adfaa1b59fc",
+      "blockNumber": 5459202,
+      "blockHash": "0x68e5cba0fe4d2b3b73f2a14539ae2d44c834b9544666719a93663f8a5dcbe743"
+    },
+    "approveBorrowerBond": {
+      "hash": "0xead41eb4f2fb614d6435787e6a03fe8cfdfc285ac31dab7ca2dc34dd737c4669",
+      "blockNumber": 5459209,
+      "blockHash": "0xb670b76c02543977f7019c4c670f0c6f360c701c0981ea2686e733b3bf374b1d"
+    },
+    "postBorrowerBond": {
+      "hash": "0xef557dd0a4cdd7170c4f31021d50073d54a3b7123a4f9febac0d73b64bd58953",
+      "blockNumber": 5459215,
+      "blockHash": "0xf49972d02d2655e8f44e3b5fab097b90268fc48e39bb99197e7ffd667cdfb730"
+    },
+    "activateFacility": {
+      "hash": "0xb4d8d0ec701850b0b59e3a6e9e1c4ea603b648a63a7277bf57bc2bf447a6c0e7",
+      "blockNumber": 5459222,
+      "blockHash": "0xf5a681465d2ae01024cc6684e20b04ccb1eed698523d27d21a2d503a349dd672"
+    },
+    "approveProofJobEscrow": {
+      "hash": "0xc17b150dac7558c1f8d6a340bc7c65d9702a7ee4d60dc251f7e2472460b69fb7",
+      "blockNumber": 5459229,
+      "blockHash": "0x61d82c9375eea772fa76cc5cb836d8febc5a5554e8f1b3884e78d191fe97176d"
+    },
+    "createProofJob": {
+      "hash": "0xd0cb5444fba75413bca72d68d80166cdb0b122b63c5e961c36412ffc851f6fc4",
+      "blockNumber": 5459236,
+      "blockHash": "0x08d8fbcff19dc30d5c677bb301905725a81951e47256861b0c10de7c65aaf65c"
+    },
+    "approveHunterCommitBond": {
+      "hash": "0x466e625a7c6aa44b3a7f940c83ec8216ff34f7a0d0f99206888ac3a696c4746c",
+      "blockNumber": 5459243,
+      "blockHash": "0x4f8319182d1bb8f16451f226fc6e623203f1ce91ac66d020f4e042eb41ee4f33"
+    }
+  },
+  "transactionPlan": [
+    {
+      "order": 1,
+      "name": "createFacility",
+      "signer": "lender",
+      "to": "0x73afEFF5A629B6708EAbf1AD0bce753E3fb7973B",
+      "method": "createFacility",
+      "arguments": [
+        "100000000000",
+        "20000000000",
+        200,
+        5554121,
+        10
+      ],
+      "assetEffect": {
+        "type": "none",
+        "baseUnits": "0",
+        "uiUnits": "0.0",
+        "symbol": "rUSD"
+      }
+    },
+    {
+      "order": 2,
+      "name": "configurePolicy",
+      "signer": "lender",
+      "to": "0x2A56b080906ac46d5eFD9B6559dF0739F6D6CBB6",
+      "method": "configure",
+      "arguments": [
+        "0x00B50626C4AA42d22ca01AAEa8649f253aEc5B1e",
+        "1",
+        {
+          "subject": "0x1aBE54FE9aDB691Df093F1d3711ec3D5fCd99F1D",
+          "freshnessPeriod": 86400,
+          "watchThreshold": 1,
+          "restrictedThreshold": 2,
+          "marginThreshold": 3,
+          "breachThreshold": 4,
+          "watchEffect": {
+            "outcome": 1,
+            "creditLimitBps": 10000,
+            "futureDrawFeeBps": 200,
+            "freezePendingDraw": false,
+            "requireFreshEvidence": false,
+            "terminate": false
+          },
+          "restrictedEffect": {
+            "outcome": 2,
+            "creditLimitBps": 7500,
+            "futureDrawFeeBps": 300,
+            "freezePendingDraw": true,
+            "requireFreshEvidence": true,
+            "terminate": false
+          },
+          "marginEffect": {
+            "outcome": 3,
+            "creditLimitBps": 5000,
+            "futureDrawFeeBps": 400,
+            "freezePendingDraw": true,
+            "requireFreshEvidence": true,
+            "terminate": false
+          },
+          "breachEffect": {
+            "outcome": 4,
+            "creditLimitBps": 0,
+            "futureDrawFeeBps": 400,
+            "freezePendingDraw": true,
+            "requireFreshEvidence": true,
+            "terminate": true
+          },
+          "rules": [
+            {
+              "sourceChain": 3,
+              "emitter": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+              "eventSignature": "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+              "startSourceBlock": 25944522,
+              "endSourceBlock": 26024522,
+              "topicCount": 3,
+              "subjectTopicIndex": 1,
+              "dataLength": 32,
+              "observedValueOffset": 0,
+              "observationKind": 4,
+              "riskWeight": 1
+            }
+          ]
+        }
+      ],
+      "assetEffect": {
+        "type": "none",
+        "baseUnits": "0",
+        "uiUnits": "0.0",
+        "symbol": "rUSD"
+      }
+    },
+    {
+      "order": 3,
+      "name": "registerPolicy",
+      "signer": "lender",
+      "to": "0x69d1715F117f79aB5E190d48666510B8A39Af6dB",
+      "method": "registerPolicy",
+      "arguments": [
+        "0x00B50626C4AA42d22ca01AAEa8649f253aEc5B1e",
+        "1",
+        "0x2A56b080906ac46d5eFD9B6559dF0739F6D6CBB6"
+      ],
+      "assetEffect": {
+        "type": "none",
+        "baseUnits": "0",
+        "uiUnits": "0.0",
+        "symbol": "rUSD"
+      }
+    },
+    {
+      "order": 4,
+      "name": "publishRegistryRelease",
+      "signer": "deployer",
+      "to": "0xFb5B0d26140A8577015388E206A06fc6e1622c28",
+      "method": "publishRelease",
+      "arguments": [
+        "recourse-multi-chain-event-policy",
+        "1.0.0-cc3-pilot",
+        "0x2A56b080906ac46d5eFD9B6559dF0739F6D6CBB6",
+        "0x7a2babd43ad7a9d2a388c130a8ade1f03da08c3d1453ee41150ea4be774d51d2",
+        "0x962093bdac65551de37e2ae2a207d9399e6e00a1c6eb59859cd34726e26ff811",
+        "0xea0ece904b3a36e49a34fb989c8a2ae23d5f233b609ecb17299ec8f4e7342e7f",
+        [
+          1
+        ],
+        []
+      ],
+      "assetEffect": {
+        "type": "none",
+        "baseUnits": "0",
+        "uiUnits": "0.0",
+        "symbol": "rUSD"
+      }
+    },
+    {
+      "order": 5,
+      "name": "recordRegistryDeployment",
+      "signer": "deployer",
+      "to": "0xFb5B0d26140A8577015388E206A06fc6e1622c28",
+      "method": "recordDeployment",
+      "arguments": [
+        "0xad31a01779b7c8c8651e1fecbb15b6d177c25dbd637c99d7496c2c2a0b7d221a",
+        "0x69d1715F117f79aB5E190d48666510B8A39Af6dB",
+        "0x00B50626C4AA42d22ca01AAEa8649f253aEc5B1e",
+        "1",
+        "0x5eecd9ff7611455608425aaf62085ecf572b282c9b7612094e60763d77a2782a"
+      ],
+      "assetEffect": {
+        "type": "none",
+        "baseUnits": "0",
+        "uiUnits": "0.0",
+        "symbol": "rUSD"
+      },
+      "commitments": {
+        "releaseId": "0xad31a01779b7c8c8651e1fecbb15b6d177c25dbd637c99d7496c2c2a0b7d221a",
+        "runtimeVariantId": "0x5eecd9ff7611455608425aaf62085ecf572b282c9b7612094e60763d77a2782a",
+        "deploymentId": "0x72a81ea71eceba3f6bf653e36272cf359386eaca499c7fa5411c33ac3e55b254"
+      }
+    },
+    {
+      "order": 6,
+      "name": "approveFacilityFunding",
+      "signer": "lender",
+      "to": "0x3c6eF93E1d2C539c5EFefbBc51cc6a1E120fBf77",
+      "method": "approve",
+      "arguments": [
+        "0x00B50626C4AA42d22ca01AAEa8649f253aEc5B1e",
+        "100000000000"
+      ],
+      "assetEffect": {
+        "type": "approval",
+        "baseUnits": "100000000000",
+        "uiUnits": "100000.0",
+        "symbol": "rUSD"
+      }
+    },
+    {
+      "order": 7,
+      "name": "fundFacility",
+      "signer": "lender",
+      "to": "0x00B50626C4AA42d22ca01AAEa8649f253aEc5B1e",
+      "method": "fundAsLender",
+      "arguments": [
+        "100000000000"
+      ],
+      "assetEffect": {
+        "type": "transfer",
+        "baseUnits": "100000000000",
+        "uiUnits": "100000.0",
+        "symbol": "rUSD"
+      }
+    },
+    {
+      "order": 8,
+      "name": "approveBorrowerBond",
+      "signer": "borrower",
+      "to": "0x3c6eF93E1d2C539c5EFefbBc51cc6a1E120fBf77",
+      "method": "approve",
+      "arguments": [
+        "0x00B50626C4AA42d22ca01AAEa8649f253aEc5B1e",
+        "20000000000"
+      ],
+      "assetEffect": {
+        "type": "approval",
+        "baseUnits": "20000000000",
+        "uiUnits": "20000.0",
+        "symbol": "rUSD"
+      }
+    },
+    {
+      "order": 9,
+      "name": "postBorrowerBond",
+      "signer": "borrower",
+      "to": "0x00B50626C4AA42d22ca01AAEa8649f253aEc5B1e",
+      "method": "postBond",
+      "arguments": [
+        "20000000000"
+      ],
+      "assetEffect": {
+        "type": "transfer",
+        "baseUnits": "20000000000",
+        "uiUnits": "20000.0",
+        "symbol": "rUSD"
+      }
+    },
+    {
+      "order": 10,
+      "name": "activateFacility",
+      "signer": "borrower",
+      "to": "0x00B50626C4AA42d22ca01AAEa8649f253aEc5B1e",
+      "method": "activate",
+      "arguments": [
+        "0x5e60af457a71d853e2662ac38099282de48319ae588ee69fc2633413c2b605de"
+      ],
+      "assetEffect": {
+        "type": "none",
+        "baseUnits": "0",
+        "uiUnits": "0.0",
+        "symbol": "rUSD"
+      }
+    },
+    {
+      "order": 11,
+      "name": "approveProofJobEscrow",
+      "signer": "lender",
+      "to": "0x3c6eF93E1d2C539c5EFefbBc51cc6a1E120fBf77",
+      "method": "approve",
+      "arguments": [
+        "0x0C6C15da198EA9F828d0e3199508187b1a79e9Cf",
+        "175000000"
+      ],
+      "assetEffect": {
+        "type": "approval",
+        "baseUnits": "175000000",
+        "uiUnits": "175.0",
+        "symbol": "rUSD"
+      }
+    },
+    {
+      "order": 12,
+      "name": "createProofJob",
+      "signer": "lender",
+      "to": "0x0C6C15da198EA9F828d0e3199508187b1a79e9Cf",
+      "method": "createJob",
+      "arguments": [
+        {
+          "token": "0x3c6eF93E1d2C539c5EFefbBc51cc6a1E120fBf77",
+          "facility": "0x00B50626C4AA42d22ca01AAEa8649f253aEc5B1e",
+          "policyId": "1",
+          "requirementsDigest": "0xfabd947c704509605a6c8cebdf683dc8548af1647674d41399c7f660a6c64502",
+          "expiry": 1792497600,
+          "revealWindowBlocks": 30,
+          "maxSuccessfulProofs": 3,
+          "proofReimbursement": "25000000",
+          "outcomeReward": "100000000",
+          "commitBond": "10000000",
+          "rewardOutcomeThreshold": 3
+        }
+      ],
+      "assetEffect": {
+        "type": "transfer",
+        "baseUnits": "175000000",
+        "uiUnits": "175.0",
+        "symbol": "rUSD"
+      }
+    },
+    {
+      "order": 13,
+      "name": "approveHunterCommitBond",
+      "signer": "hunter",
+      "to": "0x3c6eF93E1d2C539c5EFefbBc51cc6a1E120fBf77",
+      "method": "approve",
+      "arguments": [
+        "0x0C6C15da198EA9F828d0e3199508187b1a79e9Cf",
+        "10000000"
+      ],
+      "assetEffect": {
+        "type": "approval",
+        "baseUnits": "10000000",
+        "uiUnits": "10.0",
+        "symbol": "rUSD"
+      }
+    }
+  ],
+  "assetMovement": {
+    "lenderToFacility": {
+      "baseUnits": "100000000000",
+      "uiUnits": "100000.0"
+    },
+    "borrowerToFacility": {
+      "baseUnits": "20000000000",
+      "uiUnits": "20000.0"
+    },
+    "lenderToProofJobs": {
+      "baseUnits": "175000000",
+      "uiUnits": "175.0"
+    },
+    "hunterToProofJobs": {
+      "baseUnits": "0",
+      "uiUnits": "0.0"
+    },
+    "totalTransferred": {
+      "baseUnits": "120175000000",
+      "uiUnits": "120175.0"
+    },
+    "noDraw": true
+  },
+  "allowances": {
+    "initial": {
+      "lenderFacility": {
+        "baseUnits": "0",
+        "uiUnits": "0.0"
+      },
+      "borrowerFacility": {
+        "baseUnits": "0",
+        "uiUnits": "0.0"
+      },
+      "lenderProofJobs": {
+        "baseUnits": "0",
+        "uiUnits": "0.0"
+      },
+      "hunterProofJobs": {
+        "baseUnits": "0",
+        "uiUnits": "0.0"
+      }
+    },
+    "final": {
+      "lenderFacility": {
+        "baseUnits": "0",
+        "uiUnits": "0.0"
+      },
+      "borrowerFacility": {
+        "baseUnits": "0",
+        "uiUnits": "0.0"
+      },
+      "lenderProofJobs": {
+        "baseUnits": "0",
+        "uiUnits": "0.0"
+      },
+      "hunterProofJobs": {
+        "baseUnits": "10000000",
+        "uiUnits": "10.0"
+      }
+    },
+    "totalApproved": {
+      "baseUnits": "120185000000",
+      "uiUnits": "120185.0"
+    }
+  },
+  "configCommitment": "0xefcd9c20d7b284f1bc3834e5a3eb641636a1a81956fcba35ec4686a4139f262d",
+  "planCommitment": "0x0d7713457d3d76c321941cc0dd409ac7ae36446e5e6216570af77f66ae4c5ad0",
+  "sourceCommit": "775d8a7fc5eccc0c6dd1b994f281efb097394a41",
+  "deployableScopeClean": true,
+  "approvedPlan": {
+    "targetBlock": {
+      "number": 5459155,
+      "hash": "0x28c053dd7398fb4e082826f0a165de552d4a0c9c810e38fb1364dd8207e12ae4",
+      "timestamp": 1788978000
+    },
+    "sourceStates": {
+      "3": {
+        "attestedHeight": 25941530,
+        "evmChainId": 1,
+        "head": 25941566
+      }
+    },
+    "validUntil": 1788979800,
+    "executionPlanCommitment": "0x1dcab719fcd3fe31522e4fa0b375dad1bc1b04b37adeef21afd0df9c4356e3b6"
+  },
+  "activationBlock": 5459243,
+  "verifiedAtBlock": 5459248
+}
