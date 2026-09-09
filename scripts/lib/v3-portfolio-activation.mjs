@@ -326,7 +326,13 @@ export function createPortfolioContracts(provider, manifests, plan) {
   );
 }
 
-function assertTerms(config, manifests, block, maturityBlock) {
+function assertTerms(
+  config,
+  manifests,
+  block,
+  maturityBlock,
+  fundingPending = true,
+) {
   const pool = manifests.portfolio.constructors.PortfolioPoolV1.values;
   const factory = manifests.portfolio.constructors.CappedPilotFactoryV1.values;
   const mandate = manifests.portfolio.constructors.PortfolioMandateV1.values;
@@ -336,10 +342,11 @@ function assertTerms(config, manifests, block, maturityBlock) {
     Number(pool[5]) >= 1 && Number(factory[11]) >= 1,
     "Facility count bound",
   );
-  assert(
-    Number(pool[6]) - block.timestamp > 3600,
-    "Funding deadline must retain one-hour safety window",
-  );
+  if (fundingPending)
+    assert(
+      Number(pool[6]) - block.timestamp > 3600,
+      "Funding deadline must retain one-hour safety window",
+    );
   for (const [label, limit, bond, fee, maturity] of [
     ["factory", factory[5], factory[7], factory[8], factory[9]],
     ["mandate", mandate[8], mandate[9], mandate[10], mandate[11]],
@@ -1008,6 +1015,11 @@ async function verifyPrefixState({
   }
   if (prefix >= 1) {
     equal(
+      await contracts.factory.isFacility(plan.predictedFacility, { blockTag }),
+      true,
+      "Factory facility registration",
+    );
+    equal(
       await contracts.factory.facilityAt(0, { blockTag }),
       plan.predictedFacility,
       "Factory created facility",
@@ -1137,7 +1149,13 @@ export async function runPortfolioPreflight({
     }
   }
   if (prefix < 13)
-    assertTerms(config, manifests, targetBlock, plan.maturityBlock);
+    assertTerms(
+      config,
+      manifests,
+      targetBlock,
+      plan.maturityBlock,
+      prefix < 12,
+    );
   const anchor = await provider.getBlock(plan.qualificationBlock.number);
   equal(
     anchor?.hash,

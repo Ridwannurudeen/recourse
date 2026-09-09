@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 import { JsonRpcProvider, Wallet, getAddress } from "ethers";
 import {
   activationJournalPath,
@@ -49,8 +50,35 @@ function json(value) {
   );
 }
 
-async function main() {
-  const args = process.argv.slice(2);
+export async function runPortfolioActivation(
+  args = process.argv.slice(2),
+  {
+    inspectRepository = () => inspectDeployableRepository(process.cwd()),
+    readInputs = readPortfolioInputs,
+    createProvider = () =>
+      new JsonRpcProvider(
+        process.env.CREDITCOIN_RPC_URL ??
+          "https://rpc.cc3-testnet.creditcoin.network",
+        undefined,
+        { batchMaxCount: 1 },
+      ),
+    createContracts = createPortfolioContracts,
+    createSigner = (role, config, provider) => {
+      const variable = config.signerEnvironment[role];
+      const key = process.env[variable];
+      if (!key || !/^(0x)?[0-9a-fA-F]{64}$/.test(key)) {
+        throw new Error(`${variable} must contain a valid private key`);
+      }
+      try {
+        return new Wallet(key, provider);
+      } catch {
+        throw new Error(`${variable} is not a valid signing key`);
+      }
+    },
+    now = () => Math.floor(Date.now() / 1000),
+    log = console.log,
+  } = {},
+) {
   if (args.includes("--core-manifest")) {
     throw new Error("Use the three prerequisite paths pinned in the config");
   }
@@ -62,13 +90,13 @@ async function main() {
     ...args,
   ]);
   if (options.help) {
-    console.log(USAGE);
+    log(USAGE);
     return;
   }
-  const repositoryState = inspectDeployableRepository(process.cwd());
-  const { config, manifests } = readPortfolioInputs(options.configPath);
+  const repositoryState = inspectRepository();
+  const { config, manifests } = readInputs(options.configPath);
   if (!options.liveCheck) {
-    console.log(
+    log(
       json({
         ...(await buildPortfolioPlan({ config, manifests, repositoryState })),
         mode: "offline-plan",
@@ -81,12 +109,7 @@ async function main() {
     return;
   }
   requireCleanDeployableRepository(repositoryState);
-  const provider = new JsonRpcProvider(
-    process.env.CREDITCOIN_RPC_URL ??
-      "https://rpc.cc3-testnet.creditcoin.network",
-    undefined,
-    { batchMaxCount: 1 },
-  );
+  const provider = createProvider();
   let releaseManifestReservation;
   try {
     const journalPath = activationJournalPath(options.activationManifestPath);
@@ -108,7 +131,7 @@ async function main() {
       repositoryState,
       qualificationBlock,
     });
-    const contracts = createPortfolioContracts(provider, manifests, plan);
+    const contracts = createContracts(provider, manifests, plan);
     const journalIdentity = {
       chainId: config.chainId,
       configCommitment: plan.configCommitment,
@@ -141,17 +164,13 @@ async function main() {
       }
       validatePortfolioApproval(
         approvedPlan,
-        approvalContext(
-          Math.max(head.timestamp, Math.floor(Date.now() / 1000)),
-        ),
+        approvalContext(Math.max(head.timestamp, now())),
       );
     }
     if (approvedPlan) {
       validatePortfolioApproval(
         approvedPlan,
-        approvalContext(
-          Math.max(latestBlock.timestamp, Math.floor(Date.now() / 1000)),
-        ),
+        approvalContext(Math.max(latestBlock.timestamp, now())),
       );
       await assertApprovalCurrent();
     }
@@ -179,7 +198,7 @@ async function main() {
         });
         atomicWriteV3ActivationJson(options.writePlanPath, livePlan);
       }
-      console.log(
+      log(
         json({
           mode: "live-check",
           plan,
@@ -209,19 +228,17 @@ async function main() {
     validateV3ActivationJournal(journal, journalIdentity);
 
     async function assertCurrent() {
-      const currentRepository = inspectDeployableRepository(process.cwd());
+      const currentRepository = inspectRepository();
       requireCleanDeployableRepository(currentRepository);
       if (currentRepository.head !== repositoryState.head) {
         throw new Error("Source commit changed during activation");
       }
-      readPortfolioInputs(options.configPath);
+      readInputs(options.configPath);
       const block = await provider.getBlock("latest");
       if (!block?.hash) throw new Error("Approval block unavailable");
       validatePortfolioApproval(
         approvedPlan,
-        approvalContext(
-          Math.max(block.timestamp, Math.floor(Date.now() / 1000)),
-        ),
+        approvalContext(Math.max(block.timestamp, now())),
       );
       await runPortfolioPreflight({
         provider,
@@ -245,17 +262,7 @@ async function main() {
       if (journal.steps[stepIndex].status === "planned") {
         await assertCurrent();
         if (!signers[step.signer]) {
-          const variable = config.signerEnvironment[step.signer];
-          const key = process.env[variable];
-          if (!key || !/^(0x)?[0-9a-fA-F]{64}$/.test(key)) {
-            throw new Error(`${variable} must contain a valid private key`);
-          }
-          let signer;
-          try {
-            signer = new Wallet(key, provider);
-          } catch {
-            throw new Error(`${variable} is not a valid signing key`);
-          }
+          const signer = await createSigner(step.signer, config, provider);
           if (
             getAddress(await signer.getAddress()) !==
             getAddress(config.roles[step.signer])
@@ -313,7 +320,7 @@ async function main() {
           "Registered policy-set commitment differs from the mandate",
         );
       }
-      console.log(`${step.name}: ${result.receipt.hash}`);
+      log(`${step.name}: ${result.receipt.hash}`);
     }
     const verified = await verifyPortfolioFinal({
       provider,
@@ -373,11 +380,16 @@ async function main() {
       journalPath,
       options.activationManifestPath,
     );
-    console.log(`${options.activationManifestPath} verified`);
+    log(`${options.activationManifestPath} verified`);
   } finally {
     if (releaseManifestReservation) releaseManifestReservation();
     provider.destroy();
   }
 }
 
-await main();
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
+  await runPortfolioActivation();
+}

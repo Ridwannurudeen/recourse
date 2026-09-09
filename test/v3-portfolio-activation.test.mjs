@@ -1,6 +1,7 @@
+import "./helpers/v3-portfolio-orchestration.mjs";
+import "./helpers/v3-portfolio-inputs.mjs";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -35,351 +36,12 @@ import {
   validateV3ActivationRenewalBinding,
 } from "../scripts/lib/v3-activation.mjs";
 
-const HASH = (digit) => `0x${digit.repeat(64)}`;
-const repositoryState = { head: "1".repeat(40), deployableScopeClean: true };
-
-function fixture(investorAddress) {
-  const input = JSON.parse(
-    readFileSync("config/v3-portfolio-activation.example.json", "utf8"),
-  );
-  input.prerequisites = Object.fromEntries(
-    Object.entries({
-      portfolio: "deployments-v3-portfolio-core-current.json",
-      core: "deployments-v3-current.json",
-      activation: "activation-v3-current.json",
-    }).map(([key, path]) => [
-      key,
-      {
-        path,
-        sha256: createHash("sha256").update(readFileSync(path)).digest("hex"),
-      },
-    ]),
-  );
-  const manifests = Object.fromEntries(
-    Object.entries(input.prerequisites).map(([key, pin]) => [
-      key,
-      JSON.parse(readFileSync(pin.path, "utf8")),
-    ]),
-  );
-  const roles = manifests.activation.roles;
-  if (investorAddress) roles.lender = investorAddress;
-  input.roles = {
-    manager: roles.deployer,
-    issuer: roles.deployer,
-    investor: roles.lender,
-    borrower: roles.borrower,
-  };
-  input.qualificationBlock = {
-    ...manifests.activation.approvedPlan.targetBlock,
-  };
-  input.expectedStartingNonces = {
-    manager: 46,
-    issuer: 46,
-    investor: 22,
-    borrower: 20,
-  };
-  manifests.artifacts = Object.fromEntries(
-    Object.entries({
-      pool: "PortfolioPoolV1",
-      factory: "CappedPilotFactoryV1",
-      mandate: "PortfolioMandateV1",
-      kernel: "PolicyKernelV2",
-      registry: "PolicyRegistryV1",
-      policy: "MultiChainEventPolicyV1",
-      facility: "RecourseFacilityV3",
-    }).map(([key, name]) => [
-      key,
-      JSON.parse(readFileSync(`out/${name}.sol/${name}.json`, "utf8")),
-    ]),
-  );
-  return {
-    input,
-    config: validatePortfolioConfig(input, manifests),
-    manifests,
-  };
-}
-
-async function chainFixture(
-  final = false,
-  prefix = final ? 13 : 0,
-  investorAddress,
-) {
-  const values = fixture(investorAddress);
-  const { config, manifests } = values;
-  const plan = await buildPortfolioPlan({ config, manifests, repositoryState });
-  const a = plan.addresses;
-  const fields = {
-    pool: [
-      "asset",
-      "manager",
-      "maximumPoolAssets",
-      "maximumServiceBudget",
-      "maximumServiceJobDuration",
-      "maximumFacilityCount",
-      "fundingDeadline",
-      "recoveryDelayBlocks",
-    ],
-    factory: [
-      "asset",
-      "kernel",
-      "lender",
-      "borrower",
-      "guardian",
-      "maximumFacilityLimit",
-      "maximumTotalLimit",
-      "minimumBondBps",
-      "maximumDrawFeeBps",
-      "maximumMaturityBlocks",
-      "maximumDrawDelayBlocks",
-      "maximumFacilityCount",
-    ],
-    mandate: [
-      "factory",
-      "registry",
-      "asset",
-      "kernel",
-      "requiredReleaseId",
-      "requiredPolicySetCommitment",
-      "requiredEvidenceKind",
-      "requiredActionAdapterKind",
-      "maximumFacilityLimit",
-      "minimumBondBps",
-      "maximumDrawFeeBps",
-      "maximumRemainingMaturityBlocks",
-    ],
-  };
-  const state = Object.fromEntries(
-    Object.entries({
-      pool: "PortfolioPoolV1",
-      factory: "CappedPilotFactoryV1",
-      mandate: "PortfolioMandateV1",
-    }).map(([key, name]) => [
-      key,
-      Object.fromEntries(
-        fields[key].map((field, index) => [
-          field,
-          manifests.portfolio.constructors[name].values[index],
-        ]),
-      ),
-    ]),
-  );
-  Object.assign(state.pool, {
-    mandate: a.mandate,
-    status: final ? 2 : 0,
-    createdFacilityCount: final ? 1 : 0,
-    candidateCount: final ? 1 : 0,
-    investorCount: final ? 1 : 0,
-    totalSupply: final ? config.facility.facilityLimit : 0n,
-    totalDeposited: final ? config.facility.facilityLimit : 0n,
-    totalAllocatedPrincipal: final ? config.facility.facilityLimit : 0n,
-    allocatedFacilityCount: final ? 1 : 0,
-    isInvestor: final,
-    createdFacilityAt: plan.predictedFacility,
-    allocationOf: {
-      deploymentId: plan.commitments.deploymentId,
-      registered: true,
-      settled: false,
-      principal: config.facility.facilityLimit,
-    },
-  });
-  Object.assign(state.factory, {
-    facilityCount: final ? 1 : 0,
-    totalFacilityLimit: final ? config.facility.facilityLimit : 0n,
-    creationPaused: false,
-    facilityAt: plan.predictedFacility,
-  });
-  state.mandate.evaluate = 0;
-  const configurationType = manifests.artifacts.policy.abi.find(
-    (item) => item.type === "function" && item.name === "configure",
-  ).inputs[2];
-  const manifest = AbiCoder.defaultAbiCoder().encode(
-    [configurationType],
-    [manifests.activation.policy.configuration],
-  );
-  state.policy = {
-    context: a.kernel,
-    sourceOrdering: 1,
-    isConfigured: final,
-    ...(final
-      ? { configHash: plan.commitments.policyConfigHash, manifest }
-      : {}),
-  };
-  state.kernel = {
-    owner: config.roles.manager,
-    verifier: manifests.core.verifier,
-    creditState: manifests.core.contracts.verifiedCreditState,
-    proofJobs: manifests.core.contracts.proofJobs,
-    safeStaleProofRelease: true,
-    policySetCommitment: final
-      ? plan.commitments.policySetCommitment
-      : ZeroHash,
-  };
-  if (final)
-    state.kernel.policyOf = [
-      a.policy,
-      plan.commitments.policyConfigHash,
-      manifest,
-    ];
-  state.asset = { decimals: 6, symbol: "rUSD" };
-  state.registry = {
-    packageRelease: { exists: true, issuer: config.roles.issuer },
-    declaresEvidenceKind: true,
-    runtimeVariant: {
-      exists: true,
-      releaseId: plan.commitments.releaseId,
-      runtimeCodeHash: plan.commitments.policyRuntimeCodeHash,
-      constructorArgumentsHash: plan.commitments.constructorArgumentsHash,
-    },
-    deploymentRecord: {
-      exists: final,
-      facility: plan.predictedFacility,
-      kernel: a.kernel,
-      chainId: config.chainId,
-      policyId: 1,
-      evaluator: a.policy,
-      releaseId: plan.commitments.releaseId,
-      runtimeVariantId: plan.commitments.runtimeVariantId,
-      configHash: plan.commitments.policyConfigHash,
-      manifestHash: plan.commitments.policyConfigHash,
-    },
-  };
-  Object.assign(state.registry.deploymentRecord, {
-    runtimeCodeHash: plan.commitments.policyRuntimeCodeHash,
-    constructorArgumentsHash: plan.commitments.constructorArgumentsHash,
-    attester: config.roles.issuer,
-  });
-  state.facility = {
-    asset: a.asset,
-    kernel: a.kernel,
-    lender: a.pool,
-    borrower: config.roles.borrower,
-    facilityLimit: config.facility.facilityLimit,
-    bondRequired: config.facility.bondRequired,
-    initialDrawFeeBps: 200,
-    maturityBlock: plan.maturityBlock,
-    drawDelayBlocks: 10,
-    status: 1,
-    lenderFunded: config.facility.facilityLimit,
-    bondPosted: config.facility.bondRequired,
-    outstandingDebt: 0,
-    drawnPrincipal: 0,
-  };
-  Object.assign(state.pool, {
-    status: prefix >= 11 ? 2 : prefix >= 6 ? 1 : 0,
-    createdFacilityCount: prefix >= 1 ? 1 : 0,
-    candidateCount: prefix >= 4 ? 1 : 0,
-    investorCount: prefix >= 5 ? 1 : 0,
-    totalSupply: prefix >= 8 ? config.facility.facilityLimit : 0n,
-    totalDeposited: prefix >= 8 ? config.facility.facilityLimit : 0n,
-    totalAllocatedPrincipal: prefix >= 12 ? config.facility.facilityLimit : 0n,
-    allocatedFacilityCount: prefix >= 12 ? 1 : 0,
-    isInvestor: prefix >= 5,
-  });
-  state.pool.allocationOf.principal =
-    prefix >= 12 ? config.facility.facilityLimit : 0n;
-  Object.assign(state.factory, {
-    facilityCount: prefix >= 1 ? 1 : 0,
-    totalFacilityLimit: prefix >= 1 ? config.facility.facilityLimit : 0n,
-  });
-  Object.assign(state.facility, {
-    status: prefix >= 13 ? 1 : 0,
-    lenderFunded: prefix >= 12 ? config.facility.facilityLimit : 0n,
-    bondPosted: prefix >= 10 ? config.facility.bondRequired : 0n,
-  });
-  state.policy.isConfigured = prefix >= 2;
-  state.kernel.policySetCommitment =
-    prefix >= 2 ? plan.commitments.policySetCommitment : ZeroHash;
-  state.registry.deploymentRecord.exists = prefix >= 3;
-  const contracts = Object.fromEntries(
-    Object.entries(state).map(([key, members]) => [
-      key,
-      Object.fromEntries(
-        Object.keys(members).map((method) => [
-          method,
-          async () => state[key][method],
-        ]),
-      ),
-    ]),
-  );
-  const balances = {
-    [a.pool]: 0n,
-    [plan.predictedFacility]: final ? 120000000000n : 0n,
-    [config.roles.investor]: 100000000000n,
-    [config.roles.borrower]: 20000000000n,
-  };
-  const allowances = {};
-  balances[a.pool] =
-    prefix >= 8 && prefix < 12 ? config.facility.facilityLimit : 0n;
-  balances[plan.predictedFacility] =
-    (prefix >= 10 ? config.facility.bondRequired : 0n) +
-    (prefix >= 12 ? config.facility.facilityLimit : 0n);
-  if (prefix === 7)
-    allowances[`${config.roles.investor}:${a.pool}`] =
-      config.facility.facilityLimit;
-  if (prefix === 9)
-    allowances[`${config.roles.borrower}:${plan.predictedFacility}`] =
-      config.facility.bondRequired;
-  contracts.asset.balanceOf = async (address) => balances[address];
-  contracts.asset.allowance = async (owner, spender) =>
-    allowances[`${owner}:${spender}`] ?? 0n;
-  const code = "0x60006000";
-  const hash = keccak256(code);
-  for (const name of [
-    "PortfolioPoolV1",
-    "CappedPilotFactoryV1",
-    "PortfolioMandateV1",
-  ])
-    manifests.portfolio.finalQualification.runtimeQualification[name] = hash;
-  manifests.core.runtimeCodeHashes.PolicyKernelV2 = hash;
-  manifests.core.runtimeCodeHashes.PolicyRegistryV1 = hash;
-  manifests.activation.registry.runtimeCodeHash = hash;
-  manifests.portfolio.finalQualification.prerequisiteCodeHashes.asset = hash;
-  const nativeBalances = Object.fromEntries(
-    Object.values(config.roles).map((address) => [
-      address,
-      1000000000000000000n,
-    ]),
-  );
-  const nonces = Object.fromEntries(
-    Object.entries(config.roles).map(([role, address]) => [
-      address,
-      config.expectedStartingNonces[role],
-    ]),
-  );
-  for (const step of plan.transactionPlan.slice(0, prefix))
-    nonces[config.roles[step.signer]] += 1;
-  const block = {
-    ...config.qualificationBlock,
-    number: config.qualificationBlock.number + 100,
-  };
-  const provider = {
-    getNetwork: async () => ({ chainId: 102031n }),
-    getBlock: async (number) =>
-      number === "latest" ? block : config.qualificationBlock,
-    getCode: async (address) =>
-      address === plan.predictedFacility
-        ? prefix >= 1
-          ? manifests.artifacts.facility.deployedBytecode.object
-          : "0x"
-        : code,
-    getTransactionCount: async (address) =>
-      address === a.factory ? (prefix >= 1 ? 2 : 1) : nonces[address],
-    getBalance: async (address) => nativeBalances[address],
-  };
-  return {
-    ...values,
-    plan,
-    state,
-    contracts,
-    balances,
-    allowances,
-    nativeBalances,
-    nonces,
-    block,
-    provider,
-    repositoryState,
-  };
-}
+import {
+  HASH,
+  repositoryState,
+  fixture,
+  chainFixture,
+} from "./helpers/v3-portfolio-fixture.mjs";
 
 test("portfolio preflight accepts a signerless clean chain and rejects every bound getter and starting-state mismatch", async () => {
   const f = await chainFixture();
@@ -397,6 +59,7 @@ test("portfolio preflight accepts a signerless clean chain and rejects every bou
         [
           "evaluate",
           "facilityAt",
+          "isFacility",
           "createdFacilityAt",
           "allocationOf",
         ].includes(method)
@@ -534,6 +197,164 @@ test("portfolio recovery qualifies every transaction prefix and permits complete
         13,
       );
     }
+  }
+});
+
+for (const [label, deadlineOffset] of [
+  ["one-hour boundary", -3600],
+  ["after deadline", 1],
+]) {
+  test(`portfolio final-step recovery and approval renewal at ${label}`, async (t) => {
+    const directory = mkdtempSync(
+      join(tmpdir(), "recourse-portfolio-deadline-"),
+    );
+    t.after(() => rmSync(directory, { recursive: true, force: true }));
+    for (let prefix = 0; prefix <= 13; prefix += 1) {
+      const f = await chainFixture(true, prefix);
+      const journal = createV3ActivationJournal(
+        join(directory, `journal-${prefix}.json`),
+        {
+          ...f.plan,
+          preflight: {},
+        },
+      );
+      journal.steps = journal.steps.map((step, index) =>
+        index < prefix
+          ? {
+              ...step,
+              status: "confirmed",
+              intent: {
+                ...f.plan.executionPlan.steps[index],
+                transactionHash: keccak256(new Uint8Array([index])),
+              },
+              receipt: {
+                hash: keccak256(new Uint8Array([index])),
+                blockNumber: f.config.qualificationBlock.number,
+                blockHash: f.config.qualificationBlock.hash,
+                status: 1,
+              },
+            }
+          : step,
+      );
+      f.block.timestamp = Number(f.state.pool.fundingDeadline) + deadlineOffset;
+      if (prefix < 12) {
+        await assert.rejects(
+          runPortfolioPreflight({ ...f, journal }),
+          /one-hour/,
+          `prefix ${prefix}`,
+        );
+        continue;
+      }
+      assert.equal(
+        (await runPortfolioPreflight({ ...f, journal })).confirmedSteps,
+        prefix,
+      );
+      const approval = createPortfolioApproval({
+        ...f,
+        targetBlock: f.config.qualificationBlock,
+      });
+      const context = {
+        ...f,
+        journal,
+        expectedApprovalCommitment: approval.approvalCommitment,
+        now: f.block.timestamp,
+      };
+      assert.throws(
+        () => validatePortfolioApproval(approval, context),
+        /expired/,
+      );
+      const renewed = createPortfolioApproval({
+        ...f,
+        targetBlock: f.block,
+        journal,
+      });
+      assert.equal(
+        validatePortfolioApproval(renewed, {
+          ...context,
+          expectedApprovalCommitment: renewed.approvalCommitment,
+        }),
+        true,
+      );
+      assert.equal(
+        (await runPortfolioPreflight({ ...f, journal })).confirmedSteps,
+        prefix,
+      );
+      if (prefix === 12) {
+        const changed = structuredClone(journal);
+        changed.steps[11].receipt.blockHash = HASH("9");
+        assert.throws(
+          () =>
+            validatePortfolioApproval(renewed, {
+              ...context,
+              journal: changed,
+              expectedApprovalCommitment: renewed.approvalCommitment,
+            }),
+          /receipt changed/,
+        );
+        for (const [contract, method, value] of [
+          ["facility", "status", 1],
+          ["facility", "lenderFunded", 0],
+          ["facility", "bondPosted", 0],
+          ["kernel", "policySetCommitment", ZeroHash],
+        ]) {
+          const original = f.state[contract][method];
+          f.state[contract][method] = value;
+          await assert.rejects(
+            runPortfolioPreflight({ ...f, journal }),
+            /mismatch/,
+          );
+          f.state[contract][method] = original;
+        }
+        f.block.number =
+          f.plan.maturityBlock -
+          13 * f.config.transactionPolicy.targetConfirmations;
+        await assert.rejects(
+          runPortfolioPreflight({ ...f, journal }),
+          /maturity bound or safety window/,
+        );
+      }
+    }
+  });
+}
+
+test("portfolio post-creation qualification refuses a facility absent from the factory mapping", async () => {
+  for (const prefix of [1, 12, 13]) {
+    const f = await chainFixture(true, prefix);
+    const journal = {
+      ...f.plan,
+      steps: f.plan.transactionPlan.map((step, index) =>
+        index < prefix
+          ? {
+              ...step,
+              status: "confirmed",
+              intent: {
+                ...f.plan.executionPlan.steps[index],
+                transactionHash: keccak256(new Uint8Array([index])),
+              },
+              receipt: {
+                hash: keccak256(new Uint8Array([index])),
+                blockNumber: f.config.qualificationBlock.number,
+                blockHash: f.config.qualificationBlock.hash,
+                status: 1,
+              },
+            }
+          : { ...step, status: "planned" },
+      ),
+    };
+    f.contracts.factory.isFacility = async (address, options) => {
+      assert.equal(address, f.plan.predictedFacility);
+      assert.equal(options.blockTag, f.block.number);
+      return true;
+    };
+    assert.equal(
+      (await runPortfolioPreflight({ ...f, journal })).confirmedSteps,
+      prefix,
+    );
+    f.contracts.factory.isFacility = async () => false;
+    await assert.rejects(
+      runPortfolioPreflight({ ...f, journal }),
+      /Factory facility registration/,
+    );
   }
 });
 
