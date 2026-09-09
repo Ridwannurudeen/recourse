@@ -15,7 +15,7 @@
   "artifacts": {
     "PortfolioPoolV1": {
       "path": "out/PortfolioPoolV1.sol/PortfolioPoolV1.json",
-      "keccak256": "0x8b0e089450e23696b6f54e0923aea88556a4c39325061e88e964249af2d4ee3e"
+      "keccak256": "0xe91bdedfbbb8434c4d8915868111f1865f9d48093952c1a52a2d6b0ede8e2ec5"
     },
     "CappedPilotFactoryV1": {
       "path": "out/CappedPilotFactoryV1.sol/CappedPilotFactoryV1.json",
@@ -23,7 +23,7 @@
     },
     "PortfolioMandateV1": {
       "path": "out/PortfolioMandateV1.sol/PortfolioMandateV1.json",
-      "keccak256": "0x0cf296dbead1600d6f0f585a085166e1295dbca53696d7a7405e9c4d75c31246"
+      "keccak256": "0xa910b9ee590b37b4c82ccc43646f262850a21a25ffa95ebb2dd42181946c696b"
     }
   },
   "transactionPolicy": {
@@ -72,7 +72,7 @@
       "requiredReleaseId": "REPLACE_WITH_REQUIRED_POLICY_RELEASE_ID",
       "requiredPolicySetCommitment": "REPLACE_WITH_REQUIRED_POLICY_SET_COMMITMENT",
       "requiredEvidenceKind": 1,
-      "requiredActionAdapterKind": "REPLACE_WITH_REQUIRED_ACTION_ADAPTER_KIND",
+      "requiredActionAdapterKind": "0x0000000000000000000000000000000000000000000000000000000000000000",
       "maximumFacilityLimit": "REPLACE_WITH_REVIEWED_MANDATE_MAXIMUM_FACILITY_LIMIT",
       "minimumBondBps": 2000,
       "maximumDrawFeeBps": 400,

@@ -1268,7 +1268,7 @@ export function simulatePortfolioMandateEligibility({
     mandate.requiredPolicySetCommitment,
     "mandate.requiredPolicySetCommitment",
   );
-  const requiredActionAdapterKind = nonzeroBytes32(
+  const requiredActionAdapterKind = bytes32(
     mandate.requiredActionAdapterKind,
     "mandate.requiredActionAdapterKind",
   );
@@ -1364,6 +1364,8 @@ export function simulatePortfolioMandateEligibility({
   if (!deploymentValid) return PortfolioEligibilityCode.InvalidDeployment;
   if (!evidenceKindDeclared)
     return PortfolioEligibilityCode.MissingEvidenceKind;
+  if (requiredActionAdapterKind === ZERO_BYTES32)
+    return PortfolioEligibilityCode.Eligible;
   const adapterKinds = actionAdapters.map((adapter, index) =>
     bytes32(adapter?.adapterKind, `actionAdapters[${index}].adapterKind`),
   );

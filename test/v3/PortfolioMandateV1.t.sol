@@ -206,6 +206,96 @@ contract PortfolioMandateV1Test is Test {
         _assertCode(PortfolioMandateV1.EligibilityCode.MissingActionAdapter);
     }
 
+    function test_zeroModeIsEligibleWithoutAdapters() public {
+        _useZeroMode();
+        _assertCode(PortfolioMandateV1.EligibilityCode.Eligible);
+    }
+
+    function test_zeroModeRetainsFactoryGate() public {
+        _useZeroMode();
+        test_rejectsUnknownFactoryFacilityBeforeTrustingCandidateCalls();
+    }
+
+    function test_zeroModeRetainsAssetKernelStatusAndEconomicGates() public {
+        _useZeroMode();
+        test_rejectsAssetKernelStatusAndEconomicBoundViolations();
+        _resetFacility(address(kernel), 0, 200, 300, 1_000, FacilityStatus.Active);
+        _assertCode(PortfolioMandateV1.EligibilityCode.FacilityLimitExceeded);
+        _resetFacility(address(kernel), 1_000, 200, 300, 0, FacilityStatus.Active);
+        _assertCode(PortfolioMandateV1.EligibilityCode.InvalidMaturity);
+    }
+
+    function test_zeroModeRetainsPolicySetAndReleaseGates() public {
+        _useZeroMode();
+        test_rejectsPolicySetMismatchAndUnregisteredRelease();
+    }
+
+    function test_zeroModeRetainsEveryDeploymentBinding() public {
+        _useZeroMode();
+        for (uint256 i; i < 8; ++i) {
+            DeploymentRecord memory deployment = _deployment();
+            if (i == 0) deployment.exists = false;
+            if (i == 1) deployment.releaseId = keccak256("other-release");
+            if (i == 2) deployment.chainId = block.chainid + 1;
+            if (i == 3) deployment.kernel = address(0xBAD);
+            if (i == 4) deployment.facility = address(0xBAD);
+            if (i == 5) deployment.evaluator = address(0);
+            if (i == 6) deployment.configHash = bytes32(0);
+            if (i == 7) deployment.manifestHash = bytes32(0);
+            registry.setDeployment(deployment);
+            _assertCode(PortfolioMandateV1.EligibilityCode.InvalidDeployment);
+        }
+    }
+
+    function test_zeroModeRetainsEvidenceGate() public {
+        _useZeroMode();
+        registry.setEvidenceDeclared(false);
+        _assertCode(PortfolioMandateV1.EligibilityCode.MissingEvidenceKind);
+    }
+
+    function test_constructorRetainsOtherInvalidValuesInBothModes() public {
+        for (uint256 mode; mode < 2; ++mode) {
+            for (uint256 invalid; invalid < 11; ++invalid) {
+                vm.expectRevert(
+                    invalid < 4 ? PortfolioMandateV1.ZeroAddress.selector : PortfolioMandateV1.InvalidMandate.selector
+                );
+                new PortfolioMandateV1(
+                    IPortfolioFactoryV1(invalid == 0 ? address(0) : address(factory)),
+                    IPolicyRegistryV1(invalid == 1 ? address(0) : address(registry)),
+                    invalid == 2 ? IERC20(address(0)) : ASSET,
+                    invalid == 3 ? address(0) : address(kernel),
+                    invalid == 4 ? bytes32(0) : RELEASE_ID,
+                    invalid == 5 ? bytes32(0) : POLICY_SET,
+                    EvidenceKind.EventDelta,
+                    mode == 0 ? bytes32(0) : ADAPTER_KIND,
+                    invalid == 6 ? 0 : 1_000,
+                    invalid == 7 ? 0 : (invalid == 8 ? 10_001 : 2_000),
+                    invalid == 9 ? 10_001 : 300,
+                    invalid == 10 ? 0 : 1_000
+                );
+            }
+        }
+    }
+
+    function _useZeroMode() private {
+        mandate = new PortfolioMandateV1(
+            IPortfolioFactoryV1(address(factory)),
+            IPolicyRegistryV1(address(registry)),
+            ASSET,
+            address(kernel),
+            RELEASE_ID,
+            POLICY_SET,
+            EvidenceKind.EventDelta,
+            bytes32(0),
+            1_000,
+            2_000,
+            300,
+            1_000
+        );
+        registry.clearAdapters();
+        assertEq(mandate.requiredActionAdapterKind(), bytes32(0));
+    }
+
     function _configureEligible() private {
         factory.setFacility(address(facility), true);
         _resetFacility(address(kernel), 1_000, 200, 300, 1_000, FacilityStatus.Active);

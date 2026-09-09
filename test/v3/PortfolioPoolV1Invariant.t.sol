@@ -5,11 +5,18 @@ import {Test} from "forge-std/Test.sol";
 import {Vm} from "forge-std/Vm.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {FacilityStatus} from "../../contracts/v2/types/RecourseTypesV2.sol";
+import {EvidenceKind, FacilityStatus} from "../../contracts/v2/types/RecourseTypesV2.sol";
+import {
+    ActionAdapterDeclaration,
+    DeploymentRecord,
+    IPolicyRegistryV1,
+    PackageRelease
+} from "../../contracts/v2/interfaces/IPolicyRegistryV1.sol";
 import {CappedPilotFactoryV1} from "../../contracts/v3/CappedPilotFactoryV1.sol";
-import {PortfolioMandateV1} from "../../contracts/v3/PortfolioMandateV1.sol";
+import {IPortfolioFactoryV1, PortfolioMandateV1} from "../../contracts/v3/PortfolioMandateV1.sol";
 import {PortfolioPoolV1} from "../../contracts/v3/PortfolioPoolV1.sol";
 import {RecourseFacilityV3} from "../../contracts/v3/RecourseFacilityV3.sol";
+import {MandateRegistryMock} from "./PortfolioMandateV1.t.sol";
 
 contract PortfolioPoolInvariantToken is ERC20 {
     constructor() ERC20("Portfolio Invariant USD", "piUSD") {}
@@ -55,17 +62,58 @@ contract PortfolioPoolV1Handler {
     PortfolioPoolV1 public immutable pool;
     RecourseFacilityV3 public immutable facility;
 
-    constructor() {
+    constructor(uint8 mode) {
         token = new PortfolioPoolInvariantToken();
         PortfolioPoolInvariantKernel kernel = new PortfolioPoolInvariantKernel();
         pool = new PortfolioPoolV1(token, address(this), 1_000, 0, 0, 1, uint64(block.timestamp + 1 days), 5);
         CappedPilotFactoryV1 factory = new CappedPilotFactoryV1(
             token, address(kernel), address(pool), BORROWER, GUARDIAN, 1_000, 1_000, 2_000, 0, 20, 0, 1
         );
-        PortfolioPoolInvariantMandate mandate =
-            new PortfolioPoolInvariantMandate(token, address(factory), address(kernel));
-        pool.setMandate(PortfolioMandateV1(address(mandate)));
+        MandateRegistryMock registry;
+        bytes32 releaseId = keccak256("invariant-release");
+        bytes32 adapterKind = mode == 2 ? bytes32(0) : keccak256("invariant-adapter");
+        if (mode == 0) {
+            PortfolioPoolInvariantMandate mandate =
+                new PortfolioPoolInvariantMandate(token, address(factory), address(kernel));
+            pool.setMandate(PortfolioMandateV1(address(mandate)));
+        } else {
+            registry = new MandateRegistryMock();
+            PortfolioMandateV1 mandate = new PortfolioMandateV1(
+                IPortfolioFactoryV1(address(factory)),
+                IPolicyRegistryV1(address(registry)),
+                token,
+                address(kernel),
+                releaseId,
+                kernel.COMMITMENT(),
+                EvidenceKind.EventDelta,
+                adapterKind,
+                1_000,
+                2_000,
+                0,
+                100
+            );
+            pool.setMandate(mandate);
+        }
         facility = RecourseFacilityV3(pool.createFacility(1_000, 200, 0, 20, 0));
+        if (mode != 0) {
+            PackageRelease memory release;
+            release.exists = true;
+            registry.setRelease(release);
+            registry.setEvidenceDeclared(true);
+            DeploymentRecord memory deployment;
+            deployment.exists = true;
+            deployment.releaseId = releaseId;
+            deployment.chainId = block.chainid;
+            deployment.kernel = address(kernel);
+            deployment.facility = address(facility);
+            deployment.evaluator = address(kernel);
+            deployment.configHash = kernel.COMMITMENT();
+            deployment.manifestHash = kernel.COMMITMENT();
+            registry.setDeployment(deployment);
+            if (mode == 1) {
+                registry.addAdapter(ActionAdapterDeclaration(adapterKind, keccak256("spec"), "ipfs://adapter"));
+            }
+        }
         pool.registerCandidate(address(facility), keccak256("invariant-deployment"));
         pool.registerInvestor(INVESTOR_A);
         pool.registerInvestor(INVESTOR_B);
@@ -154,11 +202,15 @@ contract PortfolioPoolV1InvariantTest is Test {
     RecourseFacilityV3 private facility;
 
     function setUp() public {
-        handler = new PortfolioPoolV1Handler();
+        handler = new PortfolioPoolV1Handler(_mode());
         token = handler.token();
         pool = handler.pool();
         facility = handler.facility();
         targetContract(address(handler));
+    }
+
+    function _mode() internal pure virtual returns (uint8) {
+        return 0;
     }
 
     function invariant_assetsAreConservedAndPoolClaimsAreExactlySolvent() public view {
@@ -182,5 +234,17 @@ contract PortfolioPoolV1InvariantTest is Test {
         assertEq(allocation.realizedLoss, pool.totalRealizedLoss());
         assertLe(allocation.realizedLoss, allocation.principal);
         assertEq(token.balanceOf(address(pool)) + pool.totalClaimed(), pool.totalRecovered());
+    }
+}
+
+contract PortfolioPoolV1NonzeroMandateInvariantTest is PortfolioPoolV1InvariantTest {
+    function _mode() internal pure override returns (uint8) {
+        return 1;
+    }
+}
+
+contract PortfolioPoolV1ZeroMandateInvariantTest is PortfolioPoolV1InvariantTest {
+    function _mode() internal pure override returns (uint8) {
+        return 2;
     }
 }

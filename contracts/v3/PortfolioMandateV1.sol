@@ -83,7 +83,7 @@ contract PortfolioMandateV1 {
         ) revert ZeroAddress();
         if (
             requiredReleaseId_ == bytes32(0) || requiredPolicySetCommitment_ == bytes32(0)
-                || requiredActionAdapterKind_ == bytes32(0) || maximumFacilityLimit_ == 0 || minimumBondBps_ == 0
+                || maximumFacilityLimit_ == 0 || minimumBondBps_ == 0
                 || minimumBondBps_ > 10_000 || maximumDrawFeeBps_ > 10_000 || maximumRemainingMaturityBlocks_ == 0
         ) revert InvalidMandate();
         factory = factory_;
@@ -134,6 +134,7 @@ contract PortfolioMandateV1 {
             return EligibilityCode.MissingEvidenceKind;
         }
 
+        if (requiredActionAdapterKind == bytes32(0)) return EligibilityCode.Eligible;
         uint256 adapterCount = registry.actionAdapterCount(requiredReleaseId);
         for (uint256 i; i < adapterCount; ++i) {
             ActionAdapterDeclaration memory declaration = registry.actionAdapterAt(requiredReleaseId, i);

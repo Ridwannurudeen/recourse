@@ -219,3 +219,111 @@ test("PortfolioMandate ABI parses and simulator mirrors ordered eligibility gate
     PortfolioEligibilityCode.BondBelowMinimum,
   );
 });
+
+for (const requiredActionAdapterKind of [HASH("00"), HASH("33")]) {
+  test(`PortfolioMandate preserves every earlier gate with adapter kind ${requiredActionAdapterKind}`, () => {
+    const eligible = mandateSimulation();
+    eligible.mandate.requiredActionAdapterKind = requiredActionAdapterKind;
+    eligible.actionAdapters = [];
+    const cases = [
+      [{ factoryRecognized: false }, PortfolioEligibilityCode.UnknownFacility],
+      [
+        { facility: { asset: ADDRESS("999") } },
+        PortfolioEligibilityCode.WrongAsset,
+      ],
+      [
+        { facility: { kernel: ADDRESS("999") } },
+        PortfolioEligibilityCode.WrongKernel,
+      ],
+      [{ facility: { status: 2 } }, PortfolioEligibilityCode.InvalidStatus],
+      [
+        { facility: { facilityLimit: 0n } },
+        PortfolioEligibilityCode.FacilityLimitExceeded,
+      ],
+      [
+        { facility: { facilityLimit: 200_001n } },
+        PortfolioEligibilityCode.FacilityLimitExceeded,
+      ],
+      [
+        { facility: { bondRequired: 19_999n } },
+        PortfolioEligibilityCode.BondBelowMinimum,
+      ],
+      [
+        { facility: { initialDrawFeeBps: 301 } },
+        PortfolioEligibilityCode.DrawFeeExceeded,
+      ],
+      [
+        { facility: { maturityBlock: 1_000 } },
+        PortfolioEligibilityCode.InvalidMaturity,
+      ],
+      [
+        { facility: { maturityBlock: 2_001 } },
+        PortfolioEligibilityCode.InvalidMaturity,
+      ],
+      [
+        { facility: { policySetCommitment: HASH("ff") } },
+        PortfolioEligibilityCode.PolicySetMismatch,
+      ],
+      [{ releaseExists: false }, PortfolioEligibilityCode.UnknownRelease],
+      ...[
+        { exists: false },
+        { releaseId: HASH("ff") },
+        { chainId: 1 },
+        { kernel: ADDRESS("999") },
+        { facility: ADDRESS("999") },
+        { evaluator: ADDRESS("0") },
+        { configHash: HASH("00") },
+        { manifestHash: HASH("00") },
+      ].map((deployment) => [
+        { deployment },
+        PortfolioEligibilityCode.InvalidDeployment,
+      ]),
+      [
+        { evidenceKindDeclared: false },
+        PortfolioEligibilityCode.MissingEvidenceKind,
+      ],
+    ];
+    for (const [overrides, expected] of cases) {
+      assert.equal(
+        simulatePortfolioMandateEligibility({
+          ...eligible,
+          ...overrides,
+          facility: { ...eligible.facility, ...overrides.facility },
+          deployment: { ...eligible.deployment, ...overrides.deployment },
+        }),
+        expected,
+      );
+    }
+  });
+}
+
+test("PortfolioMandate zero kind permits no adapters while nonzero kinds require an exact match", () => {
+  for (const requiredActionAdapterKind of [HASH("00"), HASH("33")]) {
+    for (const actionAdapters of [
+      [],
+      [{ adapterKind: HASH("ff") }],
+      [{ adapterKind: HASH("33") }],
+    ]) {
+      const simulation = mandateSimulation({ actionAdapters });
+      simulation.mandate.requiredActionAdapterKind = requiredActionAdapterKind;
+      assert.equal(
+        simulatePortfolioMandateEligibility(simulation),
+        requiredActionAdapterKind === HASH("00") ||
+          actionAdapters.some(({ adapterKind }) => adapterKind === HASH("33"))
+          ? PortfolioEligibilityCode.Eligible
+          : PortfolioEligibilityCode.MissingActionAdapter,
+      );
+    }
+  }
+});
+
+test("PortfolioMandate adapter kind remains explicitly required and well formed", () => {
+  for (const requiredActionAdapterKind of [undefined, null, "0x00", "invalid"]) {
+    const simulation = mandateSimulation();
+    simulation.mandate.requiredActionAdapterKind = requiredActionAdapterKind;
+    assert.throws(
+      () => simulatePortfolioMandateEligibility(simulation),
+      /mandate.requiredActionAdapterKind/,
+    );
+  }
+});

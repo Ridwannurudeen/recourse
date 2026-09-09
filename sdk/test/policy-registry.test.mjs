@@ -170,6 +170,26 @@ test("PolicyRegistryV1 calldata builders round-trip exact contract arguments", (
   assert.equal(audited.args.scope, 1n);
 });
 
+test("PolicyRegistryV1 rejects zero adapter declarations but permits an empty list", () => {
+  assert.throws(
+    () =>
+      encodePublishPolicyRegistryRelease(
+        releaseRequest({
+          actionAdapters: [
+            {
+              ...releaseRequest().actionAdapters[0],
+              adapterKind: HASH("00"),
+            },
+          ],
+        }),
+      ),
+    /actionAdapters\[0\].adapterKind/,
+  );
+  assert.doesNotThrow(() =>
+    encodePublishPolicyRegistryRelease(releaseRequest({ actionAdapters: [] })),
+  );
+});
+
 test("PolicyRegistryV1 builders enforce only deterministic on-chain preconditions", () => {
   assert.throws(
     () =>

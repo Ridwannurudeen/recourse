@@ -6,6 +6,7 @@ import {EvmV1Decoder} from "@gluwa/usc-contracts/contracts/write-ability/common/
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IPolicyEvaluatorV1} from "../../contracts/v2/interfaces/IPolicyEvaluatorV1.sol";
 import {ProofJobsV1} from "../../contracts/v2/ProofJobsV1.sol";
+import {PolicyRegistryV1} from "../../contracts/v2/PolicyRegistryV1.sol";
 import {RecourseFacilityV2} from "../../contracts/v2/RecourseFacilityV2.sol";
 import {
     ActionAdapterDeclaration,
@@ -357,6 +358,129 @@ contract PortfolioPoolV1Test is Test {
         assertEq(token.balanceOf(INVESTOR_A), 600);
         assertEq(token.balanceOf(INVESTOR_B), 400);
         assertEq(token.balanceOf(address(pool)), 0);
+    }
+
+    function test_zeroModeFullAllocationAndRecoveryWithRealRegistry() public {
+        bytes32 deploymentId = _configureZeroMode(false);
+        vm.prank(MANAGER);
+        pool.registerCandidate(address(facility), deploymentId);
+        test_fullRecoveryFlowsThroughExactMandateAndPullClaims();
+    }
+
+    function test_zeroModeRejectsWrongDeploymentRecord() public {
+        _configureZeroMode(false);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                PortfolioPoolV1.IneligibleFacility.selector, PortfolioMandateV1.EligibilityCode.InvalidDeployment
+            )
+        );
+        vm.prank(MANAGER);
+        pool.registerCandidate(address(facility), keccak256("wrong-deployment"));
+        assertEq(pool.candidateCount(), 0);
+        assertEq(facility.lenderFunded(), 0);
+    }
+
+    function test_zeroModeRejectsWrongPolicySetCommitment() public {
+        bytes32 deploymentId = _configureZeroMode(true);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                PortfolioPoolV1.IneligibleFacility.selector, PortfolioMandateV1.EligibilityCode.PolicySetMismatch
+            )
+        );
+        vm.prank(MANAGER);
+        pool.registerCandidate(address(facility), deploymentId);
+        assertEq(pool.candidateCount(), 0);
+        assertEq(facility.lenderFunded(), 0);
+    }
+
+    function test_zeroModeRejectsShortBond() public {
+        bytes32 deploymentId = _configureZeroMode(false);
+        vm.prank(MANAGER);
+        pool.registerCandidate(address(facility), deploymentId);
+        _fundPool();
+        token.mint(BORROWER, 199);
+        vm.startPrank(BORROWER);
+        token.approve(address(facility), 199);
+        facility.postBond(199);
+        vm.stopPrank();
+        vm.expectRevert(PortfolioPoolV1.InvalidFacility.selector);
+        vm.prank(MANAGER);
+        pool.allocate(address(facility), 1_000);
+        assertEq(token.balanceOf(address(pool)), 1_000);
+        assertEq(facility.lenderFunded(), 0);
+    }
+
+    function test_zeroModeRejectsRepeatAllocation() public {
+        bytes32 deploymentId = _configureZeroMode(false);
+        vm.prank(MANAGER);
+        pool.registerCandidate(address(facility), deploymentId);
+        _fundAllocateAndActivate();
+        token.mint(address(pool), 1_000);
+        vm.expectRevert(PortfolioPoolV1.InvalidAmount.selector);
+        vm.prank(MANAGER);
+        pool.allocate(address(facility), 1_000);
+        assertEq(pool.totalAllocatedPrincipal(), 1_000);
+        assertEq(pool.allocatedFacilityCount(), 1);
+        assertEq(token.balanceOf(address(pool)), 1_000);
+    }
+
+    function _configureZeroMode(bool wrongPolicySet) private returns (bytes32 deploymentId) {
+        pool = new PortfolioPoolV1(token, MANAGER, 1_000, 0, 0, 1, uint64(block.timestamp + 7 days), 10);
+        factory = new CappedPilotFactoryV1(
+            token, address(kernel), address(pool), BORROWER, GUARDIAN, 1_000, 1_000, 2_000, 0, 100, 0, 1
+        );
+        PolicyRegistryV1 realRegistry = new PolicyRegistryV1();
+        EvidenceKind[] memory evidenceKinds = new EvidenceKind[](1);
+        evidenceKinds[0] = EvidenceKind.EventDelta;
+        bytes32 releaseId = realRegistry.publishRelease(
+            "portfolio-zero",
+            "1.0.0",
+            address(policy),
+            keccak256("build"),
+            keccak256(abi.encode(address(kernel))),
+            keccak256("metadata"),
+            evidenceKinds,
+            new ActionAdapterDeclaration[](0)
+        );
+        MultiChainEventPolicyV1.Configuration memory configuration = _configuration();
+        bytes32 policySet = keccak256(
+            abi.encode(bytes32(0), POLICY_ID, address(policy), keccak256(abi.encode(configuration)), uint8(1))
+        );
+        mandate = new PortfolioMandateV1(
+            IPortfolioFactoryV1(address(factory)),
+            realRegistry,
+            token,
+            address(kernel),
+            releaseId,
+            wrongPolicySet ? keccak256("wrong-policy-set") : policySet,
+            EvidenceKind.EventDelta,
+            bytes32(0),
+            1_000,
+            2_000,
+            0,
+            1_000
+        );
+        vm.startPrank(MANAGER);
+        pool.setMandate(mandate);
+        facility = RecourseFacilityV3(pool.createFacility(1_000, 200, 0, uint64(block.number + 100), 0));
+        pool.configureAndRegisterPolicy(
+            address(facility),
+            POLICY_ID,
+            policy,
+            abi.encodeCall(MultiChainEventPolicyV1.configure, (address(facility), POLICY_ID, configuration))
+        );
+        pool.registerInvestor(INVESTOR_A);
+        pool.registerInvestor(INVESTOR_B);
+        vm.stopPrank();
+        deploymentId = realRegistry.recordDeployment(
+            releaseId,
+            address(kernel),
+            address(facility),
+            POLICY_ID,
+            realRegistry.packageRelease(releaseId).referenceVariantId
+        );
+        assertEq(realRegistry.actionAdapterCount(releaseId), 0);
+        assertEq(mandate.requiredActionAdapterKind(), bytes32(0));
     }
 
     function test_poolManagerCanPublishRetryAndReplaceTheBoundRemedyIntent() public {

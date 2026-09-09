@@ -625,7 +625,7 @@ function normalizePortfolio(input, asset, bindings) {
       "portfolio.mandate.requiredEvidenceKind",
       2,
     ),
-    requiredActionAdapterKind: nonzeroDigest(
+    requiredActionAdapterKind: digest(
       mandateInput.requiredActionAdapterKind,
       "portfolio.mandate.requiredActionAdapterKind",
     ),
@@ -2595,23 +2595,27 @@ export async function qualifyV3ExtensionDeployment({
       throw new Error("portfolio mandate evidence kind is not declared");
     }
     const adapterCount = BigInt(adapterCountValue);
-    if (adapterCount === 0n || adapterCount > 32n) {
-      throw new Error("portfolio mandate action adapter set is invalid");
-    }
-    const adapters = await Promise.all(
-      Array.from({ length: Number(adapterCount) }, (_value, index) =>
-        registry.actionAdapterAt(releaseId, index, callOptions(block.number)),
-      ),
-    );
-    const actionAdapterMatched = adapters.some(
-      (adapter) =>
-        digest(adapter?.adapterKind, "portfolio action adapter kind") ===
-        requiredAdapterKind,
-    );
-    if (!actionAdapterMatched) {
-      throw new Error(
-        "portfolio mandate required action adapter kind is absent",
+    const actionAdapterRequired = requiredAdapterKind !== `0x${"0".repeat(64)}`;
+    let actionAdapterMatched = false;
+    if (actionAdapterRequired) {
+      if (adapterCount === 0n || adapterCount > 32n) {
+        throw new Error("portfolio mandate action adapter set is invalid");
+      }
+      const adapters = await Promise.all(
+        Array.from({ length: Number(adapterCount) }, (_value, index) =>
+          registry.actionAdapterAt(releaseId, index, callOptions(block.number)),
+        ),
       );
+      actionAdapterMatched = adapters.some(
+        (adapter) =>
+          digest(adapter?.adapterKind, "portfolio action adapter kind") ===
+          requiredAdapterKind,
+      );
+      if (!actionAdapterMatched) {
+        throw new Error(
+          "portfolio mandate required action adapter kind is absent",
+        );
+      }
     }
     registryQualification = {
       releaseId,
@@ -2620,7 +2624,8 @@ export async function qualifyV3ExtensionDeployment({
       evidenceKindDeclared: true,
       requiredActionAdapterKind: requiredAdapterKind,
       actionAdapterCount: adapterCount.toString(),
-      actionAdapterMatched: true,
+      actionAdapterRequired,
+      actionAdapterMatched,
     };
   }
   const predictedCodeHashes = {};

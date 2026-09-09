@@ -24,6 +24,7 @@ import {
 import {
   buildV3ExtensionDeploymentPlan,
   buildV3ExtensionLiveExecutionPlan,
+  buildV3ExtensionManifest,
   completeV3ExtensionJournal,
   createV3ExtensionApproval,
   initializeV3ExtensionJournal,
@@ -779,6 +780,52 @@ test("V3 extension config accepts only the three exact generations and binds pre
       ),
     /asset|runtime|code hash/,
   );
+});
+
+test("portfolio adapter kind accepts explicit zero but remains a required bytes32", async () => {
+  const input = rawConfig("v3-portfolio-core-v1");
+  input.portfolio.mandate.requiredActionAdapterKind = HASH("0");
+  const manifests = relevantManifests(input.generation);
+  const config = validateV3ExtensionConfig(input, manifests);
+  assert.equal(config.portfolio.mandate.requiredActionAdapterKind, HASH("0"));
+  const artifacts = loadedArtifacts(config);
+  const plan = await buildV3ExtensionDeploymentPlan({ config, artifacts });
+  assert.equal(plan.constructors.PortfolioMandateV1.values[7], HASH("0"));
+  assert.equal(
+    plan.steps[2].data,
+    await deployData("PortfolioMandateV1", [
+      plan.predictedContracts.CappedPilotFactoryV1,
+      POLICY_REGISTRY,
+      ASSET,
+      POLICY_KERNEL,
+      config.portfolio.mandate.requiredReleaseId,
+      config.portfolio.mandate.requiredPolicySetCommitment,
+      config.portfolio.mandate.requiredEvidenceKind,
+      HASH("0"),
+      config.portfolio.mandate.maximumFacilityLimit,
+      config.portfolio.mandate.minimumBondBps,
+      config.portfolio.mandate.maximumDrawFeeBps,
+      config.portfolio.mandate.maximumRemainingMaturityBlocks,
+    ]),
+  );
+  for (const value of [undefined, null, "", "0x00", HASH("g")]) {
+    const invalid = structuredClone(input);
+    if (value === undefined)
+      delete invalid.portfolio.mandate.requiredActionAdapterKind;
+    else invalid.portfolio.mandate.requiredActionAdapterKind = value;
+    assert.throws(
+      () => validateV3ExtensionConfig(invalid, manifests),
+      /requiredActionAdapterKind must be bytes32/,
+    );
+  }
+  for (const field of ["requiredReleaseId", "requiredPolicySetCommitment"]) {
+    const invalid = structuredClone(input);
+    invalid.portfolio.mandate[field] = HASH("0");
+    assert.throws(
+      () => validateV3ExtensionConfig(invalid, manifests),
+      /must be nonzero/,
+    );
+  }
 });
 
 test("checked-in V3 extension examples are valid JSON but remain explicitly unauthorized", () => {
@@ -1720,6 +1767,8 @@ test("portfolio qualification proves its immutable release evidence and adapter 
   });
   assert.equal(qualification.registryQualification.releaseExists, true);
   assert.equal(qualification.registryQualification.evidenceKindDeclared, true);
+  assert.equal(qualification.registryQualification.actionAdapterRequired, true);
+  assert.equal(qualification.registryQualification.actionAdapterCount, "1");
   assert.equal(qualification.registryQualification.actionAdapterMatched, true);
   assert.equal(
     qualification.prerequisiteCodeHashes.asset,
@@ -1794,6 +1843,161 @@ test("portfolio qualification proves its immutable release evidence and adapter 
         deploymentComplete: true,
       }),
     /pool token balance|initial token balance/,
+  );
+});
+
+test("zero-kind portfolio qualifies without adapters and preserves its final manifest", async () => {
+  const input = rawConfig("v3-portfolio-core-v1");
+  input.portfolio.mandate.requiredActionAdapterKind = HASH("0");
+  const config = validateV3ExtensionConfig(
+    input,
+    relevantManifests(input.generation),
+  );
+  const artifacts = loadedArtifacts(config);
+  const plan = await buildV3ExtensionDeploymentPlan({ config, artifacts });
+  const portfolio = { config, artifacts, plan };
+  for (const adapterPresent of [false, true]) {
+    const calls = [];
+    const qualification = await qualifyV3ExtensionDeployment({
+      ...portfolio,
+      provider: deploymentProvider(portfolio),
+      contractFactory: policyRegistryContractFactory(
+        config,
+        plan,
+        { adapterPresent, adapterKind: HASH("c") },
+        calls,
+      ),
+    });
+    assert.deepEqual(qualification.registryQualification, {
+      releaseId: config.portfolio.mandate.requiredReleaseId,
+      releaseExists: true,
+      evidenceKind: config.portfolio.mandate.requiredEvidenceKind,
+      evidenceKindDeclared: true,
+      requiredActionAdapterKind: HASH("0"),
+      actionAdapterCount: adapterPresent ? "1" : "0",
+      actionAdapterRequired: false,
+      actionAdapterMatched: false,
+    });
+    assert.deepEqual(calls.map(({ name }) => name), [
+      "packageRelease",
+      "declaresEvidenceKind",
+      "actionAdapterCount",
+    ]);
+  }
+  for (const [state, error] of [
+    [{ releaseExists: false }, /package release does not exist/],
+    [{ evidenceDeclared: false }, /evidence kind is not declared/],
+  ]) {
+    await assert.rejects(
+      () =>
+        qualifyV3ExtensionDeployment({
+          ...portfolio,
+          provider: deploymentProvider(portfolio),
+          contractFactory: policyRegistryContractFactory(config, plan, {
+            adapterPresent: false,
+            ...state,
+          }),
+        }),
+      error,
+    );
+  }
+  const provider = deploymentProvider({ ...portfolio, deployed: true });
+  const finalQualification = await qualifyV3ExtensionDeployment({
+    ...portfolio,
+    provider,
+    contractFactory: policyRegistryContractFactory(config, plan, {
+      adapterPresent: false,
+    }),
+    deploymentComplete: true,
+  });
+  assert.equal(
+    finalQualification.stateQualification.mandate.requiredActionAdapterKind,
+    HASH("0"),
+  );
+  await assert.rejects(
+    () =>
+      qualifyV3ExtensionDeployment({
+        ...portfolio,
+        provider,
+        contractFactory: policyRegistryContractFactory(
+          config,
+          plan,
+          { adapterPresent: false },
+          [],
+          {
+            [plan.predictedContracts.PortfolioMandateV1]: {
+              requiredActionAdapterKind: async () => HASH("c"),
+            },
+          },
+        ),
+        deploymentComplete: true,
+      }),
+    /mandate action-adapter kind mismatch/,
+  );
+  const executionPlan = await buildV3ExtensionLiveExecutionPlan({
+    config,
+    plan,
+    signer: {
+      getAddress: async () => config.deployer,
+      populateTransaction: async (request) => ({
+        ...request,
+        type: 2,
+        gasLimit: 120000n,
+        maxFeePerGas: 2n,
+        maxPriorityFeePerGas: 1n,
+      }),
+    },
+  });
+  const steps = executionPlan.steps.map((step, index) => ({
+    ...step,
+    status: "confirmed",
+    receipt: {
+      hash: HASH(String(index + 1)),
+      blockNumber: 550 + index,
+      blockHash: HASH("e"),
+      contractAddress: step.predictedContract,
+    },
+  }));
+  const canonicalTransactions = Object.fromEntries(
+    steps.map((step) => [
+      step.name,
+      { ...step.receipt, dataHash: step.dataHash, nonce: step.nonce },
+    ]),
+  );
+  const manifest = JSON.parse(
+    JSON.stringify(
+      buildV3ExtensionManifest({
+        config,
+        plan,
+        journal: {
+          steps,
+          executionPlan,
+          executionPlanCommitment: executionPlan.commitment,
+        },
+        finalQualification,
+        canonicalTransactions,
+        journalPath: "v3-extension-deployment.json.v3-extension-journal.json",
+      }),
+    ),
+  );
+  assert.equal(
+    validateV3ExtensionManifest({
+      manifest,
+      config,
+      plan,
+      finalQualification,
+      canonicalTransactions,
+    }),
+    manifest,
+  );
+  assert.equal(manifest.constructors.PortfolioMandateV1.values[7], HASH("0"));
+  assert.equal(
+    manifest.finalQualification.registryQualification.actionAdapterRequired,
+    false,
+  );
+  assert.equal(
+    manifest.finalQualification.registryQualification.actionAdapterMatched,
+    false,
   );
 });
 
