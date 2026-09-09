@@ -1,0 +1,60 @@
+{
+  "generation": "v3-portfolio-activation",
+  "chainId": 102031,
+  "assetSymbol": "rUSD",
+  "prerequisites": {
+    "portfolio": {
+      "path": "deployments-v3-portfolio-core-current.json",
+      "sha256": "26558df25346eb92f4bbdaf881d460821d97d1469bb3d2431b9d02708658bdf9"
+    },
+    "core": {
+      "path": "deployments-v3-current.json",
+      "sha256": "150e7a2b8674243a03d4d7f6b5660dbae7b4840117f4755a10d775c53f2bb9fa"
+    },
+    "activation": {
+      "path": "activation-v3-current.json",
+      "sha256": "242cad8b741998aed8333875c672648bb36b98106476a75e92635e71dc5bd17a"
+    }
+  },
+  "roles": {
+    "manager": "0xB9262d47B4d6d569A7C5230B3BF7De1080dD6e49",
+    "issuer": "0xB9262d47B4d6d569A7C5230B3BF7De1080dD6e49",
+    "investor": "0x3d97e8eB57CBf459e22965162B5DEc182862e312",
+    "borrower": "0x1aBE54FE9aDB691Df093F1d3711ec3D5fCd99F1D"
+  },
+  "signerEnvironment": {
+    "manager": "DEPLOYER_PRIVATE_KEY",
+    "issuer": "DEPLOYER_PRIVATE_KEY",
+    "investor": "LENDER_PRIVATE_KEY",
+    "borrower": "BORROWER_PRIVATE_KEY"
+  },
+  "facility": {
+    "facilityLimit": "100000000000",
+    "bondRequired": "20000000000",
+    "drawFeeBps": 200,
+    "maturityBlockOffset": 80000,
+    "drawDelayBlocks": 10
+  },
+  "qualificationBlock": {
+    "number": 5460044,
+    "hash": "0xb9c4db8181330369caccce2ecf3980f77974e053b1ea0b2f5e7ab9f3cf592b47",
+    "timestamp": 1788991350
+  },
+  "expectedStartingNonces": {
+    "manager": 46,
+    "issuer": 46,
+    "investor": 22,
+    "borrower": 20
+  },
+  "transactionPolicy": {
+    "targetConfirmations": 6,
+    "maximumReceiptPolls": 24,
+    "feePolicy": {
+      "transactionType": "eip1559",
+      "maximumGasLimit": "6000000",
+      "maximumFeePerGas": "10000000000",
+      "maximumPriorityFeePerGas": "1000000000"
+    },
+    "maximumTotalFeeWei": "780000000000000000"
+  }
+}
