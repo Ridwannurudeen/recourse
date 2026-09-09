@@ -2760,11 +2760,30 @@ export function validateUscRemedyApproval({
   if (
     issuedAt !==
     integer(
-      liveQualification?.source?.blockTimestamp,
-      "live qualification source block timestamp",
+      approval.sourceAnchor?.blockTimestamp,
+      "approved qualification source block timestamp",
     )
   ) {
     throw new Error("Approved USC remedy qualification timestamp changed");
+  }
+  for (const network of ["source", "destination"]) {
+    const anchor = approval[`${network}Anchor`];
+    const fresh = liveQualification[network];
+    if (
+      integer(fresh?.blockTimestamp, `live ${network} block timestamp`) <
+      integer(anchor?.blockTimestamp, `approved ${network} block timestamp`)
+    ) {
+      throw new Error("Approved USC remedy qualification timestamp changed");
+    }
+    if (
+      integer(fresh?.blockNumber, `live ${network} block number`) <
+        integer(anchor?.blockNumber, `approved ${network} block number`) ||
+      (fresh.blockNumber === anchor.blockNumber &&
+        (fresh.blockHash !== anchor.blockHash ||
+          fresh.blockTimestamp !== anchor.blockTimestamp))
+    ) {
+      throw new Error("Approved USC remedy qualification changed");
+    }
   }
   if (
     validUntil !== issuedAt + USC_PLAN_VALIDITY_SECONDS ||
@@ -2780,7 +2799,14 @@ export function validateUscRemedyApproval({
       approval.destinationAnchor?.pendingNonce !==
         qualification.destination.pendingNonce ||
       JSON.stringify(approval.dependencies) !==
-        JSON.stringify(qualification.dependencies)
+        JSON.stringify(qualification.dependencies) ||
+      (!journal &&
+        (approval.sourceAnchor?.pendingNonce !==
+          liveQualification.source.pendingNonce ||
+          approval.destinationAnchor?.pendingNonce !==
+            liveQualification.destination.pendingNonce ||
+          JSON.stringify(approval.dependencies) !==
+            JSON.stringify(liveQualification.dependencies)))
     ) {
       throw new Error("Approved USC remedy live dependencies changed");
     }

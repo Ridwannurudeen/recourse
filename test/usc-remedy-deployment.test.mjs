@@ -1509,6 +1509,198 @@ test("live qualification binds bytecode, APIs, constructor evidence, fees, nonce
   );
 });
 
+for (const scenario of [
+  { name: "accepts later source and destination blocks", changes: {} },
+  ...["source", "destination"].flatMap((network) => [
+    {
+      name: `rejects an earlier ${network} block`,
+      network,
+      changes: { blockNumber: network === "source" ? 99 : 199 },
+      error: /qualification/,
+    },
+    {
+      name: `rejects an earlier ${network} timestamp`,
+      network,
+      changes: { blockTimestamp: 999 },
+      error: /qualification timestamp/,
+    },
+    {
+      name: `rejects a different ${network} hash at the anchor height`,
+      network,
+      changes: { blockNumber: network === "source" ? 100 : 200 },
+      error: /qualification/,
+    },
+    {
+      name: `rejects a different ${network} timestamp at the anchor height`,
+      network,
+      changes: {
+        blockNumber: network === "source" ? 100 : 200,
+        blockHash: HASH(network === "source" ? "c" : "d"),
+      },
+      error: /qualification/,
+    },
+    {
+      name: `rejects a changed ${network} pending nonce`,
+      network,
+      changes: { pendingNonce: 20 },
+      error: /dependencies changed/,
+    },
+    {
+      name: `rejects a changed fresh ${network} nonce with an old qualification`,
+      network,
+      changes: { pendingNonce: 20 },
+      originalQualification: true,
+      error: /dependencies changed/,
+    },
+    {
+      name: `rejects a changed ${network} chain identity`,
+      network,
+      changes: { chainId: 999 },
+      error: /security qualification changed/,
+    },
+  ]),
+  {
+    name: "rejects a changed source commit",
+    changes: { sourceCommit: "2".repeat(40) },
+    error: /security qualification changed/,
+  },
+  {
+    name: "rejects a dirty deployable scope",
+    changes: { deployableScopeClean: false },
+    error: /security qualification changed/,
+  },
+  {
+    name: "rejects a changed dependency hash",
+    changes: { dependencies: { outbox: HASH("f") } },
+    error: /security qualification changed/,
+  },
+  {
+    name: "rejects a fresh timestamp after expiry",
+    network: "source",
+    changes: { blockTimestamp: 2_801 },
+    error: /expired/,
+  },
+  {
+    name: "accepts journal progress at later blocks",
+    changes: {},
+    journal: true,
+  },
+  {
+    name: "accepts journal-bound renewal at later blocks",
+    changes: {},
+    journal: true,
+    renewal: true,
+  },
+  {
+    name: "rejects an issue time detached from its anchor",
+    changes: {},
+    detachedIssueTime: true,
+    error: /qualification timestamp/,
+  },
+  {
+    name: "rejects a changed deployer plan",
+    changes: {},
+    changedDeployer: true,
+    error: /does not match this deployment/,
+  },
+  ...USC_REMEDY_ARTIFACTS.map((artifactName) => ({
+    name: `rejects a changed ${artifactName} artifact plan`,
+    changes: {},
+    artifactName,
+    error: /does not match this deployment/,
+  })),
+]) {
+  test(`USC approval ${scenario.name}`, async () => {
+    const config = validateUscRemedyDeploymentConfig(input());
+    const plan = await buildUscRemedyDeploymentPlan({
+      config,
+      artifacts: artifacts(),
+    });
+    const qualification = await qualifyUscRemedyDependencies({
+      config,
+      plan,
+      ...restartQualificationInputs(config, plan, { transportDeployed: false }),
+    });
+    qualification.sourceCommit = "1".repeat(40);
+    qualification.deployableScopeClean = true;
+    const executionPlan = await liveExecutionPlan(config, plan);
+    const journal = scenario.journal
+      ? {
+          configCommitment: plan.configCommitment,
+          planCommitment: plan.planCommitment,
+          predictedContracts: plan.predictedContracts,
+          transactionPlan: plan.steps,
+          executionPlan,
+          qualification: structuredClone(qualification),
+          steps: executionPlan.steps.map((step) => ({
+            ...step,
+            status: "planned",
+          })),
+        }
+      : undefined;
+    const approval = createUscRemedyApproval({
+      config,
+      plan,
+      qualification,
+      executionPlan,
+      now: qualification.source.blockTimestamp,
+      journal: scenario.renewal ? journal : undefined,
+    });
+    const fresh = structuredClone(qualification);
+    for (const network of ["source", "destination"]) {
+      fresh[network].blockNumber += 1;
+      fresh[network].blockHash = HASH("b");
+      fresh[network].blockTimestamp += 15;
+    }
+    Object.assign(
+      scenario.network ? fresh[scenario.network] : fresh,
+      scenario.changes,
+    );
+    if (scenario.journal) {
+      fresh.source.pendingNonce += 1;
+      fresh.dependencies.plannedRoute.transport = CODE_HASH;
+      fresh.dedicatedInbox.status = "partially-deployed";
+      journal.steps[0].status = "confirmed";
+    }
+    if (scenario.detachedIssueTime) {
+      approval.issuedAt += 15;
+      approval.validUntil += 15;
+      approval.approvalCommitment = uscRemedyApprovalCommitment(approval);
+    }
+    let currentPlan = plan;
+    if (scenario.changedDeployer || scenario.artifactName) {
+      const changedConfig = structuredClone(config);
+      const changedArtifacts = artifacts();
+      if (scenario.changedDeployer) {
+        changedConfig.source.deployer = ADDRESS("d03");
+      }
+      if (scenario.artifactName) {
+        changedArtifacts[scenario.artifactName].hash = HASH("f");
+      }
+      currentPlan = await buildUscRemedyDeploymentPlan({
+        config: changedConfig,
+        artifacts: changedArtifacts,
+      });
+    }
+    const validate = () =>
+      validateUscRemedyApproval({
+        approval,
+        expectedApprovalCommitment: approval.approvalCommitment,
+        config,
+        plan: currentPlan,
+        qualification:
+          scenario.originalQualification || scenario.journal
+            ? qualification
+            : fresh,
+        liveQualification: fresh,
+        now: fresh.source.blockTimestamp,
+        journal,
+      });
+    if (scenario.error) assert.throws(validate, scenario.error);
+    else assert.equal(validate(), approval);
+  });
+}
+
 test("signed USC deployment transactions cannot substitute calldata, nonce, signer, chain, gas, or fees", async () => {
   const wallet = Wallet.createRandom();
   const step = {

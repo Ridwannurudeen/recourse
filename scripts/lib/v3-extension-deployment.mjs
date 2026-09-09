@@ -1684,8 +1684,8 @@ export function validateV3ExtensionApproval({
   if (
     issuedAt !==
     integer(
-      liveQualification?.blockTimestamp,
-      "live qualification block timestamp",
+      approval.qualification?.blockTimestamp,
+      "approved qualification block timestamp",
     )
   ) {
     throw new Error("approved extension qualification timestamp changed");
@@ -1697,13 +1697,43 @@ export function validateV3ExtensionApproval({
   ) {
     throw new Error("approved extension plan has expired");
   }
+  const anchor = approval.qualification;
+  const liveBlockNumber = integer(
+    liveQualification.blockNumber,
+    "live qualification block number",
+  );
+  const liveBlockTimestamp = integer(
+    liveQualification.blockTimestamp,
+    "live qualification block timestamp",
+  );
+  if (
+    liveBlockNumber < anchor.blockNumber ||
+    liveBlockTimestamp < anchor.blockTimestamp ||
+    (liveBlockNumber === anchor.blockNumber &&
+      (liveQualification.blockHash !== anchor.blockHash ||
+        liveBlockTimestamp !== anchor.blockTimestamp))
+  ) {
+    throw new Error("approved extension qualification changed");
+  }
   if (approval.renewal) {
     if (!journal) throw new Error("extension renewal requires its journal");
     validateRenewalBinding(approval.renewal, journal);
-  } else if (
-    canonicalText(approval.qualification) !== canonicalText(qualification)
-  ) {
-    throw new Error("approved extension live qualification changed");
+  } else {
+    const currentQualification = journal
+      ? qualification
+      : {
+          ...liveQualification,
+          blockNumber: anchor.blockNumber,
+          blockHash: anchor.blockHash,
+          blockTimestamp: anchor.blockTimestamp,
+        };
+    if (
+      canonicalText(anchor) !== canonicalText(currentQualification) ||
+      (journal &&
+        canonicalText(anchor) !== canonicalText(journal.qualification))
+    ) {
+      throw new Error("approved extension live qualification changed");
+    }
   }
   return approval;
 }

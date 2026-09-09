@@ -969,6 +969,130 @@ test("V3 deployment approval expires and binds the chain anchor, source commit, 
   }
 });
 
+test("V3 deployment approval accepts a later block through the validity boundary", async () => {
+  const fixture = await deploymentFixture();
+  for (const blockTimestamp of [1_015, fixture.approval.validUntil]) {
+    const qualification = {
+      ...fixture.qualification,
+      blockNumber: 501,
+      blockHash: HASH("b"),
+      blockTimestamp,
+    };
+    assert.equal(
+      validateV3DeploymentApproval({
+        ...fixture,
+        expectedApprovalCommitment: fixture.approval.approvalCommitment,
+        qualification,
+        now: blockTimestamp,
+      }),
+      fixture.approval,
+    );
+  }
+});
+
+test("V3 deployment approval rejects earlier blocks and changed same-height anchors", async () => {
+  const fixture = await deploymentFixture();
+  for (const qualification of [
+    { ...fixture.qualification, blockNumber: 499, blockTimestamp: 1_015 },
+    { ...fixture.qualification, blockNumber: 501, blockTimestamp: 999 },
+    { ...fixture.qualification, blockHash: HASH("b") },
+    { ...fixture.qualification, blockTimestamp: 1_015 },
+  ]) {
+    assert.throws(
+      () =>
+        validateV3DeploymentApproval({
+          ...fixture,
+          expectedApprovalCommitment: fixture.approval.approvalCommitment,
+          qualification,
+          now: 1_015,
+        }),
+      /qualification (changed|timestamp changed)/,
+    );
+  }
+});
+
+test("V3 deployment approval rejects invariant changes at a later block", async () => {
+  const fixture = await deploymentFixture();
+  for (const changed of [
+    { chainId: fixture.qualification.chainId + 1 },
+    { pendingNonce: STARTING_NONCE + 1 },
+    { deployer: ADDRESS("bad") },
+    { sourceCommit: "b".repeat(40) },
+    ...CORE_ARTIFACT_NAMES.map((name) => ({
+      artifactHashes: {
+        ...fixture.qualification.artifactHashes,
+        [name]: HASH("f"),
+      },
+    })),
+    { deployableScopeClean: false },
+  ]) {
+    assert.throws(
+      () =>
+        validateV3DeploymentApproval({
+          ...fixture,
+          expectedApprovalCommitment: fixture.approval.approvalCommitment,
+          qualification: {
+            ...fixture.qualification,
+            blockNumber: 501,
+            blockHash: HASH("b"),
+            blockTimestamp: 1_015,
+            ...changed,
+          },
+          now: 1_015,
+        }),
+      /Approved V3 deployment qualification changed|scope must be clean/,
+    );
+  }
+});
+
+test("V3 deployment approval rejects a fresh block after expiry", async () => {
+  const fixture = await deploymentFixture();
+  const qualification = {
+    ...fixture.qualification,
+    blockNumber: 501,
+    blockHash: HASH("b"),
+    blockTimestamp: fixture.approval.validUntil + 1,
+  };
+  assert.throws(
+    () =>
+      validateV3DeploymentApproval({
+        ...fixture,
+        expectedApprovalCommitment: fixture.approval.approvalCommitment,
+        qualification,
+        now: qualification.blockTimestamp,
+      }),
+    /Approved V3 deployment plan has expired/,
+  );
+});
+
+test("V3 deployment approval at a later block preserves the original journal qualification", async () => {
+  const fixture = await deploymentFixture();
+  const qualification = {
+    ...fixture.qualification,
+    blockNumber: 501,
+    blockHash: HASH("b"),
+    blockTimestamp: 1_015,
+  };
+  const options = {
+    ...fixture,
+    expectedApprovalCommitment: fixture.approval.approvalCommitment,
+    qualification,
+    now: qualification.blockTimestamp,
+  };
+  assert.equal(
+    validateV3DeploymentApproval({
+      ...options,
+      journal: { qualification: fixture.qualification },
+    }),
+    fixture.approval,
+  );
+  assert.throws(
+    () =>
+      validateV3DeploymentApproval({ ...options, journal: { qualification } }),
+    /Partial V3 deployment approval does not match its original qualification/,
+  );
+});
+
 test("V3 live qualification requires the reviewed clean commit, exact nonce, empty predicted addresses, and a canonical anchor", async () => {
   const fixture = await deploymentFixture();
   const provider = {
@@ -1354,6 +1478,24 @@ test("an expired partial V3 deployment requires renewal bound to the exact journ
       plan: fixture.plan,
       qualification: newQualification,
       now: renewedApproval.issuedAt + 1,
+      journal,
+    }),
+    renewedApproval,
+  );
+  const laterQualification = {
+    ...newQualification,
+    blockNumber: newQualification.blockNumber + 1,
+    blockHash: HASH("3"),
+    blockTimestamp: newQualification.blockTimestamp + 15,
+  };
+  assert.equal(
+    validateV3DeploymentApproval({
+      approval: renewedApproval,
+      expectedApprovalCommitment: renewedApproval.approvalCommitment,
+      config: fixture.config,
+      plan: fixture.plan,
+      qualification: laterQualification,
+      now: laterQualification.blockTimestamp,
       journal,
     }),
     renewedApproval,

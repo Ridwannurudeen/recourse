@@ -1246,6 +1246,138 @@ test("human approval binds the prerequisite, plan, fees, and qualification and t
   );
 });
 
+test("extension approval accepts a later live block with identical nonvolatile qualification", async () => {
+  for (const generation of GENERATIONS) {
+    const { config, plan, qualification, approval } =
+      await liveFixture(generation);
+    const fresh = {
+      ...qualification,
+      blockNumber: qualification.blockNumber + 1,
+      blockHash: HASH("f"),
+      blockTimestamp: qualification.blockTimestamp + 15,
+    };
+    assert.equal(
+      validateV3ExtensionApproval({
+        approval,
+        expectedApprovalCommitment: approval.approvalCommitment,
+        config,
+        plan,
+        qualification: fresh,
+        now: fresh.blockTimestamp,
+      }),
+      approval,
+    );
+  }
+});
+
+test("extension approval rejects earlier live anchors and same-height replacement blocks", async () => {
+  const { config, plan, qualification, approval } = await liveFixture();
+  for (const changed of [
+    { blockNumber: qualification.blockNumber - 1 },
+    {
+      blockNumber: qualification.blockNumber + 1,
+      blockTimestamp: qualification.blockTimestamp - 1,
+    },
+    { blockHash: HASH("f") },
+    { blockTimestamp: qualification.blockTimestamp + 1 },
+  ]) {
+    assert.throws(
+      () =>
+        validateV3ExtensionApproval({
+          approval,
+          expectedApprovalCommitment: approval.approvalCommitment,
+          config,
+          plan,
+          qualification,
+          liveQualification: { ...qualification, ...changed },
+          now: qualification.blockTimestamp,
+        }),
+      /qualification.*changed/,
+    );
+  }
+});
+
+test("extension approval rejects changed nonvolatile live fields at a later block", async () => {
+  const fixture = await liveFixture("v3-portfolio-core-v1");
+  const { config, plan, executionPlan } = fixture;
+  const qualification = {
+    ...fixture.qualification,
+    sourceCommit: "a".repeat(40),
+    deployableScopeClean: true,
+  };
+  const approval = createV3ExtensionApproval({
+    config,
+    plan,
+    qualification,
+    executionPlan,
+    now: qualification.blockTimestamp,
+  });
+  for (const changed of [
+    { chainId: qualification.chainId + 1 },
+    { pendingNonce: qualification.pendingNonce + 1 },
+    { deployer: ADDRESS("bad1") },
+    { sourceCommit: "b".repeat(40) },
+    ...Object.keys(qualification.artifactHashes).map((name) => ({
+      artifactHashes: {
+        ...qualification.artifactHashes,
+        [name]: HASH("f"),
+      },
+    })),
+    { deployableScopeClean: false },
+    { nativeBalance: "1" },
+    { predictedCodeHashes: { ClosedLoopPolicyV1: HASH("e") } },
+    {
+      prerequisiteCodeHashes: {
+        ...qualification.prerequisiteCodeHashes,
+        policyKernel: HASH("e"),
+      },
+    },
+  ]) {
+    const fresh = {
+      ...qualification,
+      blockNumber: qualification.blockNumber + 1,
+      blockHash: HASH("f"),
+      blockTimestamp: qualification.blockTimestamp + 15,
+      ...changed,
+    };
+    assert.throws(
+      () =>
+        validateV3ExtensionApproval({
+          approval,
+          expectedApprovalCommitment: approval.approvalCommitment,
+          config,
+          plan,
+          qualification,
+          liveQualification: fresh,
+          now: fresh.blockTimestamp,
+        }),
+      /qualification.*changed/,
+    );
+  }
+});
+
+test("extension approval still expires at a later live block", async () => {
+  const { config, plan, qualification, approval } = await liveFixture();
+  const fresh = {
+    ...qualification,
+    blockNumber: qualification.blockNumber + 1,
+    blockHash: HASH("f"),
+    blockTimestamp: approval.validUntil + 1,
+  };
+  assert.throws(
+    () =>
+      validateV3ExtensionApproval({
+        approval,
+        expectedApprovalCommitment: approval.approvalCommitment,
+        config,
+        plan,
+        qualification: fresh,
+        now: fresh.blockTimestamp,
+      }),
+    /approved extension plan has expired/,
+  );
+});
+
 test("expired partial extension approval renews only for the exact journal checkpoint", async () => {
   const directory = mkdtempSync(
     join(tmpdir(), "recourse-v3-extension-renewal-"),
@@ -1261,6 +1393,39 @@ test("expired partial extension approval renews only for the exact journal check
       qualification,
       approval,
     });
+    const laterQualification = {
+      ...qualification,
+      blockNumber: qualification.blockNumber + 1,
+      blockHash: HASH("f"),
+      blockTimestamp: qualification.blockTimestamp + 15,
+    };
+    assert.equal(
+      validateV3ExtensionApproval({
+        approval,
+        expectedApprovalCommitment: approval.approvalCommitment,
+        config,
+        plan,
+        qualification,
+        liveQualification: laterQualification,
+        now: laterQualification.blockTimestamp,
+        journal,
+      }),
+      approval,
+    );
+    assert.throws(
+      () =>
+        validateV3ExtensionApproval({
+          approval,
+          expectedApprovalCommitment: approval.approvalCommitment,
+          config,
+          plan,
+          qualification,
+          liveQualification: laterQualification,
+          now: laterQualification.blockTimestamp,
+          journal: { ...journal, qualification: laterQualification },
+        }),
+      /qualification.*changed/,
+    );
     journal = await prepareV3ExtensionStep({
       journal,
       journalPath: path,
@@ -1333,6 +1498,26 @@ test("expired partial extension approval renews only for the exact journal check
         plan,
         qualification: renewedQualification,
         now: renewedApproval.issuedAt + 1,
+        journal,
+      }),
+      renewedApproval,
+    );
+    const laterRenewalQualification = {
+      ...renewedQualification,
+      blockNumber: renewedQualification.blockNumber + 1,
+      blockHash: HASH("9"),
+      blockTimestamp: renewedQualification.blockTimestamp + 15,
+      pendingNonce: renewedQualification.pendingNonce + 1,
+    };
+    assert.equal(
+      validateV3ExtensionApproval({
+        approval: renewedApproval,
+        expectedApprovalCommitment: renewedApproval.approvalCommitment,
+        config,
+        plan,
+        qualification: renewedQualification,
+        liveQualification: laterRenewalQualification,
+        now: laterRenewalQualification.blockTimestamp,
         journal,
       }),
       renewedApproval,

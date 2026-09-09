@@ -1138,12 +1138,26 @@ export function validateV3DeploymentApproval({
     throw new Error("Approved V3 deployment plan has expired");
   }
   const currentQualification = normalizeQualification(qualification);
-  if (issuedAt !== currentQualification.blockTimestamp) {
+  const approvedQualification = normalizeQualification(approval.qualification);
+  if (
+    issuedAt !== approvedQualification.blockTimestamp ||
+    currentQualification.blockTimestamp < approvedQualification.blockTimestamp
+  ) {
     throw new Error("Approved V3 deployment qualification timestamp changed");
   }
   if (
+    currentQualification.blockNumber < approvedQualification.blockNumber ||
+    (currentQualification.blockNumber === approvedQualification.blockNumber &&
+      (currentQualification.blockHash !== approvedQualification.blockHash ||
+        currentQualification.blockTimestamp !==
+          approvedQualification.blockTimestamp)) ||
     canonicalText(approval.qualification) !==
-    canonicalText(currentQualification)
+      canonicalText({
+        ...currentQualification,
+        blockNumber: approvedQualification.blockNumber,
+        blockHash: approvedQualification.blockHash,
+        blockTimestamp: approvedQualification.blockTimestamp,
+      })
   ) {
     throw new Error("Approved V3 deployment qualification changed");
   }
