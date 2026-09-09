@@ -1,0 +1,60 @@
+{
+  "generation": "v3-portfolio-activation",
+  "chainId": 102031,
+  "assetSymbol": "rUSD",
+  "prerequisites": {
+    "portfolio": {
+      "path": "REPLACE_WITH_COMMITTED_MANIFEST_PATH",
+      "sha256": "REPLACE_WITH_LOWERCASE_SHA256"
+    },
+    "core": {
+      "path": "REPLACE_WITH_COMMITTED_MANIFEST_PATH",
+      "sha256": "REPLACE_WITH_LOWERCASE_SHA256"
+    },
+    "activation": {
+      "path": "REPLACE_WITH_COMMITTED_MANIFEST_PATH",
+      "sha256": "REPLACE_WITH_LOWERCASE_SHA256"
+    }
+  },
+  "roles": {
+    "manager": "REPLACE_WITH_MANAGER_ADDRESS",
+    "issuer": "REPLACE_WITH_ISSUER_ADDRESS",
+    "investor": "REPLACE_WITH_INVESTOR_ADDRESS",
+    "borrower": "REPLACE_WITH_BORROWER_ADDRESS"
+  },
+  "signerEnvironment": {
+    "manager": "DEPLOYER_PRIVATE_KEY",
+    "issuer": "DEPLOYER_PRIVATE_KEY",
+    "investor": "LENDER_PRIVATE_KEY",
+    "borrower": "BORROWER_PRIVATE_KEY"
+  },
+  "facility": {
+    "facilityLimit": "100000000000",
+    "bondRequired": "20000000000",
+    "drawFeeBps": 200,
+    "maturityBlockOffset": 80000,
+    "drawDelayBlocks": 10
+  },
+  "qualificationBlock": {
+    "number": "REPLACE_WITH_QUALIFICATION_BLOCK",
+    "hash": "REPLACE_WITH_BLOCK_HASH",
+    "timestamp": "REPLACE_WITH_BLOCK_TIMESTAMP"
+  },
+  "expectedStartingNonces": {
+    "manager": "REPLACE_WITH_PENDING_NONCE",
+    "issuer": "REPLACE_WITH_PENDING_NONCE",
+    "investor": "REPLACE_WITH_PENDING_NONCE",
+    "borrower": "REPLACE_WITH_PENDING_NONCE"
+  },
+  "transactionPolicy": {
+    "targetConfirmations": 6,
+    "maximumReceiptPolls": 24,
+    "feePolicy": {
+      "transactionType": "eip1559",
+      "maximumGasLimit": "6000000",
+      "maximumFeePerGas": "10000000000",
+      "maximumPriorityFeePerGas": "1000000000"
+    },
+    "maximumTotalFeeWei": "780000000000000000"
+  }
+}
