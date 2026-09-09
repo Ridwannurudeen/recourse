@@ -10,7 +10,7 @@
   "artifacts": {
     "OperatorServiceVerifierV1": {
       "path": "out/OperatorServiceVerifierV1.sol/OperatorServiceVerifierV1.json",
-      "keccak256": "0x14d1d5875f8a580c46c3cf289226f800ffb1d4290081a81c891d6263df2a5152"
+      "keccak256": "0xb70ae0b59cc3671f1638d8f8132e8d845743e973c68d1ccf8199f727ed08bb59"
     }
   },
   "transactionPolicy": {

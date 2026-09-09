@@ -15,7 +15,7 @@
   "artifacts": {
     "PortfolioPoolV1": {
       "path": "out/PortfolioPoolV1.sol/PortfolioPoolV1.json",
-      "keccak256": "0xe91bdedfbbb8434c4d8915868111f1865f9d48093952c1a52a2d6b0ede8e2ec5"
+      "keccak256": "0xa5359a4fe0e691cecec0510c9bc7c02fcb681657b976b9bb80a9b58febf7964e"
     },
     "CappedPilotFactoryV1": {
       "path": "out/CappedPilotFactoryV1.sol/CappedPilotFactoryV1.json",
@@ -23,7 +23,7 @@
     },
     "PortfolioMandateV1": {
       "path": "out/PortfolioMandateV1.sol/PortfolioMandateV1.json",
-      "keccak256": "0xa910b9ee590b37b4c82ccc43646f262850a21a25ffa95ebb2dd42181946c696b"
+      "keccak256": "0x9202a8b931973e91bfb323f45f53b03bb19dd8f5e44995d4c13ebc2e1be169aa"
     }
   },
   "transactionPolicy": {

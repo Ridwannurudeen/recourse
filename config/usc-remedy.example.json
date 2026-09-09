@@ -96,11 +96,11 @@
   "artifacts": {
     "UscRemedyTransportV1": {
       "path": "out/UscRemedyTransportV1.sol/UscRemedyTransportV1.json",
-      "keccak256": "0xb2d99b7d90f5effd4f189ee66e5808c8fb691fa51a7d0b82a12b6c83611df3cd"
+      "keccak256": "0xa1f31dbe74faded55bfab683117349ecb20df8357a971e6089d6a5320ea5a7fa"
     },
     "RemedyCoordinatorV1": {
       "path": "out/RemedyCoordinatorV1.sol/RemedyCoordinatorV1.json",
-      "keccak256": "0x220f66dadbceb12dce58d9abeb644d9d7dc55dc08c6f3626d6cbcf8f82b123c3"
+      "keccak256": "0x42efd3db309e362f11294032b00762110c70d78bc53cd2126fae96f3a96c707c"
     },
     "BoundedRemedyReceiverV1": {
       "path": "out/BoundedRemedyReceiverV1.sol/BoundedRemedyReceiverV1.json",
@@ -108,7 +108,7 @@
     },
     "UscRemedyDispatcherV1": {
       "path": "out/UscRemedyDispatcherV1.sol/UscRemedyDispatcherV1.json",
-      "keccak256": "0x99f4275f1f5ee27aafab4480f0594288102e032a9fec1ba1c64d0f5a3819f14b"
+      "keccak256": "0xb7c0569bc39ee4e74131980809ff46e966aa5054c1e7974df60ae373596cf33b"
     },
     "Inbox020": {
       "path": "out-usc-contracts-020/Inbox.sol/Inbox.json",
