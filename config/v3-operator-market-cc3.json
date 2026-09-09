@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "generation": "v3-operator-market-v1",
+  "chainId": 102031,
+  "deployer": "0xB9262d47B4d6d569A7C5230B3BF7De1080dD6e49",
+  "rpcUrlEnvironment": "CREDITCOIN_RPC_URL",
+  "privateKeyEnvironment": "DEPLOYER_PRIVATE_KEY",
+  "expectedStartingNonce": 41,
+  "prerequisites": {
+    "verifier": {
+      "path": "deployments-v3-operator-service-verifier-current.json",
+      "sha256": "REPLACE_AFTER_VERIFIER_DEPLOYMENT"
+    }
+  },
+  "artifacts": {
+    "OperatorMarketV1": {
+      "path": "out/OperatorMarketV1.sol/OperatorMarketV1.json",
+      "keccak256": "0x5a81d7de0cc23ed0ff7ad76d457cd896ee0b8d524285fedad44f11b2b9ce626f"
+    }
+  },
+  "transactionPolicy": {
+    "targetConfirmations": 6,
+    "maximumReceiptPolls": 24,
+    "feePolicy": {
+      "transactionType": "eip1559",
+      "maximumGasLimit": "6000000",
+      "maximumFeePerGas": "10000000000",
+      "maximumPriorityFeePerGas": "1000000000",
+      "maximumTotalFeeWei": "60000000000000000"
+    }
+  },
+  "requirements": {
+    "minimumNativeWei": "1000000000000000000"
+  },
+  "asset": {
+    "address": "0x3c6eF93E1d2C539c5EFefbBc51cc6a1E120fBf77",
+    "decimals": 6,
+    "runtimeCodeKeccak256": "0x23976c8c4fef63370932534050ef40c4bb55578b1abfc7a5ca2aee530958fc1a"
+  },
+  "operatorMarket": {
+    "token": "0x3c6eF93E1d2C539c5EFefbBc51cc6a1E120fBf77",
+    "verifier": "REPLACE_AFTER_VERIFIER_DEPLOYMENT",
+    "minimumOperatorBond": "100000000",
+    "maximumQuoteDuration": 86400,
+    "maximumServiceDuration": 172800
+  }
+}

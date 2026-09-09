@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "generation": "operator-service-verifier-v1",
+  "chainId": 102031,
+  "deployer": "0xB9262d47B4d6d569A7C5230B3BF7De1080dD6e49",
+  "rpcUrlEnvironment": "CREDITCOIN_RPC_URL",
+  "privateKeyEnvironment": "DEPLOYER_PRIVATE_KEY",
+  "expectedStartingNonce": 40,
+  "prerequisites": {},
+  "artifacts": {
+    "OperatorServiceVerifierV1": {
+      "path": "out/OperatorServiceVerifierV1.sol/OperatorServiceVerifierV1.json",
+      "keccak256": "0xb70ae0b59cc3671f1638d8f8132e8d845743e973c68d1ccf8199f727ed08bb59"
+    }
+  },
+  "transactionPolicy": {
+    "targetConfirmations": 6,
+    "maximumReceiptPolls": 24,
+    "feePolicy": {
+      "transactionType": "eip1559",
+      "maximumGasLimit": "6000000",
+      "maximumFeePerGas": "10000000000",
+      "maximumPriorityFeePerGas": "1000000000",
+      "maximumTotalFeeWei": "60000000000000000"
+    }
+  },
+  "requirements": {
+    "minimumNativeWei": "1000000000000000000"
+  },
+  "operatorServiceVerifier": {
+    "attestor": "0xeCf1BeeF05450f1E2A2adAb86b61ccC2D6235369"
+  }
+}

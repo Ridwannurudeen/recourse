@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 1,
+  "generation": "v3-portfolio-core-v1",
+  "chainId": 102031,
+  "deployer": "0xB9262d47B4d6d569A7C5230B3BF7De1080dD6e49",
+  "rpcUrlEnvironment": "CREDITCOIN_RPC_URL",
+  "privateKeyEnvironment": "DEPLOYER_PRIVATE_KEY",
+  "expectedStartingNonce": 42,
+  "prerequisites": {
+    "core": {
+      "path": "deployments-v3-current.json",
+      "sha256": "150e7a2b8674243a03d4d7f6b5660dbae7b4840117f4755a10d775c53f2bb9fa"
+    }
+  },
+  "artifacts": {
+    "PortfolioPoolV1": {
+      "path": "out/PortfolioPoolV1.sol/PortfolioPoolV1.json",
+      "keccak256": "0xa5359a4fe0e691cecec0510c9bc7c02fcb681657b976b9bb80a9b58febf7964e"
+    },
+    "CappedPilotFactoryV1": {
+      "path": "out/CappedPilotFactoryV1.sol/CappedPilotFactoryV1.json",
+      "keccak256": "0x06c91f836e88a96dfe861ca2e14fa268db7cd87f9758a4788365c08d7c40c41b"
+    },
+    "PortfolioMandateV1": {
+      "path": "out/PortfolioMandateV1.sol/PortfolioMandateV1.json",
+      "keccak256": "0x9202a8b931973e91bfb323f45f53b03bb19dd8f5e44995d4c13ebc2e1be169aa"
+    }
+  },
+  "transactionPolicy": {
+    "targetConfirmations": 6,
+    "maximumReceiptPolls": 24,
+    "feePolicy": {
+      "transactionType": "eip1559",
+      "maximumGasLimit": "6000000",
+      "maximumFeePerGas": "10000000000",
+      "maximumPriorityFeePerGas": "1000000000",
+      "maximumTotalFeeWei": "240000000000000000"
+    }
+  },
+  "requirements": {
+    "minimumNativeWei": "1000000000000000000"
+  },
+  "asset": {
+    "address": "0x3c6eF93E1d2C539c5EFefbBc51cc6a1E120fBf77",
+    "decimals": 6,
+    "runtimeCodeKeccak256": "0x23976c8c4fef63370932534050ef40c4bb55578b1abfc7a5ca2aee530958fc1a"
+  },
+  "roles": {
+    "manager": "0xB9262d47B4d6d569A7C5230B3BF7De1080dD6e49",
+    "borrower": "0x1aBE54FE9aDB691Df093F1d3711ec3D5fCd99F1D",
+    "guardian": "0xa61B1518691dF7655226fF944b6f3Eade4E4B228"
+  },
+  "portfolio": {
+    "pool": {
+      "maximumPoolAssets": "300000000000",
+      "maximumServiceBudget": "10000000000",
+      "maximumServiceJobDuration": 86400,
+      "maximumFacilityCount": 3,
+      "fundingDeadline": 1789591485,
+      "recoveryDelayBlocks": 100
+    },
+    "factory": {
+      "maximumFacilityLimit": "100000000000",
+      "maximumTotalLimit": "300000000000",
+      "minimumBondBps": 2000,
+      "maximumDrawFeeBps": 400,
+      "maximumMaturityBlocks": 100000,
+      "maximumDrawDelayBlocks": 50,
+      "maximumFacilityCount": 3
+    },
+    "mandate": {
+      "requiredReleaseId": "0xad31a01779b7c8c8651e1fecbb15b6d177c25dbd637c99d7496c2c2a0b7d221a",
+      "requiredPolicySetCommitment": "0x5e60af457a71d853e2662ac38099282de48319ae588ee69fc2633413c2b605de",
+      "requiredEvidenceKind": 1,
+      "requiredActionAdapterKind": "0x0000000000000000000000000000000000000000000000000000000000000000",
+      "maximumFacilityLimit": "100000000000",
+      "minimumBondBps": 2000,
+      "maximumDrawFeeBps": 400,
+      "maximumRemainingMaturityBlocks": 90000
+    },
+    "safety": {
+      "minimumFundingWindowSeconds": 86400
+    }
+  }
+}
