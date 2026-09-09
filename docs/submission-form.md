@@ -127,7 +127,8 @@ https://github.com/Ridwannurudeen/recourse
 
 ## Project Deck or Whitepaper (PDF URL)
 
-*(owner action)*
+https://github.com/Ridwannurudeen/recourse/blob/main/docs/RECOURSE-DECK.pdf
+The owner reviews `docs/RECOURSE-DECK.pdf` before pasting the URL into the form.
 
 ## Prototype Demo Video URL
 
@@ -160,4 +161,4 @@ Owner confirms these personally.
 - [x] Does not infringe third-party IP (permissively licensed dependencies, required notices retained)
 - [x] Public GitHub repository with README
 - [ ] Demo video — owner action
-- [ ] Deck / whitepaper PDF — owner action
+- [x] Deck / whitepaper PDF — docs/RECOURSE-DECK.pdf (owner reviews before pasting the URL)
