@@ -106,6 +106,13 @@ context for that review only.
 - `783768d` fixed receipt polling at 1 second × 24 polls, which could not cover
   six 15-second confirmations. Polling now defaults to the CC3 block interval
   and validates that the time budget covers the required confirmation depth.
+- `897ad0d` fixed core approval re-validation rejecting pending nonce progress
+  after a confirmed deployment step. The follow-up review of the first two
+  fixes found this release-tooling defect, not a contract defect. Higher live
+  nonces are accepted only when confirmed/prepared journal steps explain them;
+  lower nonces and nonce changes without a journal remain refused. The deployed
+  core and pilot are unaffected: they were completed by renewal cycles that
+  each advanced one step.
 
-Both defects were found by running the release tools live, not by this review.
-They are release-tooling defects, not contract defects.
+The first two defects were found by running the release tools live, not by this
+review. They are release-tooling defects, not contract defects.

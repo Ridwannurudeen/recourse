@@ -117,7 +117,7 @@ Sources: [roadmap items 7, 9, and 10](ROADMAP.md), [internal review — Status a
 
 The review records Slither **0.11.5**, **126 manually triaged findings**, and remediation of all **4 HIGH** and **15 MEDIUM** findings identified by the internal review. Static-analysis findings and review severity counts describe different sets; they are not additive assurance metrics.
 
-For this draft, `npm test` passed **376 Forge tests, 265 root Node tests, and 39 SDK tests**, followed by strict SDK declaration compilation. **One root Node test was skipped.** Coverage includes proof validation, replay resistance, policy ordering, asset conservation, loss settlement, operator recovery, deployment qualification, and SDK encoding. These results are not a substitute for independent review.
+For this draft, `npm test` passed **376 Forge tests, 271 root Node tests, and 39 SDK tests**, followed by strict SDK declaration compilation. **One root Node test was skipped.** Coverage includes proof validation, replay resistance, policy ordering, asset conservation, loss settlement, operator recovery, deployment qualification, and SDK encoding. These results are not a substitute for independent review.
 
 The internal review did not deploy or activate V3, install a signer, publish a package, or move capital. An independent reviewer must assess an exact clean release and produce evidence for that specific scope. The internal report cannot satisfy the independent-audit readiness gate.
 

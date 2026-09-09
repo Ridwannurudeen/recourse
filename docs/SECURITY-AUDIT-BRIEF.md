@@ -194,7 +194,7 @@ npm --prefix sdk run pack:check
 git diff --check
 ```
 
-The release baseline is 376 Forge tests, 266 root Node tests (265 passes and one
+The release baseline is 376 Forge tests, 272 root Node tests (271 passes and one
 Windows symlink-permission skip), and 39 SDK tests followed by strict declaration
 type-checking. Each of eight invariant properties completes 256 runs totaling
 128,000 calls, with zero handler reverts. A different count, unexpected skip,
