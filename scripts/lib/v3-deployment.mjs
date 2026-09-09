@@ -1146,6 +1146,20 @@ export function validateV3DeploymentApproval({
   ) {
     throw new Error("Approved V3 deployment qualification timestamp changed");
   }
+  let pendingNonce = currentQualification.pendingNonce;
+  if (journal && pendingNonce > approvedQualification.pendingNonce) {
+    const confirmedCount = journal.steps.filter(
+      ({ status }) => status === "confirmed",
+    ).length;
+    const preparedCount = journal.steps.filter(
+      ({ status }) => status === "prepared",
+    ).length;
+    const minimumNonce = plan.startingNonce + confirmedCount;
+    const maximumNonce = minimumNonce + preparedCount;
+    if (pendingNonce >= minimumNonce && pendingNonce <= maximumNonce) {
+      pendingNonce = approvedQualification.pendingNonce;
+    }
+  }
   if (
     currentQualification.blockNumber < approvedQualification.blockNumber ||
     (currentQualification.blockNumber === approvedQualification.blockNumber &&
@@ -1158,6 +1172,7 @@ export function validateV3DeploymentApproval({
         blockNumber: approvedQualification.blockNumber,
         blockHash: approvedQualification.blockHash,
         blockTimestamp: approvedQualification.blockTimestamp,
+        pendingNonce,
       })
   ) {
     throw new Error("Approved V3 deployment qualification changed");

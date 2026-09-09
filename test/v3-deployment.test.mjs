@@ -1662,6 +1662,241 @@ test("an expired partial V3 deployment requires renewal bound to the exact journ
   );
 });
 
+for (const scenario of [
+  {
+    name: "accepts confirmed journal nonce progress",
+    pendingNonce: STARTING_NONCE + 1,
+  },
+  {
+    name: "rejects unexplained journal nonce progress",
+    pendingNonce: STARTING_NONCE + 2,
+    rejected: true,
+  },
+  {
+    name: "rejects a nonce below the approved nonce",
+    pendingNonce: STARTING_NONCE - 1,
+    rejected: true,
+  },
+  {
+    name: "accepts confirmed nonce progress through live qualification",
+    pendingNonce: STARTING_NONCE + 1,
+    qualify: true,
+  },
+]) {
+  test(`V3 deployment approval ${scenario.name}`, async (t) => {
+    const directory = mkdtempSync(
+      join(tmpdir(), "recourse-v3-nonce-progress-"),
+    );
+    t.after(() => rmSync(directory, { recursive: true, force: true }));
+    const fixture = await deploymentFixture();
+    let { path, journal } = initializeV3DeploymentJournal({
+      ...fixture,
+      manifestPath: join(directory, "deployment.json"),
+    });
+    journal = await prepareV3DeploymentStep({
+      journal,
+      journalPath: path,
+      stepIndex: 0,
+      signer: fixture.signer,
+    });
+    const transaction = Transaction.from(
+      journal.steps[0].intent.rawTransaction,
+    );
+    const receipt = {
+      hash: transaction.hash,
+      status: 1,
+      blockNumber: 501,
+      blockHash: HASH("b"),
+      contractAddress: fixture.plan.steps[0].predictedContract,
+    };
+    journal = (
+      await reconcileV3DeploymentStep({
+        journal,
+        journalPath: path,
+        stepIndex: 0,
+        provider: {
+          getNetwork: async () => ({
+            chainId: BigInt(fixture.config.chainId),
+          }),
+          getTransactionReceipt: async () => receipt,
+          getTransaction: async () => transaction,
+          getBlock: async () => ({ hash: receipt.blockHash }),
+        },
+        targetConfirmations: 1,
+        maximumReceiptPolls: 1,
+      })
+    ).journal;
+    assert.equal(journal.steps[0].status, "confirmed");
+    assert.equal(
+      journal.steps.filter(({ status }) => status === "prepared").length,
+      0,
+    );
+    const qualification = scenario.qualify
+      ? await qualifyV3DeploymentState({
+          ...fixture,
+          journal,
+          repositoryState: {
+            head: SOURCE_COMMIT,
+            deployableScopeClean: true,
+          },
+          provider: {
+            getNetwork: async () => ({
+              chainId: BigInt(fixture.config.chainId),
+            }),
+            getBlock: async () => ({
+              number: 502,
+              hash: HASH("c"),
+              timestamp: 1_030,
+            }),
+            getTransactionCount: async (address, tag) => {
+              assert.equal(address, fixture.config.roles.deployer);
+              assert.equal(tag, "pending");
+              return scenario.pendingNonce;
+            },
+            getCode: async (address) =>
+              address === fixture.plan.predictedContracts.PolicyKernelV2
+                ? "0x6000"
+                : "0x",
+          },
+        })
+      : {
+          ...fixture.qualification,
+          blockNumber: 502,
+          blockHash: HASH("c"),
+          blockTimestamp: 1_030,
+          pendingNonce: scenario.pendingNonce,
+        };
+    const options = {
+      ...fixture,
+      expectedApprovalCommitment: fixture.approval.approvalCommitment,
+      qualification,
+      now: qualification.blockTimestamp,
+      journal,
+    };
+    if (scenario.rejected) {
+      assert.throws(
+        () => validateV3DeploymentApproval(options),
+        /Approved V3 deployment qualification changed/,
+      );
+    } else {
+      assert.equal(validateV3DeploymentApproval(options), fixture.approval);
+    }
+  });
+}
+
+test("V3 deployment approval rejects nonce progress without a journal", async () => {
+  const fixture = await deploymentFixture();
+  assert.throws(
+    () =>
+      validateV3DeploymentApproval({
+        ...fixture,
+        expectedApprovalCommitment: fixture.approval.approvalCommitment,
+        qualification: {
+          ...fixture.qualification,
+          blockNumber: 501,
+          blockHash: HASH("b"),
+          blockTimestamp: 1_015,
+          pendingNonce: STARTING_NONCE + 1,
+        },
+        now: 1_015,
+      }),
+    /Approved V3 deployment qualification changed/,
+  );
+});
+
+test("V3 deployment renewal accepts only journal-explained nonce progress after its checkpoint", async (t) => {
+  const directory = mkdtempSync(
+    join(tmpdir(), "recourse-v3-renewal-progress-"),
+  );
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const fixture = await deploymentFixture();
+  let { path, journal } = initializeV3DeploymentJournal({
+    ...fixture,
+    manifestPath: join(directory, "deployment.json"),
+  });
+  let approval;
+  for (const stepIndex of [0, 1]) {
+    journal = await prepareV3DeploymentStep({
+      journal,
+      journalPath: path,
+      stepIndex,
+      signer: fixture.signer,
+    });
+    const transaction = Transaction.from(
+      journal.steps[stepIndex].intent.rawTransaction,
+    );
+    const receipt = {
+      hash: transaction.hash,
+      status: 1,
+      blockNumber: 501 + stepIndex,
+      blockHash: HASH(String(stepIndex + 1)),
+      contractAddress: fixture.plan.steps[stepIndex].predictedContract,
+    };
+    journal = (
+      await reconcileV3DeploymentStep({
+        journal,
+        journalPath: path,
+        stepIndex,
+        provider: {
+          getNetwork: async () => ({
+            chainId: BigInt(fixture.config.chainId),
+          }),
+          getTransactionReceipt: async () => receipt,
+          getTransaction: async () => transaction,
+          getBlock: async () => ({ hash: receipt.blockHash }),
+        },
+        targetConfirmations: 1,
+        maximumReceiptPolls: 1,
+      })
+    ).journal;
+    assert.equal(journal.steps[stepIndex].status, "confirmed");
+    if (stepIndex === 0) {
+      approval = createV3DeploymentApproval({
+        ...fixture,
+        qualification: {
+          ...fixture.qualification,
+          blockNumber: 501,
+          blockHash: HASH("1"),
+          blockTimestamp: 1_015,
+          pendingNonce: STARTING_NONCE + 1,
+        },
+        now: 1_015,
+        journal,
+      });
+      assert.equal(
+        validateV3DeploymentRenewalBinding(approval.renewal, journal),
+        true,
+      );
+    }
+  }
+  const options = {
+    ...fixture,
+    approval,
+    expectedApprovalCommitment: approval.approvalCommitment,
+    qualification: {
+      ...approval.qualification,
+      blockNumber: 503,
+      blockHash: HASH("3"),
+      blockTimestamp: 1_045,
+      pendingNonce: STARTING_NONCE + 2,
+    },
+    now: 1_045,
+    journal,
+  };
+  assert.equal(validateV3DeploymentApproval(options), approval);
+  assert.throws(
+    () =>
+      validateV3DeploymentApproval({
+        ...options,
+        qualification: {
+          ...options.qualification,
+          pendingNonce: STARTING_NONCE + 3,
+        },
+      }),
+    /Approved V3 deployment qualification changed/,
+  );
+});
+
 test("V3 transaction qualification proves all six canonical transactions match the approved plan", async () => {
   const fixture = await deploymentFixture();
   const transactions = {};
