@@ -9,7 +9,7 @@
   "prerequisites": {
     "verifier": {
       "path": "deployments-v3-operator-service-verifier-current.json",
-      "sha256": "REPLACE_AFTER_VERIFIER_DEPLOYMENT"
+      "sha256": "cae67a17717eb977c221b28f0c09d9c03259b4e5d76efa1f0349ba5f322ebd75"
     }
   },
   "artifacts": {
@@ -39,7 +39,7 @@
   },
   "operatorMarket": {
     "token": "0x3c6eF93E1d2C539c5EFefbBc51cc6a1E120fBf77",
-    "verifier": "REPLACE_AFTER_VERIFIER_DEPLOYMENT",
+    "verifier": "0x44B3e639722650902a11EB26151cBaB039f67a23",
     "minimumOperatorBond": "100000000",
     "maximumQuoteDuration": 86400,
     "maximumServiceDuration": 172800
