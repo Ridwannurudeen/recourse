@@ -483,6 +483,58 @@ The public JSON still requires the browser's independent CC3 chain ID,
 ProofJobs address, block-hash, and block-timestamp checks. It is telemetry, not
 operator authority or a value-moving interface.
 
+## Public observatory host
+
+The static consoles are served from `/opt/recourse/current/web` at
+`recourse.gudman.xyz`. Install `ops/recourse-site.nginx` as
+`/etc/nginx/sites-available/recourse.gudman.xyz.conf` and symlink it into
+`sites-enabled`. The vhost publishes the consoles at the domain root, serves the
+top-level deployment manifests from the release root so each page's
+`../<manifest>.json` link resolves, and exposes the operator report at
+`/operator-report.json` from the same allowlist projection the
+`ridwan.gudman.xyz` snippet serves. Nothing else in the release root is
+reachable, including `package.json`.
+
+Two content requirements are easy to miss. Stock nginx `mime.types` has no `mjs`
+entry, so the vhost sets `application/javascript` for `.mjs`; without it the
+browser refuses every module script and each console renders empty. And the
+manifest route must come from the release root, not the web directory, or the
+manifest links answer 404 while the pages themselves look healthy.
+
+Deploy a release from a committed tree and swap the symlink atomically:
+
+```sh
+RELEASE_SHA=<commit>
+git archive "$RELEASE_SHA" | ssh root@<host> \
+  "mkdir -p /opt/recourse/releases/$RELEASE_SHA && \
+   tar -x -C /opt/recourse/releases/$RELEASE_SHA"
+ssh root@<host> \
+  "ln -sfn /opt/recourse/releases/$RELEASE_SHA /opt/recourse/current.tmp && \
+   mv -T /opt/recourse/current.tmp /opt/recourse/current"
+```
+
+Issue the certificate with the webroot authenticator, never `--standalone`: a
+standalone renewal binds the port nginx already owns, so the timer fails silently
+until the certificate expires.
+
+```sh
+sudo certbot certonly --webroot -w /var/www/html \
+  -d recourse.gudman.xyz --cert-name recourse.gudman.xyz
+grep '^authenticator' /etc/letsencrypt/renewal/recourse.gudman.xyz.conf
+```
+
+Two host traps. `nginx -t` emits pre-existing `protocol options redefined`
+warnings on this box; count them before and after a change and add none. A new
+TLS block adds warnings unless its `listen` line uses the same form as the
+neighbouring vhosts, because the warning fires wherever protocol options change
+between consecutive server blocks on one socket. And `systemctl reload nginx`
+returns before the old workers finish cycling, so a probe issued immediately
+after a reload can still answer from the previous configuration; wait a few
+seconds before verifying.
+
+The earlier path `https://ridwan.gudman.xyz/recourse/` is served by a symlink
+into the same release directory and is unchanged.
+
 ## Roll back
 
 Keep the prior release directory. If qualification fails, point `current` back

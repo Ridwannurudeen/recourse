@@ -82,7 +82,9 @@ records a project-funded testnet pool allocation of 100,000 rUSD to newly create
 pool-owned facility `0x0C874e56AD2dC9789A63a9Bc63c08a5F6D3C82C8`, backed by a
 20,000 rUSD borrower bond and issuer-attested policy deployment. The borrower then
 activated the facility; the pool and facility were verified Active at block 5,460,383.
-Investor and borrower are project wallets using project-operated test tokens. This
+Investor and borrower are project wallets using project-operated test tokens.
+The read-only public observatory at <https://recourse.gudman.xyz> reads all of this
+state live from CC3 at a finalized block and links every manifest quoted here. This
 shows the allocation path, not lender demand, external capital, servicing performance,
 profitability, production readiness, completed cures, or audited loss accounting.
 

@@ -81,7 +81,7 @@ The public Horizon 1 console reads factory, facility, policy, credit-state, and 
 
 `activation-v3-current.json` records capped pilot facility `0x00B50626C4AA42d22ca01AAEa8649f253aEc5B1e` as **Active**, with policy **1**, registry release `0xad31a01779b7c8c8651e1fecbb15b6d177c25dbd637c99d7496c2c2a0b7d221a`, and proof job **1**. Its Ethereum source window is **25,944,522–26,024,522**, maturity is CC3 block **5,554,121**, and proof-job expiry is Unix timestamp **1792497600**. This is a fixed-supply demo-token testnet activation with no draw recorded, not a live pilot with a counterparty. There is no design partner, independent audit, or production asset or custody decision; V3 operator execution remains uninstalled and disabled.
 
-Sources: [current V3 core manifest](../deployments-v3-current.json), [pilot activation manifest](../activation-v3-current.json), [Horizon 1 technical note](HORIZON1.md), [Horizon 1 manifest](../deployments-horizon1.json), [README](../README.md), [public console](https://ridwan.gudman.xyz/recourse/horizon1.html).
+Sources: [current V3 core manifest](../deployments-v3-current.json), [pilot activation manifest](../activation-v3-current.json), [Horizon 1 technical note](HORIZON1.md), [Horizon 1 manifest](../deployments-horizon1.json), [README](../README.md), [public console](https://recourse.gudman.xyz/horizon1.html), [live observatory](https://recourse.gudman.xyz).
 
 ## 8. Architecture: evidence becomes credit state
 

@@ -1,0 +1,71 @@
+# Recourse public observatory (static). Site: /opt/recourse/current/web (release symlink).
+# Top-level deployment manifests are served from the release root so the pages'
+# ../<manifest>.json links resolve. The redirect lives inside location / so the
+# acme-challenge path stays reachable for webroot renewal.
+server {
+    listen 80;
+    listen [::]:80;
+    server_name recourse.gudman.xyz;
+
+    include /etc/nginx/snippets/acme-challenge.conf;
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name recourse.gudman.xyz;
+
+    ssl_certificate /etc/letsencrypt/live/recourse.gudman.xyz/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/recourse.gudman.xyz/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "geolocation=(), microphone=(), camera=()" always;
+
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_comp_level 5;
+    gzip_min_length 1024;
+    gzip_types text/plain text/css text/javascript application/javascript application/json image/svg+xml;
+
+    root /opt/recourse/current/web;
+    index index.html;
+
+    location ~ \.mjs$ {
+        default_type application/javascript;
+        try_files $uri =404;
+    }
+
+    location ~ ^/(deployments[^/]*|activation-v3-current|allocation-v3-portfolio-current)\.json$ {
+        root /opt/recourse/current;
+        default_type application/json;
+    }
+
+    location = /operator-report.json {
+        alias /var/lib/recourse-report-public/operator-report.json;
+        default_type application/json;
+        open_file_cache off;
+        etag off;
+
+        limit_except GET {
+            deny all;
+        }
+
+        add_header Cache-Control "no-store, max-age=0" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header Permissions-Policy "geolocation=(), microphone=(), camera=()" always;
+    }
+
+    location / {
+        try_files $uri $uri.html $uri/ =404;
+    }
+}
