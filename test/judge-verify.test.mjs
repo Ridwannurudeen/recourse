@@ -405,7 +405,7 @@ test("wrong CC3 chain and changed finalized hash fail", async (t) => {
   }
 });
 
-test("one-unit gas or decoded consequence drift and absent receipts fail", async (t) => {
+test("one-unit gas or decoded consequence drift fails; absent receipts are unverified", async (t) => {
   for (const mutation of ["gas", "amount", "missing"]) {
     const f = fixture(t);
     const receipt = f.receipts[f.evidence.autonomousCatch.cc3Tx];
@@ -428,7 +428,9 @@ test("one-unit gas or decoded consequence drift and absent receipts fail", async
     const result = await runJudgeVerification(f);
     assert.ok(
       result.checks.some(
-        (check) => check.status === "FAIL" && check.id === "v1-autonomousCatch",
+        (check) =>
+          check.status === (mutation === "missing" ? "UNVERIFIED" : "FAIL") &&
+          check.id === "v1-autonomousCatch",
       ),
       mutation,
     );
@@ -624,7 +626,7 @@ test("Ethereum amount, source identity and catch index drift fail", async (t) =>
     assert.equal(
       report.checks.find((check) => check.id === "ethereum-autonomousCatch")
         .status,
-      "FAIL",
+      mutation === "missing" ? "UNVERIFIED" : "FAIL",
       mutation,
     );
   }
@@ -703,11 +705,12 @@ for (const mode of ["fallback-null", "fallback-receipt", "primary-null"]) {
     f.fetchImpl = async (url, options) => {
       if (
         url !== "https://ethereum-rpc.publicnode.com" &&
-        url !== "https://cloudflare-eth.com/"
+        url !== "https://eth.drpc.org" &&
+        url !== "https://1rpc.io/eth"
       )
         return originalFetch(url, options);
       const { method, params } = JSON.parse(options.body);
-      const fallback = url === "https://cloudflare-eth.com/";
+      const fallback = url !== "https://ethereum-rpc.publicnode.com";
       if (fallback) fallbackCalls.push(method);
       if (method === "eth_chainId")
         return { ok: true, status: 200, json: async () => ({ result: "0x1" }) };
@@ -721,13 +724,9 @@ for (const mode of ["fallback-null", "fallback-receipt", "primary-null"]) {
     for (const id of ["ethereum-cumulativeBatch", "ethereum-autonomousCatch"])
       assert.equal(
         report.checks.find((check) => check.id === id).status,
-        mode === "fallback-null"
-          ? "UNVERIFIED"
-          : mode === "primary-null"
-            ? "FAIL"
-            : "PASS",
+        mode === "fallback-receipt" ? "PASS" : "UNVERIFIED",
       );
-    assert.equal(fallbackCalls.length > 0, mode !== "primary-null");
+    assert.ok(fallbackCalls.length > 0);
   });
 }
 
@@ -748,11 +747,11 @@ for (const [name, id, mutate] of [
     (f) => delete f.receipts[f.evidence.autonomousCatch.cc3Tx].logs,
   ],
   [
-    "empty receipt topics",
+    "missing receipt topics",
     "6.history",
     (f) => {
       for (const r of Object.values(f.receipts))
-        for (const log of r.logs) log.topics = [];
+        for (const log of r.logs) delete log.topics;
     },
   ],
   [
@@ -935,7 +934,6 @@ for (const field of [
   "blockNumber",
   "transactionHash",
   "logIndex",
-  "wrong emitter",
 ]) {
   test(`market activity rejects malformed ${field}`, async (t) => {
     const f = fixture(t);
@@ -953,17 +951,13 @@ for (const field of [
       transactionHash: hash,
       logIndex: "0x0",
     };
-    if (field === "wrong emitter") log.address = ZeroAddress;
-    else delete log[field];
+    delete log[field];
     const send = f.cc3Provider.send;
     f.cc3Provider.send = (m, p) => (m === "eth_getLogs" ? [log] : send(m, p));
     const report = await runJudgeVerification(f);
     const check = report.checks.find((row) => row.id === "8.activity");
     assert.equal(check.status, "UNVERIFIED", JSON.stringify(check));
-    assert.match(
-      check.detail,
-      new RegExp(field === "wrong emitter" ? "address|emitter" : field),
-    );
+    assert.match(check.detail, new RegExp(field));
   });
 }
 
@@ -1011,12 +1005,12 @@ test("Ethereum fallback identity is checked before receipts and attributed", asy
       if (
         ![
           "https://ethereum-rpc.publicnode.com",
-          "https://cloudflare-eth.com/",
+          "https://eth.drpc.org",
         ].includes(url)
       )
         return fetch(url, options);
       const { method, params } = JSON.parse(options.body);
-      const fallback = url === "https://cloudflare-eth.com/";
+      const fallback = url === "https://eth.drpc.org";
       if (fallback) calls.push(method);
       if (!fallback && method !== "eth_chainId") throw new Error("unavailable");
       const result =
@@ -1037,9 +1031,167 @@ test("Ethereum fallback identity is checked before receipts and attributed", asy
         JSON.stringify(check),
       );
       if (chainId === "0x1")
-        assert.match(check.detail, /https:\/\/cloudflare-eth.com\//);
+        assert.match(check.detail, /https:\/\/eth.drpc.org/);
     }
     if (chainId === "0x2")
       assert.ok(!calls.includes("eth_getTransactionReceipt"));
   }
+});
+
+for (const malformed of [false, true]) {
+  test(`AM unrelated zero-topic logs with malformed Transfer=${malformed}`, async (t) => {
+    const f = fixture(t);
+    for (const receipt of Object.values(f.receipts))
+      receipt.logs.unshift({ address: ZeroAddress, topics: [], data: "0x" });
+    if (malformed)
+      f.receipts[f.evidence.autonomousCatch.source.ethTx].logs[1].topics.pop();
+    const report = await runJudgeVerification(f);
+    const row = report.checks.find(
+      (row) => row.id === "ethereum-autonomousCatch",
+    );
+    assert.equal(
+      row.status,
+      malformed ? "UNVERIFIED" : "PASS",
+      JSON.stringify(row),
+    );
+    if (malformed) assert.match(row.detail, /topics\[2\]/);
+    for (const id of [
+      "v1-cumulativeBatch",
+      "v1-autonomousCatch",
+      "6.history",
+      "7.history",
+    ])
+      assert.equal(
+        report.checks.find((row) => row.id === id).status,
+        "PASS",
+        id,
+      );
+  });
+}
+
+for (const mode of [
+  "fallback ok",
+  "second fallback ok",
+  "all null",
+  "null and transport",
+  "blockHash contradiction",
+]) {
+  test(`AM primary null: ${mode}`, async (t) => {
+    const f = fixture(t);
+    f.ethProvider = undefined;
+    const fetch = f.fetchImpl;
+    const calls = [];
+    f.fetchImpl = async (url, options) => {
+      if (
+        ![
+          "https://ethereum-rpc.publicnode.com",
+          "https://eth.drpc.org",
+          "https://1rpc.io/eth",
+        ].includes(url)
+      )
+        return fetch(url, options);
+      const { method, params } = JSON.parse(options.body);
+      calls.push([url, method]);
+      if (method === "eth_chainId")
+        return { ok: true, json: async () => ({ result: "0x1" }) };
+      assert.equal(method, "eth_getTransactionReceipt");
+      if (
+        mode === "null and transport" &&
+        url !== "https://ethereum-rpc.publicnode.com"
+      )
+        throw new Error("unavailable");
+      const answering =
+        mode === "second fallback ok"
+          ? "https://1rpc.io/eth"
+          : "https://eth.drpc.org";
+      const result =
+        !["all null", "null and transport"].includes(mode) && url === answering
+          ? f.receipts[params[0]]
+          : null;
+      return { ok: true, json: async () => ({ result }) };
+    };
+    if (mode === "blockHash contradiction") {
+      const activation = JSON.parse(
+        readFileSync(join(f.repoRoot, "activation-v3-current.json"), "utf8"),
+      );
+      f.receipts[activation.transactions.createFacility.hash].blockHash =
+        ZeroHash;
+    }
+    const report = await runJudgeVerification(f);
+    const row = report.checks.find(
+      (row) => row.id === "ethereum-autonomousCatch",
+    );
+    assert.equal(
+      row.status,
+      ["all null", "null and transport"].includes(mode) ? "UNVERIFIED" : "PASS",
+      JSON.stringify(row),
+    );
+    if (["all null", "null and transport"].includes(mode))
+      assert.match(row.detail, /no receipt returned by 3 public nodes/);
+    else
+      assert.ok(
+        row.detail.includes(
+          mode === "second fallback ok"
+            ? "https://1rpc.io/eth"
+            : "https://eth.drpc.org",
+        ),
+      );
+    if (mode === "blockHash contradiction")
+      assert.equal(
+        report.checks.find((row) => row.id === "6.history").status,
+        "FAIL",
+      );
+    for (const url of ["https://eth.drpc.org", "https://1rpc.io/eth"])
+      if (calls.some(([node]) => node === url))
+        assert.equal(calls.find(([node]) => node === url)[1], "eth_chainId");
+  });
+}
+
+test("AM null CC3 historical receipts are unverified", async (t) => {
+  const f = fixture(t);
+  const send = f.cc3Provider.send;
+  f.cc3Provider.send = (m, p) =>
+    m === "eth_getTransactionReceipt" ? null : send(m, p);
+  const report = await runJudgeVerification(f);
+  for (const id of [
+    "v1-cumulativeBatch",
+    "v1-autonomousCatch",
+    "6.history",
+    "7.history",
+  ]) {
+    const row = report.checks.find((row) => row.id === id);
+    assert.equal(row.status, "UNVERIFIED", JSON.stringify(row));
+    assert.match(row.detail, /no receipt returned by 1 public nodes/);
+  }
+});
+
+test("AM activity skips unrelated emitters and zero-topic logs", async (t) => {
+  const f = fixture(t);
+  const market = JSON.parse(
+    readFileSync(
+      join(f.repoRoot, "deployments-v3-operator-market-current.json"),
+      "utf8",
+    ),
+  );
+  const send = f.cc3Provider.send;
+  f.cc3Provider.send = (m, p) =>
+    m === "eth_getLogs"
+      ? [
+          { address: ZeroAddress, topics: [], data: "0x" },
+          {
+            address: market.contracts.OperatorMarketV1,
+            topics: [],
+            data: "0x",
+          },
+          {
+            address: ZeroAddress,
+            topics: [current.getEvent("QuotePosted").topicHash],
+            data: "0x",
+          },
+        ]
+      : send(m, p);
+  const report = await runJudgeVerification(f);
+  const row = report.checks.find((row) => row.id === "8.activity");
+  assert.equal(row.status, "PASS", JSON.stringify(row));
+  assert.match(row.detail, /agreements accepted=0/);
 });

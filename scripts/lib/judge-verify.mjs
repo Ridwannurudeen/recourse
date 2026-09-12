@@ -53,7 +53,14 @@ const hash32 = /^0x[0-9a-f]{64}$/i;
 const address20 = /^0x[0-9a-f]{40}$/i;
 function validateLog(log) {
   hex(log?.address, "log.address", address20);
-  shape(Array.isArray(log.topics) && log.topics.length > 0, "log.topics[0]");
+  shape(Array.isArray(log.topics), "log.topics");
+}
+function matchesLog(log, emitter, topics) {
+  if (!same(log.address, emitter) || log.topics.length === 0) return false;
+  hex(log.topics[0], "log.topics[0]", hash32);
+  return topics.some((topic) => same(log.topics[0], topic));
+}
+function validateEventLog(log) {
   for (const [index, topic] of log.topics.entries())
     hex(topic, `log.topics[${index}]`, hash32);
   hex(log.data, "log.data");
@@ -167,38 +174,48 @@ export async function runJudgeVerification({
     }
   }
   const rpc = (method, params) => rpcCall(cc3, method, params);
-  const fallbackUrl = "https://cloudflare-eth.com/";
-  let fallbackReady = false;
-  let fallbackUsed = false;
+  const fallbackUrls = ["https://eth.drpc.org", "https://1rpc.io/eth"];
+  const fallbackReady = new Set();
+  const fallbackUsed = new Set();
   async function ethCall(method, params) {
-    try {
-      return await rpcCall(eth, method, params);
-    } catch (error) {
-      if (ethProvider || ethRpc !== ETH) throw error;
-      fallbackUsed = true;
-      if (!fallbackReady) {
-        const chainId = await rpcCall(provider(fallbackUrl), "eth_chainId", []);
-        hex(chainId, "fallback eth_chainId", quantity);
-        assert(
-          BigInt(chainId) === 1n,
-          `Ethereum fallback ${fallbackUrl} chain ID differs from 1`,
-        );
-        fallbackReady = true;
+    const urls = [
+      ethRpc,
+      ...(ethProvider || ethRpc !== ETH ? [] : fallbackUrls),
+    ];
+    let lastError;
+    for (const [index, url] of urls.entries()) {
+      try {
+        const target = index === 0 ? eth : provider(url);
+        if (index > 0 && !fallbackReady.has(url)) {
+          const chainId = await rpcCall(target, "eth_chainId", []);
+          hex(chainId, "fallback eth_chainId", quantity);
+          assert(
+            BigInt(chainId) === 1n,
+            `Ethereum fallback ${url} chain ID differs from 1`,
+          );
+          fallbackReady.add(url);
+        }
+        const result = await rpcCall(target, method, params);
+        if (result === null && method === "eth_getTransactionReceipt") continue;
+        if (index > 0) fallbackUsed.add(url);
+        return result;
+      } catch (error) {
+        if (error.name !== "TransportError") throw error;
+        lastError = error;
       }
-      const fallback = await rpcCall(provider(fallbackUrl), method, params);
-      if (fallback === null)
-        throw new TransportError(
-          `Primary ${ethRpc} failed (${error.message}); fallback https://cloudflare-eth.com/ returned no result for ${method}`,
-        );
-      return fallback;
     }
+    if (method === "eth_getTransactionReceipt")
+      throw new TransportError(
+        `no receipt returned by ${urls.length} public nodes (${urls.join(", ")})${lastError ? `; ${lastError.message}` : ""}`,
+      );
+    throw lastError;
   }
   async function check(id, title, source, operation) {
-    fallbackUsed = false;
+    fallbackUsed.clear();
     try {
       let detail = await operation();
-      if (fallbackUsed)
-        detail += `; Ethereum fallback ${fallbackUrl} (chainId 1 verified)`;
+      if (fallbackUsed.size)
+        detail += `; Ethereum fallback ${[...fallbackUsed].join(", ")} (chainId 1 verified)`;
       checks.push({ id, title, status: "PASS", detail, source });
       return true;
     } catch (error) {
@@ -208,7 +225,9 @@ export async function runJudgeVerification({
         status: error.name === "TransportError" ? "UNVERIFIED" : "FAIL",
         detail:
           error.message +
-          (fallbackUsed ? `; Ethereum fallback ${fallbackUrl}` : ""),
+          (fallbackUsed.size
+            ? `; Ethereum fallback ${[...fallbackUsed].join(", ")}`
+            : ""),
         source,
       });
       return false;
@@ -298,7 +317,10 @@ export async function runJudgeVerification({
           const receipt = await historicalRpc("eth_getTransactionReceipt", [
             record.cc3Tx,
           ]);
-          assert(receipt !== null, `Missing receipt ${record.cc3Tx}`);
+          if (receipt === null)
+            throw new TransportError(
+              `no receipt returned by 1 public nodes (${cc3Rpc})`,
+            );
           validateReceipt(receipt);
           assert(
             same(receipt.transactionHash, record.cc3Tx),
@@ -318,10 +340,18 @@ export async function runJudgeVerification({
             `gasUsed differs from ${record.gasUsed}`,
           );
           const events = receipt.logs
-            .filter((log) => same(log.address, legacy.facility))
-            .map((log) =>
-              decodeResponse(() => v1.parseLog(log), "receipt log.data/topics"),
+            .filter((log) =>
+              matchesLog(log, legacy.facility, [
+                v1.getEvent("Breached").topicHash,
+              ]),
             )
+            .map((log) => {
+              validateEventLog(log);
+              return decodeResponse(
+                () => v1.parseLog(log),
+                "receipt log.data/topics",
+              );
+            })
             .filter((log) => log?.name === "Breached");
           assert(
             events.length === 1,
@@ -346,10 +376,19 @@ export async function runJudgeVerification({
             "Breach hunter differs",
           );
           const adjudications = receipt.logs
-            .filter((log) => same(log.address, legacy.adjudicator))
-            .map((log) =>
-              decodeResponse(() => v1.parseLog(log), "receipt log.data/topics"),
-            );
+            .filter((log) =>
+              matchesLog(log, legacy.adjudicator, [
+                v1.getEvent("BreachReported").topicHash,
+                v1.getEvent("EvidenceAccepted").topicHash,
+              ]),
+            )
+            .map((log) => {
+              validateEventLog(log);
+              return decodeResponse(
+                () => v1.parseLog(log),
+                "receipt log.data/topics",
+              );
+            });
           const reported = adjudications.filter(
             (log) => log?.name === "BreachReported",
           );
@@ -450,7 +489,6 @@ export async function runJudgeVerification({
             const receipt = await ethCall("eth_getTransactionReceipt", [
               row.ethTx,
             ]);
-            assert(receipt !== null, `Missing Ethereum receipt ${row.ethTx}`);
             validateReceipt(receipt);
             hex(receipt.transactionIndex, "receipt.transactionIndex", quantity);
             assert(
@@ -481,12 +519,24 @@ export async function runJudgeVerification({
             );
             let amount = 0n;
             for (const log of receipt.logs) {
-              if (!same(log.address, evidence.cumulativeBatch.usdc)) continue;
+              if (
+                !matchesLog(log, evidence.cumulativeBatch.usdc, [
+                  transfer.getEvent("Transfer").topicHash,
+                ])
+              )
+                continue;
+              hex(log.topics[1], "log.topics[1]", hash32);
+              const treasury = row.from ?? record.treasury;
+              if (
+                !same(log.topics[1], `0x${treasury.slice(2).padStart(64, "0")}`)
+              )
+                continue;
+              hex(log.topics[2], "log.topics[2]", hash32);
+              validateEventLog(log);
               const event = decodeResponse(
                 () => transfer.parseLog(log),
                 "Ethereum log.data/topics",
               );
-              const treasury = row.from ?? record.treasury;
               if (
                 event &&
                 same(event.args.from, treasury) &&
@@ -944,7 +994,9 @@ export async function verifyCurrent({ manifests, rpc, anchor, check }) {
   async function receipt(record, to) {
     const result = await rpc("eth_getTransactionReceipt", [record.hash]);
     if (result === null)
-      throw new Error(`Historical receipt absent: ${record.hash}`);
+      throw new TransportError(
+        `no receipt returned by 1 public nodes; historical receipt ${record.hash}`,
+      );
     validateReceipt(result);
     hex(result.blockHash, "receipt.blockHash", hash32);
     equal(
@@ -963,13 +1015,11 @@ export async function verifyCurrent({ manifests, rpc, anchor, check }) {
     return result;
   }
   function event(result, emitter, name, expected) {
-    const matches = result.logs.filter(
-      (log) =>
-        log.address.toLowerCase() === emitter.toLowerCase() &&
-        log.topics[0].toLowerCase() ===
-          abi.getEvent(name).topicHash.toLowerCase(),
+    const matches = result.logs.filter((log) =>
+      matchesLog(log, emitter, [abi.getEvent(name).topicHash]),
     );
     equal(matches.length, 1, `${result.transactionHash} ${name} event count`);
+    validateEventLog(matches[0]);
     const decoded = decodeResponse(
       () => abi.decodeEventLog(name, matches[0].data, matches[0].topics),
       `${name} log.data/topics`,
@@ -1304,10 +1354,17 @@ export async function verifyCurrent({ manifests, rpc, anchor, check }) {
         shape(Array.isArray(chunk), "eth_getLogs result");
         for (const log of chunk) {
           validateLog(log);
-          shape(
-            same(log.address, market.contracts.OperatorMarketV1),
-            "log.address (queried market)",
-          );
+          if (
+            !matchesLog(
+              log,
+              market.contracts.OperatorMarketV1,
+              ["QuotePosted", "QuoteAccepted", "ServiceSettled"].map(
+                (name) => abi.getEvent(name).topicHash,
+              ),
+            )
+          )
+            continue;
+          validateEventLog(log);
           hex(log.blockNumber, "log.blockNumber", quantity);
           hex(log.transactionHash, "log.transactionHash", hash32);
           hex(log.logIndex, "log.logIndex", quantity);
