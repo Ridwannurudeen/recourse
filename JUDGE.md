@@ -29,6 +29,10 @@ debt in tCTC, hunter paid). No USDC moved on Ethereum as a result; Attestcoin ha
 
 ## 3. Reproduce locally
 
+| What | Where |
+| --- | --- |
+| One-command re-check of the on-chain claims | `npm run judge:verify` (public endpoints only; tests, authorship and unattended operation are reported UNVERIFIED because an RPC cannot establish them) |
+
 Measured 2026-09-11 on `main`; these are dated local results, not chain assertions.
 
 ```bash
