@@ -4,6 +4,24 @@ Recourse is an undercollateralized credit facility on Creditcoin where cryptogra
 
 The proof does not release an escrow. It changes credit risk.
 
+## Verify every claim in five minutes
+
+| What | Where |
+| --- | --- |
+| The autonomous catch: a real Ethereum mainnet USDC outflow of 147.41949 USDC, detected by the unattended operator, proven through the BlockProver precompile and adjudicated as a breach with no human step | [`0x96bf3081…f7528192`](https://creditcoin-testnet.blockscout.com/tx/0x96bf3081614a76c8df459eaeffe50975556883dd0e39d622758ca468f7528192) · CC3 block 5,371,828 · 459,396 gas · two precompile calls |
+| The cumulative catch: five real Ethereum mainnet transfers in five blocks, one continuity proof, six precompile calls, a breach on the verified sum that no single transfer would have triggered | [`0x7c180209…7e5d5b6`](https://creditcoin-testnet.blockscout.com/tx/0x7c180209bedaa64b4e1acff02d2822e8c76b0db98f105b7b75e3b95ac7e5d5b6) · CC3 block 5,371,462 · 699,409 gas |
+| The five mainnet source transactions behind the cumulative catch | [integration note, adjudicated evidence](docs/attestcoin-integration.md#the-adjudicated-evidence) |
+| Hardened V3 core: six contracts from reviewed commit `90d8b05`, runtime hashes verified, source verified on Blockscout | [`deployments-v3-current.json`](deployments-v3-current.json) · [PolicyKernelV2](https://creditcoin-testnet.blockscout.com/address/0x69d1715F117f79aB5E190d48666510B8A39Af6dB) |
+| Capped pilot facility, Active, proof job 1 funded, Ethereum source window 25,944,522–26,024,522 | [`activation-v3-current.json`](activation-v3-current.json) · [facility](https://creditcoin-testnet.blockscout.com/address/0x00B50626C4AA42d22ca01AAEa8649f253aEc5B1e) |
+| Portfolio pool allocation of 100,000 rUSD to a pool-created facility, project-funded test tokens on both sides | [`allocation-v3-portfolio-current.json`](allocation-v3-portfolio-current.json) · [facility](https://creditcoin-testnet.blockscout.com/address/0x0C874e56AD2dC9789A63a9Bc63c08a5F6D3C82C8) |
+| Operator market and receipt verifier, deployed and empty, one project-operated attestor | [`deployments-v3-operator-market-current.json`](deployments-v3-operator-market-current.json) · [`deployments-v3-operator-service-verifier-current.json`](deployments-v3-operator-service-verifier-current.json) |
+| Live read-only observatory, every read anchored at a finalized CC3 block | <https://recourse.gudman.xyz> |
+| Tests | `forge test` → 392 · `node --test test/*.test.mjs` → 315 (314 pass, 1 skipped) · `npm --prefix sdk test` → 44 |
+| SDK | [`recourse-protocol-sdk@0.1.1`](https://www.npmjs.com/package/recourse-protocol-sdk) |
+| Deck | [`docs/RECOURSE-DECK.pdf`](docs/RECOURSE-DECK.pdf) |
+
+20 Recourse contracts on CC3 are source-verified on Blockscout, including all six V3 core contracts and the five v1 contracts that executed both catches, so the explorer decodes their events without trusting this repository.
+
 ## The problem
 
 Traditional credit is governed by covenants: enforceable promises not to strip a treasury, take on new debt, or unwind a pledged position. DeFi replaced those controls with overcollateralization because one chain cannot see what a borrower does on another.
@@ -34,8 +52,10 @@ CC3 Testnet, chain ID `102031`:
 | Facility ID            | `1`                                                                                                                                          |
 | Breach adjudication    | [`0x7c180209…7e5d5b6`](https://creditcoin-testnet.blockscout.com/tx/0x7c180209bedaa64b4e1acff02d2822e8c76b0db98f105b7b75e3b95ac7e5d5b6)      |
 | Breach block           | `5,371,462`                                                                                                                                  |
+| Autonomous catch       | [`0x96bf3081…f7528192`](https://creditcoin-testnet.blockscout.com/tx/0x96bf3081614a76c8df459eaeffe50975556883dd0e39d622758ca468f7528192)      |
+| Catch block            | `5,371,828`                                                                                                                                  |
 
-The breach transaction succeeded, emitted seven events, and used 699,409 gas.
+The cumulative breach transaction succeeded, emitted seven events, and used 699,409 gas. The autonomous catch, submitted by the unattended operator against a separate facility on the same adjudicator, succeeded at block 5,371,828 and used 459,396 gas.
 
 ## Horizon 1 generation
 

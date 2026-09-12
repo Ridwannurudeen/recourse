@@ -15,6 +15,10 @@ Recourse
 
 DeFi
 
+## One-line vision (the BUIDL card)
+
+Covenant-enforced credit on Creditcoin. Real Ethereum conduct, proven by Attestcoin, becomes an executed credit consequence: an unattended operator caught a real mainnet USDC outflow, froze undrawn credit and slashed the bond.
+
 ## Project Description
 
 Recourse is an undercollateralized credit facility on Creditcoin where the loan covenants
@@ -24,6 +28,26 @@ Traditional credit is governed by covenants — enforceable promises about borro
 ("don't strip the treasury", "don't take on new debt", "keep the position intact"). DeFi
 threw that away and replaced it with overcollateralization, because a blockchain cannot see
 what a borrower does anywhere else.
+
+**Verify every claim in five minutes.** Every address and hash below is public; nothing needs a key or a wallet.
+
+| What | Where |
+| --- | --- |
+| The autonomous catch: a real Ethereum mainnet USDC outflow of 147.41949 USDC, detected by the unattended operator, proven through the BlockProver precompile and adjudicated as a breach with no human step | [`0x96bf3081…f7528192`](https://creditcoin-testnet.blockscout.com/tx/0x96bf3081614a76c8df459eaeffe50975556883dd0e39d622758ca468f7528192) · CC3 block 5,371,828 · 459,396 gas · two precompile calls |
+| The cumulative catch: five real Ethereum mainnet transfers in five blocks, one continuity proof, six precompile calls, a breach on the verified sum that no single transfer would have triggered | [`0x7c180209…7e5d5b6`](https://creditcoin-testnet.blockscout.com/tx/0x7c180209bedaa64b4e1acff02d2822e8c76b0db98f105b7b75e3b95ac7e5d5b6) · CC3 block 5,371,462 · 699,409 gas |
+| The five mainnet source transactions behind the cumulative catch | [integration note, adjudicated evidence](https://github.com/Ridwannurudeen/recourse/blob/main/docs/attestcoin-integration.md#the-adjudicated-evidence) |
+| Hardened V3 core: six contracts from reviewed commit `90d8b05`, runtime hashes verified, source verified on Blockscout | [`deployments-v3-current.json`](https://github.com/Ridwannurudeen/recourse/blob/main/deployments-v3-current.json) · [PolicyKernelV2](https://creditcoin-testnet.blockscout.com/address/0x69d1715F117f79aB5E190d48666510B8A39Af6dB) |
+| Capped pilot facility, Active, proof job 1 funded, Ethereum source window 25,944,522–26,024,522 | [`activation-v3-current.json`](https://github.com/Ridwannurudeen/recourse/blob/main/activation-v3-current.json) · [facility](https://creditcoin-testnet.blockscout.com/address/0x00B50626C4AA42d22ca01AAEa8649f253aEc5B1e) |
+| Portfolio pool allocation of 100,000 rUSD to a pool-created facility, project-funded test tokens on both sides | [`allocation-v3-portfolio-current.json`](https://github.com/Ridwannurudeen/recourse/blob/main/allocation-v3-portfolio-current.json) · [facility](https://creditcoin-testnet.blockscout.com/address/0x0C874e56AD2dC9789A63a9Bc63c08a5F6D3C82C8) |
+| Operator market and receipt verifier, deployed and empty, one project-operated attestor | [`deployments-v3-operator-market-current.json`](https://github.com/Ridwannurudeen/recourse/blob/main/deployments-v3-operator-market-current.json) · [`deployments-v3-operator-service-verifier-current.json`](https://github.com/Ridwannurudeen/recourse/blob/main/deployments-v3-operator-service-verifier-current.json) |
+| Live read-only observatory, every read anchored at a finalized CC3 block | <https://recourse.gudman.xyz> |
+| Tests | `forge test` → 392 · `node --test test/*.test.mjs` → 315 (314 pass, 1 skipped) · `npm --prefix sdk test` → 44 |
+| SDK | [`recourse-protocol-sdk@0.1.1`](https://www.npmjs.com/package/recourse-protocol-sdk) |
+| Deck | [`docs/RECOURSE-DECK.pdf`](https://github.com/Ridwannurudeen/recourse/blob/main/docs/RECOURSE-DECK.pdf) |
+
+20 Recourse contracts on CC3 are source-verified on Blockscout, including all six V3 core contracts and the five v1 contracts that executed both catches, so the explorer decodes their events without trusting this repository.
+
+**What the consequence is**
 
 The Attestcoin Protocol makes Ethereum conduct provable on Creditcoin, so covenants become
 executable code. A lender funds a facility; a borrower posts a penalty bond, commits named
@@ -41,6 +65,8 @@ their verified sum does. Catching that requires transaction status, event logs, 
 indices and batch continuity to all be verified on-chain inside a single adjudication.
 
 The proof does not release an escrow. It changes credit risk.
+
+**What is live, and what it is not**
 
 The original and Horizon 1 generations are live on CC3 alongside the hardened V3 core.
 The team-audited v1 contracts enforce the original
@@ -63,7 +89,7 @@ Its Ethereum source window is 25,944,522–26,024,522, maturity is CC3 block 5,5
 and proof-job expiry is Unix timestamp 1792497600. This is a fixed-supply demo-token
 testnet demonstration with no draw recorded. There is no design partner, live pilot
 with a counterparty, independent audit, or production asset or custody decision.
-Items 5–6 remain blocked on Attestcoin writability. SDK 0.1.0 is published for interface
+Items 5–6 remain blocked on Attestcoin writability. SDK 0.1.1 is published for interface
 discovery and testnet integration; interfaces are not frozen and no external integration exists.
 The [verifier manifest](../deployments-v3-operator-service-verifier-current.json) records
 OperatorServiceVerifierV1 `0x44B3e639722650902a11EB26151cBaB039f67a23`;
@@ -132,8 +158,9 @@ balance, storage, `eth_call`-result, or source-block-timestamp proofs. Horizon 1
 records proven event deltas and transitions rather than verified current balances; proof
 time is CC3 acceptance time, and asset valuation remains external.
 
-Live on CC3 Testnet, adjudicated against real Ethereum mainnet transactions. The breach
-succeeded at CC3 block 5,371,462 and used 699,409 gas.
+Live on CC3 Testnet, adjudicated against real Ethereum mainnet transactions. The cumulative
+breach succeeded at CC3 block 5,371,462 and used 699,409 gas; the unattended catch succeeded at
+block 5,371,828 and used 459,396 gas (transaction `0x96bf3081614a76c8df459eaeffe50975556883dd0e39d622758ca468f7528192`).
 
 Full technical detail: `docs/attestcoin-integration.md` in the repository.
 

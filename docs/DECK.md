@@ -59,7 +59,7 @@ Sources: [integration evidence and mechanics](attestcoin-integration.md), [deplo
 
 **A separate facility was configured before the qualifying Ethereum block was mined.**
 
-The policy window was committed on CC3 first. The unattended operator then detected a **147.41949 USDC** Ethereum mainnet outflow, built its Attestcoin proof, and submitted the breach without manual intervention. Facility 2 moved to `Breached` at **CC3 block 5,371,828**.
+The policy window was committed on CC3 first. The unattended operator then detected a **147.41949 USDC** Ethereum mainnet outflow, built its Attestcoin proof, and submitted the breach without manual intervention. Facility 2 moved to `Breached` at **CC3 block 5,371,828** (transaction [`0x96bf3081…f7528192`](https://creditcoin-testnet.blockscout.com/tx/0x96bf3081614a76c8df459eaeffe50975556883dd0e39d622758ca468f7528192), 459,396 gas).
 
 This demonstrates a pre-configured policy reacting autonomously to subsequent mainnet activity. It is separate from the historical cumulative batch on the preceding slide. The historical batch's 699,409 gas must not be attributed to this catch.
 
@@ -77,7 +77,7 @@ The demonstration facility is recorded as Active. Its denomination asset is a **
 
 The public Horizon 1 console reads factory, facility, policy, credit-state, and proof-job data at a pinned CC3 block. It requests no wallet and submits no transaction.
 
-**The hardened V3 core is deployed and qualified.** `deployments-v3-current.json` records six contracts from reviewed source commit `90d8b05af38940ffeb55d974401641a327176b9e`, with all six runtime code hashes verified at CC3 block **5,459,080**. The historical `deployments-v3.json` core remains inactive and superseded.
+**The hardened V3 core is deployed and qualified.** `deployments-v3-current.json` records six contracts from reviewed source commit `90d8b05af38940ffeb55d974401641a327176b9e`, with all six runtime code hashes verified at CC3 block **5,459,080** and all six sources verified on Blockscout. The historical `deployments-v3.json` core remains inactive and superseded.
 
 `activation-v3-current.json` records capped pilot facility `0x00B50626C4AA42d22ca01AAEa8649f253aEc5B1e` as **Active**, with policy **1**, registry release `0xad31a01779b7c8c8651e1fecbb15b6d177c25dbd637c99d7496c2c2a0b7d221a`, and proof job **1**. Its Ethereum source window is **25,944,522–26,024,522**, maturity is CC3 block **5,554,121**, and proof-job expiry is Unix timestamp **1792497600**. This is a fixed-supply demo-token testnet activation with no draw recorded, not a live pilot with a counterparty. There is no design partner, independent audit, or production asset or custody decision; V3 operator execution remains uninstalled and disabled.
 

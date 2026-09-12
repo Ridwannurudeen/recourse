@@ -19,8 +19,8 @@ Those four checks are what make a cumulative covenant possible: no single transf
 verified sum does."
 
 ## 0:55–1:45 — The real autonomous catch (Blockscout, facility 2 breach transaction)
-Open the breach transaction 0x96bf3081… on creditcoin-testnet.blockscout.com (the hash is in
-`docs/attestcoin-integration.md`, "Two deployed generations"). Show: status success, the emitting facility, the
+Open the breach transaction `0x96bf3081614a76c8df459eaeffe50975556883dd0e39d622758ca468f7528192` on
+creditcoin-testnet.blockscout.com (linked from `docs/attestcoin-integration.md`, "Two deployed generations", and from the README's verify table). Show: status success, the emitting facility, the
 events. Then show the mainnet treasury outflow it proved (Etherscan link from the integration note).
 "This facility's policy window was configured on Creditcoin BEFORE the qualifying Ethereum block was mined. The
 unattended operator watched mainnet, saw a real treasury push 147 USDC past a 100 USDC cap, waited for
