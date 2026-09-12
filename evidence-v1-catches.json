@@ -1,0 +1,68 @@
+{
+  "chainId": 102031,
+  "cumulativeBatch": {
+    "cc3Tx": "0x7c180209bedaa64b4e1acff02d2822e8c76b0db98f105b7b75e3b95ac7e5d5b6",
+    "cc3Block": 5371462,
+    "gasUsed": 699409,
+    "facilityId": 1,
+    "precompileCalls": 6,
+    "sources": [
+      {
+        "ethTx": "0xa44c5e3f40201583bfa3329b8b4da1851c34f4dbabcc723743c4ca82e2f5dcaa",
+        "ethBlock": 25826525,
+        "amountUsdc": "8.58"
+      },
+      {
+        "ethTx": "0x2456f121b5402fb3cd42ea45714f4072965b6ef1b85a05f0e3a67e78c13b0d8b",
+        "ethBlock": 25826526,
+        "amountUsdc": "31.24"
+      },
+      {
+        "ethTx": "0x1c9a4bf94a28bd8b7da9e676e2259b05a0cce7815c757b1fa77ef8588218addc",
+        "ethBlock": 25826544,
+        "amountUsdc": "190.30"
+      },
+      {
+        "ethTx": "0xbddccb82e91cf16def50c3bad6003b4b6e7e68f8d2c35541d0890bdcc117fdc9",
+        "ethBlock": 25826548,
+        "amountUsdc": "14.58"
+      },
+      {
+        "ethTx": "0xb22894683c336ffd74ad115b705babd9e60bb1df40444f160eb6248067855465",
+        "ethBlock": 25826559,
+        "amountUsdc": "30.09"
+      }
+    ],
+    "capUsdc": "232.545",
+    "treasury": "0xbaa67174531f0c031f91a373f6788c7e821af2c5",
+    "usdc": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    "consequences": {
+      "debtReductionWei": "160000000000000000000",
+      "hunterRewardWei": "40000000000000000000",
+      "hunter": "0xa61B1518691dF7655226fF944b6f3Eade4E4B228",
+      "covenantId": 1
+    },
+    "derivedFrom": "Decoded eth_getTransactionReceipt(cc3Tx) from https://rpc.cc3-testnet.creditcoin.network: Breached at deployments.json facility, using contracts/interfaces/IRecourseFacility.sol:29 and contracts/RecourseFacility.sol:195-209; EvidenceAccepted and BreachReported at deployments.json adjudicator, using contracts/AttestcoinAdjudicator.sol:24-27. Facility id, covenant id, hunter, debt reduction and hunter reward are the emitted values at cc3Block."
+  },
+  "autonomousCatch": {
+    "cc3Tx": "0x96bf3081614a76c8df459eaeffe50975556883dd0e39d622758ca468f7528192",
+    "cc3Block": 5371828,
+    "gasUsed": 459396,
+    "facilityId": 2,
+    "precompileCalls": 2,
+    "source": {
+      "ethTx": "0xc8481d8afbc2d439df53a6756fea1c61b0c2253703e53f4b5416d45fdbf55f79",
+      "ethBlock": 25832534,
+      "txIndex": 146,
+      "amountUsdc": "147.41949",
+      "from": "0x000000000004444c5dc75cb358380d2e3de08a90"
+    },
+    "consequences": {
+      "debtReductionWei": "160000000000000000000",
+      "hunterRewardWei": "40000000000000000000",
+      "hunter": "0xa61B1518691dF7655226fF944b6f3Eade4E4B228",
+      "covenantId": 1
+    },
+    "derivedFrom": "Decoded eth_getTransactionReceipt(cc3Tx) from https://rpc.cc3-testnet.creditcoin.network: Breached at deployments.json facility, using contracts/interfaces/IRecourseFacility.sol:29 and contracts/RecourseFacility.sol:195-209; EvidenceAccepted and BreachReported at deployments.json adjudicator, using contracts/AttestcoinAdjudicator.sol:24-27. Facility id, covenant id, hunter, debt reduction and hunter reward are the emitted values at cc3Block."
+  }
+}
