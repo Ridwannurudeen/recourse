@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'none'; base-uri 'none'; form-action 'none'; style-src 'self'; img-src data:; connect-src 'none'"
+      content="default-src 'none'; base-uri 'none'; form-action 'none'; script-src 'sha256-RmqNqikitJZn3JBRclROTUXcYTQ3HnVDm1spCL85U/E='; style-src 'self'; img-src data:; connect-src 'none'"
     />
     <meta name="color-scheme" content="light dark" />
     <meta
@@ -35,10 +35,11 @@
           <p class="eyebrow">Creditcoin CC3 testnet · Evidence route</p>
           <h1 id="thesis">Verified conduct.<br /><em>Enforceable credit.</em></h1>
           <p class="intro">
-            Recourse turns cryptographic evidence into enforceable credit covenants
-            on Creditcoin. A proven breach freezes undrawn credit, applies a penalty
+            Recourse uses Attestcoin proofs of Ethereum conduct to enforce
+            undercollateralised credit on Creditcoin. A proven breach freezes undrawn credit, applies a penalty
             bond against debt, and pays the hunter who submitted the proof.
           </p>
+          <p class="thesis">The proof does not release an escrow. It changes credit risk.</p>
           <p>
             The documented V1 operator run detected, proved and submitted an outflow
             without a human step. It monitored Uniswap v4’s shared PoolManager,
@@ -49,15 +50,31 @@
         </div>
         <aside class="verify" aria-labelledby="verify-title">
           <p class="eyebrow">Run the evidence check</p>
-          <h2 id="verify-title">Two steps.<br />No wallet.</h2>
-          <pre aria-label="Install dependencies, then verify"><code>npm ci --omit=dev
-npm run judge:verify</code></pre>
+          <h2 id="verify-title">Check the credit consequences.</h2>
+          <button class="command" id="copy-commands" type="button" disabled
+            aria-label="Commands: npm ci --omit=dev, then npm run judge:verify" aria-describedby="copy-note">
+            <span class="command-ready" aria-hidden="true">
+              <span class="command-label" id="copy-label">Select commands · run in order</span>
+              <code>npm ci --omit=dev</code>
+              <code>npm run judge:verify</code>
+            </span>
+            <span class="command-copied" aria-hidden="true">Copied both commands<span>Paste into your shell</span></span>
+          </button>
+          <p class="fine copy-note" id="copy-note">Select and copy both lines. Run from the repo root.</p>
+          <span class="visually-hidden" id="copy-status" aria-live="polite"></span>
           <p>No Foundry, submodules or <code>.env</code> needed.</p>
-          <p class="result">46 PASS · 0 FAIL · 3 UNVERIFIED</p>
+          <div class="instrument" aria-label="Recorded verification output">
+            <p class="eyebrow">49 checks · <time datetime="2026-09-12">12 September 2026</time></p>
+            <samp class="result"><span>PASS 46</span><span>FAIL 0</span><span>UNVERIFIED 3</span></samp>
+          </div>
           <p class="fine">
-            Measured 12 September 2026: roughly 30 to 45 seconds after installation.
-            Public-endpoint latency can vary. Tests, authorship and unattended
-            operation remain UNVERIFIED because an RPC cannot establish them.
+            Measured for this 49-check run: roughly <span class="datum">30–45s</span> after installation.
+            Public-endpoint latency can vary.
+          </p>
+          <p class="verification-boundary">
+            The three UNVERIFIED rows are tests, authorship and unattended
+            operation. A public RPC cannot establish them. The checker leaves
+            them UNVERIFIED rather than presenting them as proven.
           </p>
           <a class="text-link" href="https://github.com/Ridwannurudeen/recourse/blob/main/JUDGE.md">Read the judge’s guide ↗</a>
         </aside>
@@ -66,13 +83,14 @@ npm run judge:verify</code></pre>
       <section class="evidence" aria-labelledby="evidence-title">
         <p class="eyebrow">Two recorded adjudications · V1 generation</p>
         <h2 id="evidence-title">Inspect the transactions.</h2>
+        <p class="fine">Recorded evidence in the <time datetime="2026-09-12">12 September 2026</time> snapshot. Block and gas figures are per adjudication transaction.</p>
         <div class="evidence-grid">
           <article>
             <p class="eyebrow">01 / Prospective adjudication</p>
             <h3>Committed before the source block.</h3>
             <p>
-              The covenant was committed 260 seconds before the qualifying Ethereum
-              block existed. The unattended operator proved a 147.41949 USDC outflow
+              The covenant was committed <span class="datum">260 seconds</span> before the qualifying Ethereum
+              block existed. The unattended operator proved a <span class="datum">147.41949 USDC</span> outflow
               from PoolManager and triggered a breach on CC3. No relationship
               between that monitored address and the borrower is established.
             </p>
@@ -84,7 +102,7 @@ npm run judge:verify</code></pre>
             <h3>The breach is the verified sum.</h3>
             <p>
               Five transfers from an unrelated third-party wallet totalled
-              274.79 USDC. Each was below the 232.545 USDC cap; their sum exceeded it.
+              <span class="datum">274.79 USDC</span>. Each was below the <span class="datum">232.545 USDC</span> cap; their sum exceeded it.
               One continuity proof covered all five. The window was configured
               after the source blocks were mined: a retrospective demonstration,
               not post-funding borrower conduct.
@@ -109,7 +127,7 @@ npm run judge:verify</code></pre>
             The portfolio allocation used project wallets and test tokens.
           </p>
           <p>
-            <a href="https://www.npmjs.com/package/recourse-protocol-sdk">recourse-protocol-sdk@0.1.1</a>
+            <a class="datum" href="https://www.npmjs.com/package/recourse-protocol-sdk">recourse-protocol-sdk@0.1.1</a>
             is published for interface discovery and testnet integration.
             Interfaces are not frozen; no external integration is demonstrated.
           </p>
@@ -121,6 +139,20 @@ npm run judge:verify</code></pre>
       </section>
     </main>
     <footer class="shell">
+      <dl class="colophon" aria-label="Recourse publication references">
+        <div>
+          <dt>Published SDK</dt>
+          <dd><a href="https://www.npmjs.com/package/recourse-protocol-sdk">recourse-protocol-sdk@0.1.1</a></dd>
+        </div>
+        <div>
+          <dt>Source</dt>
+          <dd><a href="https://github.com/Ridwannurudeen/recourse">Ridwannurudeen/recourse ↗</a></dd>
+        </div>
+        <div>
+          <dt>Judge’s guide</dt>
+          <dd><a href="https://github.com/Ridwannurudeen/recourse/blob/main/JUDGE.md">JUDGE.md ↗</a></dd>
+        </div>
+      </dl>
       <p>
         Testnet software. No independent audit, external capital or production
         credit performance is claimed. Consequences stay on Creditcoin;
@@ -128,5 +160,32 @@ npm run judge:verify</code></pre>
       </p>
       <a class="text-link" href="https://github.com/Ridwannurudeen/recourse#honest-limitations">Scope and limitations ↗</a>
     </footer>
+    <script>
+      const button = document.getElementById("copy-commands");
+      const note = document.getElementById("copy-note");
+      const status = document.getElementById("copy-status");
+      if (typeof navigator.clipboard?.writeText === "function") {
+        button.disabled = false;
+        button.setAttribute("aria-label", "Copy: npm ci --omit=dev, then npm run judge:verify");
+        document.getElementById("copy-label").textContent = "Copy both commands";
+        note.textContent = "Copies both lines. Run from the repo root.";
+        let reset;
+        button.addEventListener("click", async () => {
+          clearTimeout(reset);
+          status.textContent = "";
+          try {
+            await navigator.clipboard.writeText("npm ci --omit=dev\nnpm run judge:verify");
+            button.classList.add("is-copied");
+            status.textContent = "Both commands copied. Paste into your shell.";
+            note.textContent = "Copies both lines. Run from the repo root.";
+            reset = setTimeout(() => button.classList.remove("is-copied"), 2200);
+          } catch {
+            button.classList.remove("is-copied");
+            note.textContent = "Copy manually from the commands above.";
+            status.textContent = "Clipboard access denied. Select and copy the commands manually.";
+          }
+        });
+      }
+    </script>
   </body>
 </html>

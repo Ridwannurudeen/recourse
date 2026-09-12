@@ -5,13 +5,11 @@
   --obs-raised: #16211f;
   --obs-ink: #eef3ee;
   --obs-soft: #a6b4af;
-  --obs-faint: #6f7e79;
+  --obs-faint: #7d8c87;
   --obs-line: #293632;
   --obs-line-strong: #40514c;
   --obs-accent: #55e6bd;
-  --obs-accent-soft: #183b33;
   --obs-alert: #ff8977;
-  --obs-alert-soft: #422721;
   --obs-warn: #e9c46a;
   --obs-radius-sm: 3px;
   --obs-radius: 7px;
@@ -124,7 +122,7 @@ body.observatory-page::after {
 }
 
 .obs-brand strong,
-.obs-brand span {
+.obs-brand span:where(:not(.obs-mark)) {
   display: block;
 }
 
@@ -133,7 +131,7 @@ body.observatory-page::after {
   letter-spacing: -0.01em;
 }
 
-.obs-brand span {
+.obs-brand span:where(:not(.obs-mark)) {
   color: var(--obs-faint);
   font-size: 11px;
 }
@@ -570,7 +568,7 @@ body.observatory-page::after {
 .obs-pool-lifecycle strong {
   display: block;
   margin-top: 12px;
-  color: var(--obs-text);
+  color: var(--obs-ink);
   font: 700 13px/1.2 var(--obs-mono);
 }
 
