@@ -8,9 +8,9 @@ adjudicated a proof. Chain: Creditcoin CC3 Testnet, chain id 102031; evidence ch
 
 | What | Where |
 | --- | --- |
-| Autonomous catch, submitted unattended by the operator wallet `0xa61B1518691dF7655226fF944b6f3Eade4E4B228` | [`0x96bf3081…f7528192`](https://creditcoin-testnet.blockscout.com/tx/0x96bf3081614a76c8df459eaeffe50975556883dd0e39d622758ca468f7528192) · block 5,371,828 · 459,396 gas · two precompile calls |
-| The mainnet transaction it proved | [`0xc8481d8a…bf55f79`](https://etherscan.io/tx/0xc8481d8afbc2d439df53a6756fea1c61b0c2253703e53f4b5416d45fdbf55f79) · Ethereum block 25,832,534, position 146 · 147.41949 USDC leaving the committed treasury |
-| Cumulative batch: five mainnet transfers, one continuity proof, breach on the verified sum | [`0x7c180209…7e5d5b6`](https://creditcoin-testnet.blockscout.com/tx/0x7c180209bedaa64b4e1acff02d2822e8c76b0db98f105b7b75e3b95ac7e5d5b6) · block 5,371,462 · 699,409 gas |
+| Prospective adjudication, submitted unattended by the operator wallet `0xa61B1518691dF7655226fF944b6f3Eade4E4B228`. The covenant was committed 260 seconds before the source block existed; the monitored address is Uniswap v4's shared PoolManager, an unrelated public contract. No borrower covenant violation is demonstrated | [`0x96bf3081…f7528192`](https://creditcoin-testnet.blockscout.com/tx/0x96bf3081614a76c8df459eaeffe50975556883dd0e39d622758ca468f7528192) · block 5,371,828 · 459,396 gas · two precompile calls |
+| The mainnet transaction it proved | [`0xc8481d8a…bf55f79`](https://etherscan.io/tx/0xc8481d8afbc2d439df53a6756fea1c61b0c2253703e53f4b5416d45fdbf55f79) · Ethereum block 25,832,534, position 146 · 147.41949 USDC leaving Uniswap v4's shared PoolManager, an unrelated public contract chosen for continuous activity |
+| Retrospective cumulative verification: five transfers from an unrelated third-party wallet, the window configured after the source blocks were mined; one continuity proof, a verified sum exceeding a cap that no single transfer exceeds | [`0x7c180209…7e5d5b6`](https://creditcoin-testnet.blockscout.com/tx/0x7c180209bedaa64b4e1acff02d2822e8c76b0db98f105b7b75e3b95ac7e5d5b6) · block 5,371,462 · 699,409 gas |
 | The five source transfers (blocks, amounts, cap) | [docs/attestcoin-integration.md, "The adjudicated evidence"](docs/attestcoin-integration.md#the-adjudicated-evidence) |
 | The V1 contracts, all source-verified so Blockscout decodes their events | [adjudicator](https://creditcoin-testnet.blockscout.com/address/0x6abB74F57c99986Ff205d4EF396Dd6d61d2659eB) · [facility](https://creditcoin-testnet.blockscout.com/address/0x144048E22e822269814D592aeaC34734c603dCA7) · [outflow-cap covenant](https://creditcoin-testnet.blockscout.com/address/0x873C1344B850bB80c758E191D1DCA31CE86030Ef) |
 
@@ -31,7 +31,7 @@ debt in tCTC, hunter paid). No USDC moved on Ethereum as a result; Attestcoin ha
 
 | What | Where |
 | --- | --- |
-| One-command re-check of the on-chain claims | `npm run judge:verify` (public endpoints only; tests, authorship and unattended operation are reported UNVERIFIED because an RPC cannot establish them) |
+| Re-check the on-chain claims in two steps; no Foundry, no submodules, no `.env` | `npm ci --omit=dev` then `npm run judge:verify` (public endpoints only; tests, authorship and unattended operation are reported UNVERIFIED because an RPC cannot establish them) |
 
 Measured 2026-09-12 on `main`; these are dated local results, not chain assertions.
 

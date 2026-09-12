@@ -4,12 +4,12 @@ Recourse depends on Attestcoin for adjudication, not for a peripheral trigger. B
 
 ## Two deployed generations
 
-- **v1:** five internally reviewed and tested, not independently audited contracts implement the native-token facility, proof adjudicator, and three covenant predicates. The historical hero batch proves the cumulative predicate below. A separate live facility was configured on CC3 before its qualifying Ethereum block was mined; the unattended daemon later detected the 147.41949 USDC outflow, built the proof, and submitted the successful breach at CC3 block 5,371,828 (transaction [`0x96bf3081…f7528192`](https://creditcoin-testnet.blockscout.com/tx/0x96bf3081614a76c8df459eaeffe50975556883dd0e39d622758ca468f7528192), 459,396 gas, two precompile calls). The proven source transaction is Ethereum mainnet [`0xc8481d8a…bf55f79`](https://etherscan.io/tx/0xc8481d8afbc2d439df53a6756fea1c61b0c2253703e53f4b5416d45fdbf55f79) at block 25,832,534, position 146: 147.41949 USDC leaving the committed treasury.
+- **v1:** five internally reviewed and tested, not independently audited contracts implement the native-token facility, proof adjudicator, and three covenant predicates. The historical hero batch proves the cumulative predicate below. A separate live facility was configured on CC3 before its qualifying Ethereum block was mined; the unattended daemon later detected the 147.41949 USDC outflow, built the proof, and submitted the successful breach at CC3 block 5,371,828 (transaction [`0x96bf3081…f7528192`](https://creditcoin-testnet.blockscout.com/tx/0x96bf3081614a76c8df459eaeffe50975556883dd0e39d622758ca468f7528192), 459,396 gas, two precompile calls). The proven source transaction is Ethereum mainnet [`0xc8481d8a…bf55f79`](https://etherscan.io/tx/0xc8481d8afbc2d439df53a6756fea1c61b0c2253703e53f4b5416d45fdbf55f79) at block 25,832,534, position 146: 147.41949 USDC leaving Uniswap v4's shared PoolManager, an unrelated public third-party contract chosen because it is continuously active. This demonstrates prospective adjudication mechanics, not borrower conduct.
 - **Horizon 1:** seven contracts are live on CC3: a graded Policy Kernel, kernel-created Verified Credit State, ERC-20 facility factory and demonstration facility, event-history policy, permissionless commit/reveal Proof Jobs market, and fixed-supply testnet demo token. The demonstration facility is Active; the token is testnet scaffolding, not a production stablecoin.
 
 ## The adjudicated evidence
 
-The live CC3 facility committed Ethereum mainnet USDC, treasury `0xbaa67174531f0c031f91a373f6788c7e821af2c5`, and source blocks 25,826,525 through 25,826,559. The five receipts are successful Ethereum transactions with one USDC `Transfer` log each:
+The live CC3 facility committed Ethereum mainnet USDC, treasury `0xbaa67174531f0c031f91a373f6788c7e821af2c5` (an unrelated third-party wallet with no established relationship to the borrower), and source blocks 25,826,525 through 25,826,559. The five receipts are successful Ethereum transactions with one USDC `Transfer` log each:
 
 | Ethereum transaction | Block | Proven outflow |
 | --- | ---: | ---: |
@@ -132,7 +132,7 @@ These boundaries are why Horizon 1 calls the store Verified Credit State rather 
 | Breach block | **5,371,462** |
 | Result | Success, seven events |
 | Measured gas | **699,409** |
-| Autonomous catch transaction | [`0x96bf3081…f7528192`](https://creditcoin-testnet.blockscout.com/tx/0x96bf3081614a76c8df459eaeffe50975556883dd0e39d622758ca468f7528192) |
+| Prospective adjudication transaction | [`0x96bf3081…f7528192`](https://creditcoin-testnet.blockscout.com/tx/0x96bf3081614a76c8df459eaeffe50975556883dd0e39d622758ca468f7528192) |
 | Catch block | **5,371,828** |
 | Catch gas | **459,396** (two precompile calls, submitted unattended) |
 | Catch source transaction | [`0xc8481d8a…bf55f79`](https://etherscan.io/tx/0xc8481d8afbc2d439df53a6756fea1c61b0c2253703e53f4b5416d45fdbf55f79) (Ethereum block 25,832,534, position 146, 147.41949 USDC) |

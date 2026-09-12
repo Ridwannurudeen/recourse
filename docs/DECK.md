@@ -6,7 +6,7 @@ Content draft for 13 slides. Deployment and operating status below reflect the r
 
 Recourse is an undercollateralized credit facility on Creditcoin where cryptographic proofs enforce covenants over a borrower's Ethereum conduct.
 
-In its documented V1 operator run, an unattended watcher detected a real **147.41949 USDC** Ethereum mainnet outflow, built an Attestcoin proof, and triggered a breach on CC3 testnet that froze undrawn credit, applied the borrower's bond against debt, and paid the hunter ([transaction](https://creditcoin-testnet.blockscout.com/tx/0x96bf3081614a76c8df459eaeffe50975556883dd0e39d622758ca468f7528192), block 5,371,828). A separate historical five-transfer batch demonstrates cumulative enforcement. The newer V3 core is deployed with an activated test-token facility and a funded proof job, and has not yet adjudicated a proof.
+In its documented V1 operator run, an unattended watcher detected a real **147.41949 USDC** Ethereum mainnet outflow from Uniswap v4's shared PoolManager, an unrelated public third-party contract chosen for continuous activity, built an Attestcoin proof, and triggered a breach on CC3 testnet that froze undrawn credit, applied the borrower's bond against debt, and paid the hunter ([transaction](https://creditcoin-testnet.blockscout.com/tx/0x96bf3081614a76c8df459eaeffe50975556883dd0e39d622758ca468f7528192), block 5,371,828). The covenant was committed 260 seconds before the source block existed; this demonstrates prospective adjudication mechanics, not a borrower covenant violation. A separate historical five-transfer batch demonstrates retrospective cumulative verification using an unrelated third-party wallet, with the window configured after the source blocks were mined. The newer V3 core is deployed with an activated test-token facility and a funded proof job, and has not yet adjudicated a proof.
 
 Source: [README](../README.md), [submission description](submission-form.md).
 
@@ -42,7 +42,7 @@ Source: [README — How it works and Architecture](../README.md), [submission de
 
 ## 5. The hero covenant: the breach is the sum
 
-Five real Ethereum mainnet USDC transfers, in five distinct blocks across a 35-block inclusive span, were verified under one shared continuity proof in one adjudication.
+Five real Ethereum mainnet USDC transfers from an unrelated third-party wallet, in five distinct blocks across a 35-block inclusive span, were verified under one shared continuity proof in one retrospective adjudication; the window was configured after the source blocks were already mined.
 
 **190.30 USDC largest transfer < 232.545 USDC cap < 274.79 USDC verified total.**
 
@@ -57,13 +57,13 @@ The historical batch settled at **CC3 block 5,371,462**, using **699,409 gas**. 
 
 Sources: [integration evidence and mechanics](attestcoin-integration.md), [deployment record](../deployments.json), [historical adjudication transaction](https://creditcoin-testnet.blockscout.com/tx/0x7c180209bedaa64b4e1acff02d2822e8c76b0db98f105b7b75e3b95ac7e5d5b6).
 
-## 6. The real autonomous catch
+## 6. Prospective autonomous adjudication
 
 **A separate facility was configured before the qualifying Ethereum block was mined.**
 
-The policy window was committed on CC3 first. The unattended operator then detected a **147.41949 USDC** Ethereum mainnet outflow, built its Attestcoin proof, and submitted the breach without manual intervention. Facility 2 moved to `Breached` at **CC3 block 5,371,828** (transaction [`0x96bf3081…f7528192`](https://creditcoin-testnet.blockscout.com/tx/0x96bf3081614a76c8df459eaeffe50975556883dd0e39d622758ca468f7528192), 459,396 gas).
+The policy window was committed on CC3 4 minutes 20 seconds before the source block existed. The unattended operator then detected a **147.41949 USDC** Ethereum mainnet outflow from Uniswap v4's shared PoolManager, an unrelated public third-party contract chosen for continuous activity, built its Attestcoin proof, and submitted the breach without manual intervention. Facility 2 moved to `Breached` at **CC3 block 5,371,828** (transaction [`0x96bf3081…f7528192`](https://creditcoin-testnet.blockscout.com/tx/0x96bf3081614a76c8df459eaeffe50975556883dd0e39d622758ca468f7528192), 459,396 gas).
 
-This demonstrates a pre-configured policy reacting autonomously to subsequent mainnet activity. It is separate from the historical cumulative batch on the preceding slide. The historical batch's 699,409 gas must not be attributed to this catch.
+This demonstrates prospective adjudication mechanics, not a borrower's covenant breach: no relationship is established between PoolManager and the borrower. It is separate from the historical cumulative batch on the preceding slide. The historical batch's 699,409 gas must not be attributed to this prospective adjudication.
 
 Mainnet evidence was adjudicated on CC3 Testnet. Neither demonstration establishes customer demand or production credit performance.
 
@@ -87,7 +87,41 @@ Sources: [current V3 core manifest](../deployments-v3-current.json), [pilot acti
 
 ## 8. Architecture: evidence becomes credit state
 
-**Ethereum receipts → Attestcoin verification → Policy Kernel → Verified Credit State and facility consequences.**
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 200" role="img" aria-labelledby="pipeline-title pipeline-desc" style="display:block;width:100%;max-width:900px;height:auto;margin:16px 0;break-inside:avoid">
+  <title id="pipeline-title">Evidence becomes credit state: Horizon 1 and V3 architecture</title>
+  <desc id="pipeline-desc">Ethereum receipts pass through the Proof Builder to the Policy Kernel, which verifies Attestcoin inclusion and continuity, decodes receipts and evaluates committed policies. Accepted evidence updates Verified Credit State and applies facility consequences on Creditcoin. The two recorded adjudications used the V1 adjudicator.</desc>
+  <defs>
+    <marker id="pipeline-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 Z" fill="#53605c" /></marker>
+  </defs>
+  <g font-family="Arial, Helvetica, sans-serif" fill="#202a26">
+    <text x="12" y="22" font-size="14" letter-spacing="1">ETHEREUM EVIDENCE</text>
+    <text x="462" y="22" font-size="14" letter-spacing="1">CREDITCOIN · CC3 TESTNET</text>
+    <g fill="#f4f6f5" stroke="#b1b9b5">
+      <rect x="12" y="42" width="178" height="108" rx="5" />
+      <rect x="234" y="42" width="184" height="108" rx="5" />
+      <rect x="462" y="42" width="192" height="108" rx="5" />
+      <rect x="698" y="42" width="190" height="108" rx="5" />
+    </g>
+    <g stroke="#53605c" stroke-width="2" marker-end="url(#pipeline-arrow)">
+      <path d="M 192 96 H 225" /><path d="M 420 96 H 453" /><path d="M 656 96 H 689" />
+    </g>
+    <g text-anchor="middle">
+      <text x="101" y="77" font-size="20" font-weight="700">Receipts</text>
+      <text x="101" y="105" font-size="16">Status + event logs</text>
+      <text x="101" y="130" font-size="16">Source positions</text>
+      <text x="326" y="77" font-size="20" font-weight="700">Proof Builder</text>
+      <text x="326" y="105" font-size="16">Merkle inclusion</text>
+      <text x="326" y="130" font-size="16">Shared continuity</text>
+      <text x="558" y="77" font-size="20" font-weight="700">Policy Kernel</text>
+      <text x="558" y="105" font-size="16">Attestcoin verification</text>
+      <text x="558" y="130" font-size="16">Decode + evaluate</text>
+      <text x="793" y="73" font-size="17" font-weight="700">Verified Credit State</text>
+      <text x="793" y="98" font-size="16">Accepted observations</text>
+      <text x="793" y="124" font-size="16" font-weight="700">Facility consequences</text>
+      <text x="450" y="184" font-size="16">Both recorded adjudications used V1's adjudicator; V3 has not yet adjudicated a proof.</text>
+    </g>
+  </g>
+</svg>
 
 | Component | Responsibility |
 | --- | --- |

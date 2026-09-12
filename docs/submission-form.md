@@ -17,18 +17,33 @@ DeFi
 
 ## One-line vision (the BUIDL card)
 
-Covenant-enforced credit on Creditcoin. Real Ethereum conduct, proven by Attestcoin, becomes an executed credit consequence on CC3 testnet: an unattended operator caught a real mainnet USDC outflow, froze undrawn credit and slashed the bond.
+Covenant-enforced credit on Creditcoin: a proven Ethereum event freezes undrawn credit, applies the bond against debt, and pays the hunter. An unattended operator did it under a covenant committed 260 seconds earlier — against a public third-party contract, so it shows prospective adjudication, not a borrower breach.
 
 ## Project Description
 
 Recourse turns proven Ethereum conduct into enforceable credit covenants on Creditcoin's CC3 testnet.
-In its documented V1 operator run, an unattended watcher detected a real 147.41949 USDC mainnet
-outflow, built an Attestcoin proof, and triggered a breach that froze undrawn credit, applied the
-borrower's bond against debt, and paid the hunter. A separate historical five-transfer batch
-demonstrates cumulative enforcement, while the newer V3 core is deployed with an activated
-test-token facility and funded proof job but has not yet adjudicated a proof.
+The proof does not release an escrow. It changes credit risk.
 
-The catch: [`0x96bf3081…f7528192`](https://creditcoin-testnet.blockscout.com/tx/0x96bf3081614a76c8df459eaeffe50975556883dd0e39d622758ca468f7528192) on CC3, proving [`0xc8481d8a…bf55f79`](https://etherscan.io/tx/0xc8481d8afbc2d439df53a6756fea1c61b0c2253703e53f4b5416d45fdbf55f79) on Ethereum mainnet.
+In its documented V1 operator run, an unattended watcher detected a real 147.41949 USDC mainnet
+outflow from Uniswap v4's shared PoolManager, an unrelated public third-party contract chosen for continuous activity,
+built an Attestcoin proof, and submitted it without a human step, triggering a breach that froze undrawn credit, applied the borrower's bond against debt,
+and paid the hunter. The covenant was committed 260 seconds before the source block existed; this demonstrates
+prospective adjudication mechanics, not a borrower covenant violation. A separate historical five-transfer batch
+demonstrates retrospective cumulative verification using an unrelated third-party wallet, with the window configured
+after the source blocks were mined, while the newer V3 core is deployed with an activated
+test-token facility and funded proof job but has not yet adjudicated a proof.
+The operator market is deployed and empty; the portfolio allocation used project wallets and test tokens.
+Attestcoin's documentation states that [writability](https://docs.attestcoin.org/attestcoin-protocol/attestcoin-writability) "is undergoing 3rd party testing and audits" and is not yet released on Creditcoin testnet, so cross-chain write-back is unavailable to every entrant at this stage, not a gap specific to Recourse.
+
+What is uncommon in this field is the combination: an operator that acted unattended, a published npm SDK
+([`recourse-protocol-sdk@0.1.1`](https://www.npmjs.com/package/recourse-protocol-sdk)), deployed coordination
+contracts — policy kernel, proof-job market, operator market and portfolio pool — and a machine-checkable
+evidence artefact. `npm run judge:verify` re-checks every public on-chain claim in roughly 30 to 45 seconds:
+46 PASS, 0 FAIL, 3 UNVERIFIED on 2026-09-12. From a fresh clone run `npm ci --omit=dev` first; no Foundry,
+submodules or `.env` is needed. Tests, authorship and unattended operation stay UNVERIFIED because a public
+RPC cannot establish them.
+
+The prospective adjudication: [`0x96bf3081…f7528192`](https://creditcoin-testnet.blockscout.com/tx/0x96bf3081614a76c8df459eaeffe50975556883dd0e39d622758ca468f7528192) on CC3, proving [`0xc8481d8a…bf55f79`](https://etherscan.io/tx/0xc8481d8afbc2d439df53a6756fea1c61b0c2253703e53f4b5416d45fdbf55f79) on Ethereum mainnet.
 
 Traditional credit is governed by covenants: enforceable promises not to strip a treasury, take on
 new debt, or unwind a pledged position. DeFi replaced those controls with overcollateralization
@@ -39,10 +54,10 @@ provable on Creditcoin, so covenants become executable code.
 
 | What | Where |
 | --- | --- |
-| The autonomous catch (V1 generation): a real Ethereum mainnet USDC outflow of 147.41949 USDC, detected by the unattended operator, proven through the BlockProver precompile and adjudicated as a breach with no human step in that run | [`0x96bf3081…f7528192`](https://creditcoin-testnet.blockscout.com/tx/0x96bf3081614a76c8df459eaeffe50975556883dd0e39d622758ca468f7528192) · CC3 block 5,371,828 · 459,396 gas · two precompile calls |
-| The cumulative catch (V1 generation, historical evidence): five real Ethereum mainnet transfers in five blocks, one continuity proof, six precompile calls, a breach on the verified sum that no single transfer would have triggered | [`0x7c180209…7e5d5b6`](https://creditcoin-testnet.blockscout.com/tx/0x7c180209bedaa64b4e1acff02d2822e8c76b0db98f105b7b75e3b95ac7e5d5b6) · CC3 block 5,371,462 · 699,409 gas |
-| The mainnet transaction the autonomous catch proved | [`0xc8481d8a…bf55f79`](https://etherscan.io/tx/0xc8481d8afbc2d439df53a6756fea1c61b0c2253703e53f4b5416d45fdbf55f79) · Ethereum block 25,832,534, position 146 · 147.41949 USDC leaving the committed treasury |
-| The five mainnet source transactions behind the cumulative catch | [integration note, adjudicated evidence](https://github.com/Ridwannurudeen/recourse/blob/main/docs/attestcoin-integration.md#the-adjudicated-evidence) |
+| Prospective adjudication (V1 generation): the covenant was committed 4 minutes 20 seconds (260 seconds) before the source block existed; a real Ethereum mainnet outflow of 147.41949 USDC from Uniswap v4's shared PoolManager, an unrelated third-party address, was detected by the unattended operator, proven through the BlockProver precompile and adjudicated as a breach with no human step in that run. This demonstrates prospective adjudication, not a borrower covenant violation | [`0x96bf3081…f7528192`](https://creditcoin-testnet.blockscout.com/tx/0x96bf3081614a76c8df459eaeffe50975556883dd0e39d622758ca468f7528192) · CC3 block 5,371,828 · 459,396 gas · two precompile calls |
+| Retrospective verification demonstration (V1 generation): the window was configured after the source blocks were already mined, using an unrelated third-party wallet; five real Ethereum mainnet transfers in five blocks, one continuity proof, six precompile calls, and an adjudicated breach on the verified sum exceeding the cap where no single transfer does | [`0x7c180209…7e5d5b6`](https://creditcoin-testnet.blockscout.com/tx/0x7c180209bedaa64b4e1acff02d2822e8c76b0db98f105b7b75e3b95ac7e5d5b6) · CC3 block 5,371,462 · 699,409 gas |
+| The mainnet transaction the prospective adjudication proved | [`0xc8481d8a…bf55f79`](https://etherscan.io/tx/0xc8481d8afbc2d439df53a6756fea1c61b0c2253703e53f4b5416d45fdbf55f79) · Ethereum block 25,832,534, position 146 · 147.41949 USDC leaving Uniswap v4's shared PoolManager, the unrelated public third-party contract monitored under the precommitted covenant; no relationship to the borrower is established |
+| The five mainnet source transactions behind the retrospective cumulative verification | [integration note, adjudicated evidence](https://github.com/Ridwannurudeen/recourse/blob/main/docs/attestcoin-integration.md#the-adjudicated-evidence) |
 | Hardened V3 core: six contracts from reviewed commit `90d8b05`, runtime hashes verified, source verified on Blockscout; activated, no proof adjudicated yet | [`deployments-v3-current.json`](https://github.com/Ridwannurudeen/recourse/blob/main/deployments-v3-current.json) · [PolicyKernelV2](https://creditcoin-testnet.blockscout.com/address/0x69d1715F117f79aB5E190d48666510B8A39Af6dB) |
 | Capped pilot facility, Active, proof job 1 funded, Ethereum source window 25,944,522–26,024,522 | [`activation-v3-current.json`](https://github.com/Ridwannurudeen/recourse/blob/main/activation-v3-current.json) · [facility](https://creditcoin-testnet.blockscout.com/address/0x00B50626C4AA42d22ca01AAEa8649f253aEc5B1e) |
 | Portfolio pool allocation of 100,000 rUSD to a pool-created facility, project-funded test tokens on both sides | [`allocation-v3-portfolio-current.json`](https://github.com/Ridwannurudeen/recourse/blob/main/allocation-v3-portfolio-current.json) · [facility](https://creditcoin-testnet.blockscout.com/address/0x0C874e56AD2dC9789A63a9Bc63c08a5F6D3C82C8) |
@@ -52,7 +67,7 @@ provable on Creditcoin, so covenants become executable code.
 | SDK | [`recourse-protocol-sdk@0.1.1`](https://www.npmjs.com/package/recourse-protocol-sdk) |
 | Deck | [`docs/RECOURSE-DECK.pdf`](https://github.com/Ridwannurudeen/recourse/blob/main/docs/RECOURSE-DECK.pdf) |
 
-22 of the 25 Recourse contracts on CC3 are source-verified on Blockscout, including all six current V3 core contracts, both V3 facilities and the five V1 contracts that executed both catches, so the explorer decodes their events without trusting this repository. The three still unverified are Horizon 1's kernel, demonstration facility and credit state.
+22 of the 25 Recourse contracts on CC3 are source-verified on Blockscout, including all six current V3 core contracts, both V3 facilities and the five V1 contracts that executed both adjudications, so the explorer decodes their events without trusting this repository. The three still unverified are Horizon 1's kernel, demonstration facility and credit state.
 
 **What the consequence is**
 
@@ -67,8 +82,8 @@ outstanding debt, and the hunter who caught it is paid.
 Up to 80% of the bond reduces outstanding debt, capped by that debt; the unused share returns
 to the borrower, and 20% rewards the hunter.
 
-The hero covenant is a cumulative one. No single proven transfer breaches the cap — only
-their verified sum does. Catching that requires transaction status, event logs, transaction
+The hero covenant is a cumulative one, demonstrated retrospectively. No single proven transfer breaches the cap — only
+their verified sum does. Verifying that requires transaction status, event logs, transaction
 indices and batch continuity to all be verified on-chain inside a single adjudication.
 
 The proof does not release an escrow. It changes credit risk.
@@ -77,9 +92,9 @@ The proof does not release an escrow. It changes credit risk.
 
 The original and Horizon 1 generations are live on CC3 alongside the hardened V3 core.
 The internally reviewed v1 contracts enforce the original
-covenant facility, including a real autonomous mainnet catch: its policy window was
+covenant facility, including prospective adjudication of an outflow from the unrelated third-party PoolManager: its policy window was
 configured on CC3 before the qualifying Ethereum block was mined, then the unattended
-operator detected the USDC outflow, built the Attestcoin proof, and submitted the breach.
+operator detected the USDC outflow, built the Attestcoin proof, and submitted the breach. This does not establish borrower conduct.
 Horizon 1 adds a graded policy kernel, event-derived Verified Credit State, a permissionless
 commit/reveal proof-job market, and an ERC-20 facility factory. Seven Horizon 1 contracts are
 deployed on CC3 around an Active demonstration facility denominated in a fixed-supply testnet
@@ -167,7 +182,7 @@ records proven event deltas and transitions rather than verified current balance
 time is CC3 acceptance time, and asset valuation remains external.
 
 Live on CC3 Testnet, adjudicated against real Ethereum mainnet transactions. The cumulative
-breach succeeded at CC3 block 5,371,462 and used 699,409 gas; the unattended catch succeeded at
+retrospective adjudication succeeded at CC3 block 5,371,462 and used 699,409 gas; the unattended prospective adjudication succeeded at
 block 5,371,828 and used 459,396 gas (transaction `0x96bf3081614a76c8df459eaeffe50975556883dd0e39d622758ca468f7528192`).
 
 Full technical detail: `docs/attestcoin-integration.md` in the repository.
