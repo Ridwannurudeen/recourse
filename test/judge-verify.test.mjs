@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
 import {
@@ -30,7 +31,7 @@ const code = "0x60006000";
 const hash = `0x${"1".repeat(64)}`;
 
 function fixture(t) {
-  const repoRoot = mkdtempSync(join(root, ".judge-test-"));
+  const repoRoot = mkdtempSync(join(tmpdir(), ".judge-test-"));
   t.after(() => rmSync(repoRoot, { recursive: true, force: true }));
   const manifests = {};
   for (const name of Object.values(MANIFEST_FILES)) {
@@ -104,6 +105,8 @@ function fixture(t) {
       const amount = parseUnits(source.amountUsdc, 6);
       receipts[source.ethTx] = {
         transactionHash: source.ethTx,
+        gasUsed: "0x5208",
+        to: evidence.cumulativeBatch.usdc,
         status: "0x1",
         blockNumber: toQuantity(source.ethBlock),
         transactionIndex: toQuantity(source.txIndex ?? index),
@@ -126,6 +129,7 @@ function fixture(t) {
     const record = manifest.transactions[step];
     receipts[record.hash] = {
       transactionHash: record.hash,
+      gasUsed: "0x5208",
       blockNumber: toQuantity(record.blockNumber),
       blockHash: record.blockHash,
       to,
@@ -424,8 +428,7 @@ test("one-unit gas or decoded consequence drift and absent receipts fail", async
     const result = await runJudgeVerification(f);
     assert.ok(
       result.checks.some(
-        (check) =>
-          check.status === "FAIL" && /catch|receipt/i.test(check.title),
+        (check) => check.status === "FAIL" && check.id === "v1-autonomousCatch",
       ),
       mutation,
     );
@@ -448,8 +451,14 @@ test("current proof-count and balance changes are described without failing", as
   f.state.poolBalance = 123456;
   const result = await runJudgeVerification(f);
   assert.equal(result.summary.FAIL, 0);
-  assert.match(JSON.stringify(result.checks), /17/);
-  assert.match(JSON.stringify(result.checks), /123456/);
+  assert.match(
+    result.checks.find((check) => check.id === "6.pilot").detail,
+    /successful proofs=17,/,
+  );
+  assert.match(
+    result.checks.find((check) => check.id === "7.portfolio").detail,
+    /pool cash=123456 /,
+  );
 });
 
 test("CLI help and usage exit codes", () => {
@@ -476,7 +485,7 @@ test("CLI help and usage exit codes", () => {
 });
 
 test("CLI unreachable endpoints exit zero with JSON transport results and no network", (t) => {
-  const directory = mkdtempSync(join(root, ".judge-cli-test-"));
+  const directory = mkdtempSync(join(tmpdir(), ".judge-cli-test-"));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const preload = join(directory, "offline.mjs");
   writeFileSync(
@@ -526,7 +535,7 @@ test("malformed evidence manifest is a reported failure, not a crash", async (t)
 });
 
 test("HTTP 404 falsifies page availability while HTTP 503 remains unverified", async (t) => {
-  for (const status of [404, 503]) {
+  for (const status of [400, 401, 403, 404, 408, 429, 503]) {
     const f = fixture(t);
     const originalFetch = f.fetchImpl;
     f.fetchImpl = async (url, options) =>
@@ -721,3 +730,316 @@ for (const mode of ["fallback-null", "fallback-receipt", "primary-null"]) {
     assert.equal(fallbackCalls.length > 0, mode !== "primary-null");
   });
 }
+
+for (const [name, id, mutate] of [
+  [
+    "missing gasUsed",
+    "v1-autonomousCatch",
+    (f) => delete f.receipts[f.evidence.autonomousCatch.cc3Tx].gasUsed,
+  ],
+  [
+    "missing receipt status",
+    "v1-autonomousCatch",
+    (f) => delete f.receipts[f.evidence.autonomousCatch.cc3Tx].status,
+  ],
+  [
+    "missing receipt logs",
+    "v1-autonomousCatch",
+    (f) => delete f.receipts[f.evidence.autonomousCatch.cc3Tx].logs,
+  ],
+  [
+    "empty receipt topics",
+    "6.history",
+    (f) => {
+      for (const r of Object.values(f.receipts))
+        for (const log of r.logs) log.topics = [];
+    },
+  ],
+  [
+    "malformed finalized",
+    "finalized-anchor",
+    (f) => {
+      const send = f.cc3Provider.send;
+      f.cc3Provider.send = (m, p) =>
+        m === "eth_getBlockByNumber" ? {} : send(m, p);
+    },
+  ],
+  [
+    "missing second hash",
+    "anchor-recheck",
+    (f) => {
+      const send = f.cc3Provider.send;
+      f.cc3Provider.send = (m, p) =>
+        m === "eth_getBlockByNumber" && p[0] !== "finalized" ? {} : send(m, p);
+    },
+  ],
+  [
+    "nonhex runtime",
+    "5.core",
+    (f) => {
+      const send = f.cc3Provider.send;
+      f.cc3Provider.send = (m, p) =>
+        m === "eth_getCode" ? "not-hex" : send(m, p);
+    },
+  ],
+  [
+    "malformed call result",
+    "5.core",
+    (f) => {
+      const send = f.cc3Provider.send;
+      f.cc3Provider.send = (m, p) => (m === "eth_call" ? "0x" : send(m, p));
+    },
+  ],
+  [
+    "malformed market log",
+    "8.activity",
+    (f) => {
+      const send = f.cc3Provider.send;
+      f.cc3Provider.send = (m, p) =>
+        m === "eth_getLogs" ? [{ topics: [] }] : send(m, p);
+    },
+  ],
+  [
+    "null market logs",
+    "8.activity",
+    (f) => {
+      const send = f.cc3Provider.send;
+      f.cc3Provider.send = (m, p) => (m === "eth_getLogs" ? null : send(m, p));
+    },
+  ],
+  [
+    "missing npm metadata",
+    "npm-sdk",
+    (f) => {
+      const fetch = f.fetchImpl;
+      f.fetchImpl = (url, o) =>
+        String(url).includes("registry.npmjs")
+          ? { ok: true, status: 200, json: async () => ({}) }
+          : fetch(url, o);
+    },
+  ],
+]) {
+  test(`malformed response: ${name} is UNVERIFIED`, async (t) => {
+    const f = fixture(t);
+    mutate(f);
+    const report = await runJudgeVerification(f);
+    const check = report.checks.find((row) => row.id === id);
+    assert.equal(check.status, "UNVERIFIED", JSON.stringify(check));
+  });
+}
+
+for (const mode of [
+  "missing cursor",
+  "nonobject",
+  "missing items",
+  "empty",
+  "loop",
+  "cap",
+  "wrong count",
+]) {
+  test(`explorer pagination: ${mode}`, async (t) => {
+    const f = fixture(t);
+    const fetch = f.fetchImpl;
+    const pages = new Map();
+    f.fetchImpl = async (url, o) => {
+      const response = await fetch(url, o);
+      if (!String(url).includes("internal-transactions")) return response;
+      let body = await response.json();
+      if (mode === "missing cursor") delete body.next_page_params;
+      if (mode === "nonobject") body = null;
+      if (mode === "missing items") delete body.items;
+      if (mode === "empty") body.items = [];
+      if (mode === "loop") body.next_page_params = { index: 1 };
+      if (mode === "cap") {
+        const key = String(url).split("?")[0];
+        const page = (pages.get(key) ?? 0) + 1;
+        pages.set(key, page);
+        body.next_page_params = page === 21 ? null : { index: page };
+      }
+      if (mode === "wrong count") body.items.pop();
+      return { ...response, json: async () => body };
+    };
+    const report = await runJudgeVerification(f);
+    for (const id of ["traces-cumulativeBatch", "traces-autonomousCatch"]) {
+      const check = report.checks.find((row) => row.id === id);
+      assert.equal(
+        check.status,
+        mode === "wrong count" ? "FAIL" : "UNVERIFIED",
+        JSON.stringify(check),
+      );
+      if (mode === "empty")
+        assert.match(
+          check.detail,
+          /explorer reports no internal transactions/i,
+        );
+    }
+  });
+}
+
+for (const mode of [
+  "runtime",
+  "blockHash",
+  "to",
+  "reverted",
+  "breach emitter",
+  "queryId",
+  "heights",
+]) {
+  test(`valid contradiction remains FAIL: ${mode}`, async (t) => {
+    const f = fixture(t);
+    const send = f.cc3Provider.send;
+    let id = "v1-autonomousCatch";
+    const catchReceipt = f.receipts[f.evidence.autonomousCatch.cc3Tx];
+    if (mode === "runtime") {
+      id = "5.core";
+      f.cc3Provider.send = (m, p) =>
+        m === "eth_getCode" ? "0x6001" : send(m, p);
+    }
+    if (mode === "blockHash" || mode === "to") {
+      id = "6.history";
+      const activation = JSON.parse(
+        readFileSync(join(f.repoRoot, "activation-v3-current.json"), "utf8"),
+      );
+      f.receipts[activation.transactions.createFacility.hash][mode] =
+        mode === "to" ? ZeroAddress : ZeroHash;
+    }
+    if (mode === "reverted") catchReceipt.status = "0x0";
+    if (mode === "breach emitter") catchReceipt.logs[0].address = ZeroAddress;
+    if (mode === "queryId") {
+      id = "ethereum-cumulativeBatch";
+      f.receipts[f.evidence.cumulativeBatch.sources[0].ethTx].transactionIndex =
+        "0xffff";
+    }
+    if (mode === "heights") {
+      id = "batch-shape";
+      f.cc3Provider.send = async (m, p) => {
+        const value = await send(m, p);
+        if (m !== "eth_getTransactionByHash") return value;
+        const args = v1
+          .decodeFunctionData("submitBatch", value.input)
+          .toArray(true);
+        args[3][0] += 1n;
+        return { ...value, input: v1.encodeFunctionData("submitBatch", args) };
+      };
+    }
+    const report = await runJudgeVerification(f);
+    const check = report.checks.find((row) => row.id === id);
+    assert.equal(check.status, "FAIL", JSON.stringify(check));
+  });
+}
+
+for (const field of [
+  "address",
+  "topics",
+  "data",
+  "blockNumber",
+  "transactionHash",
+  "logIndex",
+  "wrong emitter",
+]) {
+  test(`market activity rejects malformed ${field}`, async (t) => {
+    const f = fixture(t);
+    const manifest = JSON.parse(
+      readFileSync(
+        join(f.repoRoot, "deployments-v3-operator-market-current.json"),
+        "utf8",
+      ),
+    );
+    const log = {
+      address: manifest.contracts.OperatorMarketV1,
+      topics: [current.getEvent("QuotePosted").topicHash],
+      data: "0x",
+      blockNumber: "0x600000",
+      transactionHash: hash,
+      logIndex: "0x0",
+    };
+    if (field === "wrong emitter") log.address = ZeroAddress;
+    else delete log[field];
+    const send = f.cc3Provider.send;
+    f.cc3Provider.send = (m, p) => (m === "eth_getLogs" ? [log] : send(m, p));
+    const report = await runJudgeVerification(f);
+    const check = report.checks.find((row) => row.id === "8.activity");
+    assert.equal(check.status, "UNVERIFIED", JSON.stringify(check));
+    assert.match(
+      check.detail,
+      new RegExp(field === "wrong emitter" ? "address|emitter" : field),
+    );
+  });
+}
+
+test("market activity reads contiguous ranges of at most 2000 blocks", async (t) => {
+  const f = fixture(t);
+  const report = await runJudgeVerification(f);
+  const ranges = f.calls
+    .filter(([method]) => method === "eth_getLogs")
+    .map(([, [range]]) => range);
+  assert.ok(ranges.length > 1);
+  for (let i = 0; i < ranges.length; i++) {
+    assert.ok(BigInt(ranges[i].toBlock) - BigInt(ranges[i].fromBlock) < 2000n);
+    if (i)
+      assert.equal(
+        BigInt(ranges[i].fromBlock),
+        BigInt(ranges[i - 1].toBlock) + 1n,
+      );
+  }
+  assert.equal(BigInt(ranges.at(-1).toBlock), BigInt(report.anchor.number));
+});
+
+test("a concurrent contradiction takes priority over unavailable core reads", async (t) => {
+  const f = fixture(t);
+  const send = f.cc3Provider.send;
+  let calls = 0;
+  f.cc3Provider.send = async (m, p) => {
+    if (m === "eth_getCode") {
+      calls++;
+      if (calls === 1) throw new Error("unavailable");
+      return "0x6001";
+    }
+    return send(m, p);
+  };
+  const report = await runJudgeVerification(f);
+  assert.equal(report.checks.find((row) => row.id === "5.core").status, "FAIL");
+});
+
+test("Ethereum fallback identity is checked before receipts and attributed", async (t) => {
+  for (const chainId of ["0x1", "0x2"]) {
+    const f = fixture(t);
+    f.ethProvider = undefined;
+    const fetch = f.fetchImpl;
+    const calls = [];
+    f.fetchImpl = async (url, options) => {
+      if (
+        ![
+          "https://ethereum-rpc.publicnode.com",
+          "https://cloudflare-eth.com/",
+        ].includes(url)
+      )
+        return fetch(url, options);
+      const { method, params } = JSON.parse(options.body);
+      const fallback = url === "https://cloudflare-eth.com/";
+      if (fallback) calls.push(method);
+      if (!fallback && method !== "eth_chainId") throw new Error("unavailable");
+      const result =
+        method === "eth_chainId"
+          ? fallback
+            ? chainId
+            : "0x1"
+          : f.receipts[params[0]];
+      return { ok: true, status: 200, json: async () => ({ result }) };
+    };
+    const report = await runJudgeVerification(f);
+    assert.equal(calls[0], "eth_chainId");
+    for (const id of ["ethereum-cumulativeBatch", "ethereum-autonomousCatch"]) {
+      const check = report.checks.find((row) => row.id === id);
+      assert.equal(
+        check.status,
+        chainId === "0x1" ? "PASS" : "FAIL",
+        JSON.stringify(check),
+      );
+      if (chainId === "0x1")
+        assert.match(check.detail, /https:\/\/cloudflare-eth.com\//);
+    }
+    if (chainId === "0x2")
+      assert.ok(!calls.includes("eth_getTransactionReceipt"));
+  }
+});

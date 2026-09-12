@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import {
   Interface,
+  checkResultErrors,
   keccak256,
   parseUnits,
   solidityPackedKeccak256,
@@ -40,6 +41,50 @@ function assert(condition, detail) {
 }
 class TransportError extends Error {
   name = "TransportError";
+}
+function shape(condition, field) {
+  if (!condition) throw new TransportError(`Missing or malformed ${field}`);
+}
+function hex(value, field, pattern = /^0x(?:[0-9a-f]{2})*$/i) {
+  shape(typeof value === "string" && pattern.test(value), field);
+}
+const quantity = /^0x[0-9a-f]+$/i;
+const hash32 = /^0x[0-9a-f]{64}$/i;
+const address20 = /^0x[0-9a-f]{40}$/i;
+function validateLog(log) {
+  hex(log?.address, "log.address", address20);
+  shape(Array.isArray(log.topics) && log.topics.length > 0, "log.topics[0]");
+  for (const [index, topic] of log.topics.entries())
+    hex(topic, `log.topics[${index}]`, hash32);
+  hex(log.data, "log.data");
+}
+function validateReceipt(receipt) {
+  for (const field of ["status", "blockNumber", "gasUsed"])
+    hex(receipt?.[field], `receipt.${field}`, quantity);
+  hex(receipt.to, "receipt.to", address20);
+  hex(receipt.transactionHash, "receipt.transactionHash", hash32);
+  shape(Array.isArray(receipt.logs), "receipt.logs");
+  receipt.logs.forEach(validateLog);
+}
+function decodeResponse(operation, field) {
+  try {
+    const result = operation();
+    const errors = checkResultErrors(result?.args ?? result);
+    shape(errors.length === 0, `${field} decoded fields`);
+    return result;
+  } catch (error) {
+    throw new TransportError(`Malformed ${field}: ${error.message}`);
+  }
+}
+async function settled(operations) {
+  const results = await Promise.allSettled(operations);
+  const errors = results.filter((result) => result.status === "rejected");
+  if (errors.length)
+    throw (
+      errors.find((result) => result.reason.name !== "TransportError") ??
+      errors[0]
+    ).reason;
+  return results.map((result) => result.value);
 }
 
 export async function runJudgeVerification({
@@ -81,7 +126,7 @@ export async function runJudgeVerification({
       throw new TransportError(error.message);
     }
     if (!response.ok) {
-      if (response.status >= 500 || [408, 429].includes(response.status))
+      if (response.status !== 404)
         throw new TransportError(`HTTP ${response.status}: ${url}`);
       throw new Error(`HTTP ${response.status}: ${url}`);
     }
@@ -100,6 +145,10 @@ export async function runJudgeVerification({
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
         });
+        shape(
+          body !== null && typeof body === "object" && !Array.isArray(body),
+          "RPC response",
+        );
         if (body.error)
           throw new TransportError(`RPC ${method}: ${body.error.message}`);
         if (!("result" in body))
@@ -118,16 +167,25 @@ export async function runJudgeVerification({
     }
   }
   const rpc = (method, params) => rpcCall(cc3, method, params);
+  const fallbackUrl = "https://cloudflare-eth.com/";
+  let fallbackReady = false;
+  let fallbackUsed = false;
   async function ethCall(method, params) {
     try {
       return await rpcCall(eth, method, params);
     } catch (error) {
       if (ethProvider || ethRpc !== ETH) throw error;
-      const fallback = await rpcCall(
-        provider("https://cloudflare-eth.com/"),
-        method,
-        params,
-      );
+      fallbackUsed = true;
+      if (!fallbackReady) {
+        const chainId = await rpcCall(provider(fallbackUrl), "eth_chainId", []);
+        hex(chainId, "fallback eth_chainId", quantity);
+        assert(
+          BigInt(chainId) === 1n,
+          `Ethereum fallback ${fallbackUrl} chain ID differs from 1`,
+        );
+        fallbackReady = true;
+      }
+      const fallback = await rpcCall(provider(fallbackUrl), method, params);
       if (fallback === null)
         throw new TransportError(
           `Primary ${ethRpc} failed (${error.message}); fallback https://cloudflare-eth.com/ returned no result for ${method}`,
@@ -136,8 +194,11 @@ export async function runJudgeVerification({
     }
   }
   async function check(id, title, source, operation) {
+    fallbackUsed = false;
     try {
-      const detail = await operation();
+      let detail = await operation();
+      if (fallbackUsed)
+        detail += `; Ethereum fallback ${fallbackUrl} (chainId 1 verified)`;
       checks.push({ id, title, status: "PASS", detail, source });
       return true;
     } catch (error) {
@@ -145,7 +206,9 @@ export async function runJudgeVerification({
         id,
         title,
         status: error.name === "TransportError" ? "UNVERIFIED" : "FAIL",
-        detail: error.message,
+        detail:
+          error.message +
+          (fallbackUsed ? `; Ethereum fallback ${fallbackUrl}` : ""),
         source,
       });
       return false;
@@ -188,10 +251,9 @@ export async function runJudgeVerification({
         );
       }
       manifests = loaded;
-      assert(
-        BigInt(await rpc("eth_chainId", [])) === 102031n,
-        "CC3 chain ID differs from 102031",
-      );
+      const chainId = await rpc("eth_chainId", []);
+      hex(chainId, "eth_chainId", quantity);
+      assert(BigInt(chainId) === 102031n, "CC3 chain ID differs from 102031");
       return detail;
     },
   );
@@ -201,22 +263,17 @@ export async function runJudgeVerification({
     "Ethereum mainnet identity",
     ethRpc,
     async () => {
-      assert(
-        BigInt(await ethCall("eth_chainId", [])) === 1n,
-        "Ethereum chain ID differs from 1",
-      );
+      const chainId = await ethCall("eth_chainId", []);
+      hex(chainId, "Ethereum eth_chainId", quantity);
+      assert(BigInt(chainId) === 1n, "Ethereum chain ID differs from 1");
       return "Ethereum chainId 1";
     },
   );
   await check("finalized-anchor", "Finalized CC3 anchor", cc3Rpc, async () => {
     if (!cc3Ready) throw new TransportError("CC3 identity not established");
     const block = await rpc("eth_getBlockByNumber", ["finalized", false]);
-    if (!block) throw new TransportError("Finalized block unavailable");
-    assert(
-      /^0x[0-9a-f]+$/i.test(block.number) &&
-        /^0x[0-9a-f]{64}$/i.test(block.hash),
-      "Malformed finalized block",
-    );
+    hex(block?.number, "finalized block.number", quantity);
+    hex(block?.hash, "finalized block.hash", hash32);
     anchor = { number: block.number, hash: block.hash };
     return `Finalized block ${Number(BigInt(block.number))}, ${block.hash}`;
   });
@@ -241,7 +298,8 @@ export async function runJudgeVerification({
           const receipt = await historicalRpc("eth_getTransactionReceipt", [
             record.cc3Tx,
           ]);
-          assert(receipt, `Missing receipt ${record.cc3Tx}`);
+          assert(receipt !== null, `Missing receipt ${record.cc3Tx}`);
+          validateReceipt(receipt);
           assert(
             same(receipt.transactionHash, record.cc3Tx),
             "Receipt transaction hash differs",
@@ -261,7 +319,9 @@ export async function runJudgeVerification({
           );
           const events = receipt.logs
             .filter((log) => same(log.address, legacy.facility))
-            .map((log) => v1.parseLog(log))
+            .map((log) =>
+              decodeResponse(() => v1.parseLog(log), "receipt log.data/topics"),
+            )
             .filter((log) => log?.name === "Breached");
           assert(
             events.length === 1,
@@ -287,7 +347,9 @@ export async function runJudgeVerification({
           );
           const adjudications = receipt.logs
             .filter((log) => same(log.address, legacy.adjudicator))
-            .map((log) => v1.parseLog(log));
+            .map((log) =>
+              decodeResponse(() => v1.parseLog(log), "receipt log.data/topics"),
+            );
           const reported = adjudications.filter(
             (log) => log?.name === "BreachReported",
           );
@@ -329,13 +391,31 @@ export async function runJudgeVerification({
           let count = 0;
           const pages = new Set();
           while (url) {
-            assert(!pages.has(url), "Explorer pagination repeated");
+            if (pages.has(url))
+              throw new TransportError("Explorer pagination repeated");
+            if (pages.size >= 20)
+              throw new TransportError(
+                "Explorer pagination cap of 20 pages reached",
+              );
             pages.add(url);
             const page = await http(url);
-            if (!Array.isArray(page.items))
-              throw new TransportError(
-                "Explorer internal transactions unavailable",
-              );
+            shape(
+              page !== null && typeof page === "object" && !Array.isArray(page),
+              "explorer page",
+            );
+            shape(Array.isArray(page.items), "explorer page.items");
+            shape(
+              Object.hasOwn(page, "next_page_params"),
+              "explorer page.next_page_params",
+            );
+            shape(
+              page.next_page_params === null ||
+                (typeof page.next_page_params === "object" &&
+                  !Array.isArray(page.next_page_params)),
+              "explorer page.next_page_params",
+            );
+            for (const item of page.items)
+              hex(item?.to?.hash ?? item?.to, "explorer item.to", address20);
             count += page.items.filter((item) =>
               same(item.to?.hash ?? item.to, PRECOMPILE),
             ).length;
@@ -343,6 +423,10 @@ export async function runJudgeVerification({
               ? `${explorer}/transactions/${record.cc3Tx}/internal-transactions?${new URLSearchParams(page.next_page_params)}`
               : null;
           }
+          if (count === 0)
+            throw new TransportError(
+              "Explorer reports no internal transactions",
+            );
           assert(
             count === record.precompileCalls,
             `Expected ${record.precompileCalls} precompile calls, observed ${count}`,
@@ -366,7 +450,9 @@ export async function runJudgeVerification({
             const receipt = await ethCall("eth_getTransactionReceipt", [
               row.ethTx,
             ]);
-            assert(receipt, `Missing Ethereum receipt ${row.ethTx}`);
+            assert(receipt !== null, `Missing Ethereum receipt ${row.ethTx}`);
+            validateReceipt(receipt);
+            hex(receipt.transactionIndex, "receipt.transactionIndex", quantity);
             assert(
               same(receipt.transactionHash, row.ethTx),
               "Ethereum receipt transaction hash differs",
@@ -382,7 +468,7 @@ export async function runJudgeVerification({
             if (row.txIndex !== undefined)
               assert(
                 BigInt(receipt.transactionIndex) === BigInt(row.txIndex),
-                "Catch transaction index differs from 146",
+                `Catch transaction index differs from ${row.txIndex}`,
               );
             const position = `${BigInt(receipt.blockNumber)}:${BigInt(receipt.transactionIndex)}`;
             assert(!positions.has(position), "Duplicate batch source position");
@@ -395,13 +481,11 @@ export async function runJudgeVerification({
             );
             let amount = 0n;
             for (const log of receipt.logs) {
-              if (
-                !same(log.address, evidence.cumulativeBatch.usdc) ||
-                log.topics.length !== 3 ||
-                !/^0x[0-9a-f]{64}$/i.test(log.data)
-              )
-                continue;
-              const event = transfer.parseLog(log);
+              if (!same(log.address, evidence.cumulativeBatch.usdc)) continue;
+              const event = decodeResponse(
+                () => transfer.parseLog(log),
+                "Ethereum log.data/topics",
+              );
               const treasury = row.from ?? record.treasury;
               if (
                 event &&
@@ -452,11 +536,17 @@ export async function runJudgeVerification({
         const tx = await historicalRpc("eth_getTransactionByHash", [
           evidence.cumulativeBatch.cc3Tx,
         ]);
+        assert(tx !== null, "Missing batch transaction");
+        hex(tx?.to, "transaction.to", address20);
+        hex(tx.input ?? tx.data, "transaction.input");
         assert(
-          tx && same(tx.to, legacy.adjudicator),
+          same(tx.to, legacy.adjudicator),
           "Missing batch transaction or wrong destination",
         );
-        const decoded = v1.parseTransaction({ data: tx.input ?? tx.data });
+        const decoded = decodeResponse(
+          () => v1.parseTransaction({ data: tx.input ?? tx.data }),
+          "transaction.input",
+        );
         assert(
           decoded?.name === "submitBatch",
           "Expected submitBatch calldata",
@@ -491,7 +581,7 @@ export async function runJudgeVerification({
     );
     await verifyCurrent({
       manifests,
-      anchor: anchor ?? { number: "finalized", hash: null },
+      anchor,
       check,
       rpc: (method, params) => {
         if (!anchor)
@@ -506,7 +596,7 @@ export async function runJudgeVerification({
         `${explorer}/addresses/${item.address}`,
         async () => {
           const data = await http(`${explorer}/addresses/${item.address}`);
-          if (typeof data.is_verified !== "boolean")
+          if (typeof data?.is_verified !== "boolean")
             throw new TransportError("Explorer verification flag unavailable");
           const historicallyUnverified = [
             "deployments-horizon1/policyKernel",
@@ -530,6 +620,16 @@ export async function runJudgeVerification({
       const data = await http(
         "https://registry.npmjs.org/recourse-protocol-sdk/0.1.1",
       );
+      for (const field of ["name", "version"])
+        shape(
+          typeof data?.[field] === "string" && data[field].length > 0,
+          `npm ${field}`,
+        );
+      shape(
+        typeof data.dist?.integrity === "string" &&
+          /^sha(?:256|384|512)-[A-Za-z0-9+/]+={0,2}$/.test(data.dist.integrity),
+        "npm dist.integrity",
+      );
       assert(
         data.name === "recourse-protocol-sdk" &&
           data.version === "0.1.1" &&
@@ -546,7 +646,7 @@ export async function runJudgeVerification({
       `Public observatory: ${page}`,
       url,
       async () => {
-        const status = await http(url, {}, false);
+        const status = await http(url, { method: "HEAD" }, false);
         assert(status === 200, `Expected HTTP 200, observed ${status}`);
         return "HTTP 200; availability does not certify page content";
       },
@@ -559,8 +659,12 @@ export async function runJudgeVerification({
     async () => {
       if (!anchor) throw new TransportError("Finalized CC3 anchor unavailable");
       const block = await rpc("eth_getBlockByNumber", [anchor.number, false]);
-      if (!block)
-        throw new TransportError("Anchor block unavailable on recheck");
+      hex(
+        block?.hash,
+        "anchor recheck block.hash; no observed second hash",
+        hash32,
+      );
+      hex(block?.number, "anchor recheck block.number", quantity);
       assert(
         same(block.hash, anchor.hash),
         "Finalized anchor hash changed during verification",
@@ -598,7 +702,7 @@ export async function runJudgeVerification({
     checks,
     anchor,
     summary,
-    checkedAt: new Date(typeof now === "function" ? now() : now).toISOString(),
+    checkedAt: new Date(now()).toISOString(),
   };
 }
 
@@ -719,8 +823,7 @@ export function inventory(manifests) {
 
 export function validateManifests(manifests) {
   for (const [name, manifest] of Object.entries(manifests)) {
-    if (name !== "evidence-v1-catches" || manifest.chainId !== undefined)
-      equal(manifest.chainId, 102031, `${name} chainId`);
+    equal(manifest.chainId, 102031, `${name} chainId`);
   }
   const core = manifests["deployments-v3-current"];
   const pilot = manifests["activation-v3-current"];
@@ -820,13 +923,19 @@ export async function verifyCurrent({ manifests, rpc, anchor, check }) {
   const market = manifests["deployments-v3-operator-market-current"];
   const verifier =
     manifests["deployments-v3-operator-service-verifier-current"];
-  const source = `CC3 finalized block ${anchor.number} (${anchor.hash})`;
+  const source = anchor
+    ? `CC3 finalized block ${anchor.number} (${anchor.hash})`
+    : "CC3 finalized anchor unavailable";
   async function read(to, name, args = []) {
     const result = await rpc("eth_call", [
       { to, data: abi.encodeFunctionData(name, args) },
-      anchor.number,
+      anchor?.number,
     ]);
-    return abi.decodeFunctionResult(name, result);
+    hex(result, `eth_call ${name} result`);
+    return decodeResponse(
+      () => abi.decodeFunctionResult(name, result),
+      `eth_call ${name} result`,
+    );
   }
   async function getter(to, name, expected, args = []) {
     const [value] = await read(to, name, args);
@@ -834,7 +943,10 @@ export async function verifyCurrent({ manifests, rpc, anchor, check }) {
   }
   async function receipt(record, to) {
     const result = await rpc("eth_getTransactionReceipt", [record.hash]);
-    if (!result) throw new Error(`Historical receipt absent: ${record.hash}`);
+    if (result === null)
+      throw new Error(`Historical receipt absent: ${record.hash}`);
+    validateReceipt(result);
+    hex(result.blockHash, "receipt.blockHash", hash32);
     equal(
       result.transactionHash,
       record.hash,
@@ -858,10 +970,9 @@ export async function verifyCurrent({ manifests, rpc, anchor, check }) {
           abi.getEvent(name).topicHash.toLowerCase(),
     );
     equal(matches.length, 1, `${result.transactionHash} ${name} event count`);
-    const decoded = abi.decodeEventLog(
-      name,
-      matches[0].data,
-      matches[0].topics,
+    const decoded = decodeResponse(
+      () => abi.decodeEventLog(name, matches[0].data, matches[0].topics),
+      `${name} log.data/topics`,
     );
     for (const [key, value] of Object.entries(expected))
       equal(decoded[key], value, `${name}.${key}`);
@@ -871,12 +982,13 @@ export async function verifyCurrent({ manifests, rpc, anchor, check }) {
     "V3 core runtime hashes and wiring",
     source,
     async () => {
-      await Promise.all(
+      await settled(
         Object.entries(coreNames).map(async ([key, name]) => {
           const code = await rpc("eth_getCode", [
             core.contracts[key],
-            anchor.number,
+            anchor?.number,
           ]);
+          hex(code, "eth_getCode result");
           equal(
             keccak256(code),
             core.runtimeCodeHashes[name],
@@ -884,7 +996,7 @@ export async function verifyCurrent({ manifests, rpc, anchor, check }) {
           );
         }),
       );
-      await Promise.all([
+      await settled([
         getter(core.contracts.policyKernel, "verifier", PRECOMPILE),
         getter(
           core.contracts.policyKernel,
@@ -917,7 +1029,7 @@ export async function verifyCurrent({ manifests, rpc, anchor, check }) {
     source,
     async () => {
       const f = pilot.facility;
-      await Promise.all([
+      await settled([
         ...[
           "asset",
           "kernel",
@@ -974,7 +1086,7 @@ export async function verifyCurrent({ manifests, rpc, anchor, check }) {
         ),
       }))
         equal(job[key], expected, `proof job ${key}`);
-      const [[status], [policies]] = await Promise.all([
+      const [[status], [policies]] = await settled([
         read(f.address, "status"),
         read(f.address, "policyCount"),
       ]);
@@ -1042,7 +1154,7 @@ export async function verifyCurrent({ manifests, rpc, anchor, check }) {
     source,
     async () => {
       const f = allocation.facility;
-      await Promise.all([
+      await settled([
         getter(f.address, "asset", core.asset.address),
         getter(f.address, "kernel", core.contracts.policyKernel),
         getter(f.address, "lender", allocation.pool.address),
@@ -1065,7 +1177,7 @@ export async function verifyCurrent({ manifests, rpc, anchor, check }) {
         ),
       ]);
       const [[funded], [bond], [allocated], [poolBalance], [facilityBalance]] =
-        await Promise.all([
+        await settled([
           read(f.address, "lenderFunded"),
           read(f.address, "bondPosted"),
           read(allocation.pool.address, "totalAllocatedPrincipal"),
@@ -1173,13 +1285,40 @@ export async function verifyCurrent({ manifests, rpc, anchor, check }) {
     "Operator market registration and agreement activity",
     source,
     async () => {
-      const logs = await rpc("eth_getLogs", [
-        {
-          address: market.contracts.OperatorMarketV1,
-          fromBlock: `0x${market.transactions.OperatorMarketV1.blockNumber.toString(16)}`,
-          toBlock: anchor.number,
-        },
-      ]);
+      if (!anchor) throw new TransportError("Finalized CC3 anchor unavailable");
+      const logs = [];
+      const end = BigInt(anchor.number);
+      for (
+        let from = BigInt(market.transactions.OperatorMarketV1.blockNumber);
+        from <= end;
+        from += 2000n
+      ) {
+        const to = from + 1999n < end ? from + 1999n : end;
+        const chunk = await rpc("eth_getLogs", [
+          {
+            address: market.contracts.OperatorMarketV1,
+            fromBlock: `0x${from.toString(16)}`,
+            toBlock: `0x${to.toString(16)}`,
+          },
+        ]);
+        shape(Array.isArray(chunk), "eth_getLogs result");
+        for (const log of chunk) {
+          validateLog(log);
+          shape(
+            same(log.address, market.contracts.OperatorMarketV1),
+            "log.address (queried market)",
+          );
+          hex(log.blockNumber, "log.blockNumber", quantity);
+          hex(log.transactionHash, "log.transactionHash", hash32);
+          hex(log.logIndex, "log.logIndex", quantity);
+          shape(
+            BigInt(log.blockNumber) >= from && BigInt(log.blockNumber) <= to,
+            "log.blockNumber (queried range)",
+          );
+          decodeResponse(() => abi.parseLog(log), "market log.data/topics");
+          logs.push(log);
+        }
+      }
       const counts = Object.fromEntries(
         ["QuotePosted", "QuoteAccepted", "ServiceSettled"].map((name) => [
           name,
