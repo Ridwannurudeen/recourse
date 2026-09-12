@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { AbiCoder, Wallet, ZeroHash, formatEther, getAddress, keccak256, parseEther } from 'ethers';
+import { AbiCoder, ZeroHash, formatEther, getAddress, keccak256, parseEther } from 'ethers';
 import { readFileSync } from 'node:fs';
 import { getProvider } from './lib/proofs.mjs';
 import { contractFromArtifact, send } from './lib/setup.mjs';
@@ -28,14 +28,14 @@ const deployments = JSON.parse(readFileSync('deployments.json', 'utf8'));
 const evidence = JSON.parse(readFileSync('docs/demo-evidence.json', 'utf8'));
 if (evidence.chainKey !== 3 || evidence.txs.length !== 5) throw new Error('Unexpected locked evidence set');
 
-const deployer = new Wallet(process.env.DEPLOYER_PRIVATE_KEY, provider);
+const deployer = signerFromEnvironment("DEPLOYER_PRIVATE_KEY", provider);
 if (deployer.address !== getAddress(process.env.DEPLOYER_ADDRESS)) {
   throw new Error('Deployer key does not match DEPLOYER_ADDRESS');
 }
 
 const roles = new Map();
 for (const [name, prefix] of ROLE_TARGETS) {
-  const wallet = new Wallet(process.env[`${prefix}_PRIVATE_KEY`], provider);
+  const wallet = signerFromEnvironment(`${prefix}_PRIVATE_KEY`, provider);
   if (wallet.address !== getAddress(process.env[`${prefix}_ADDRESS`])) {
     throw new Error(`${name} key does not match ${prefix}_ADDRESS`);
   }

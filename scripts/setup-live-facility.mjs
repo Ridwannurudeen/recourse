@@ -2,7 +2,7 @@ import 'dotenv/config';
 import {
   AbiCoder,
   Interface,
-  Wallet,
+
   ZeroAddress,
   ZeroHash,
   formatEther,
@@ -45,9 +45,9 @@ if (network.chainId !== EXPECTED_CHAIN_ID) {
 }
 
 const deployments = JSON.parse(readFileSync('deployments.json', 'utf8'));
-const deployer = new Wallet(process.env.DEPLOYER_PRIVATE_KEY, provider);
-const lender = new Wallet(process.env.LENDER_PRIVATE_KEY, provider);
-const borrower = new Wallet(process.env.BORROWER_PRIVATE_KEY, provider);
+const deployer = signerFromEnvironment("DEPLOYER_PRIVATE_KEY", provider);
+const lender = signerFromEnvironment("LENDER_PRIVATE_KEY", provider);
+const borrower = signerFromEnvironment("BORROWER_PRIVATE_KEY", provider);
 for (const [name, wallet, address] of [
   ['deployer', deployer, process.env.DEPLOYER_ADDRESS],
   ['lender', lender, process.env.LENDER_ADDRESS],

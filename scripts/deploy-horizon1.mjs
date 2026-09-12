@@ -2,7 +2,7 @@ import 'dotenv/config';
 import {
   Contract,
   ContractFactory,
-  Wallet,
+
   getAddress,
   id,
   parseUnits,
@@ -46,7 +46,7 @@ async function deploy(name, signer, args = []) {
 }
 
 function wallet(name, keyName, addressName, provider) {
-  const signer = new Wallet(process.env[keyName], provider);
+  const signer = signerFromEnvironment(keyName, provider);
   if (signer.address !== getAddress(process.env[addressName])) {
     throw new Error(`${name} key does not match ${addressName}`);
   }

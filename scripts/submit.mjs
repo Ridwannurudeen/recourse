@@ -1,7 +1,8 @@
 import 'dotenv/config';
-import { Contract, Wallet, formatEther, getAddress, parseEther } from 'ethers';
+import { Contract, formatEther, getAddress, parseEther } from 'ethers';
 import { readFileSync } from 'node:fs';
 import { assertExactHashMultiset, fetchBatchProof, getProvider, prewarm } from './lib/proofs.mjs';
+import { signerFromEnvironment } from "./lib/setup.mjs";
 
 const EXPECTED_CHAIN_ID = 102031n;
 const COVENANT_ID = 1n;
@@ -26,7 +27,7 @@ if (evidence.chainKey !== 3 || hashes.length !== 5 || BigInt(evidence.expectedTo
   throw new Error('Unexpected locked evidence set');
 }
 
-const hunter = new Wallet(process.env.HUNTER_PRIVATE_KEY, provider);
+const hunter = signerFromEnvironment("HUNTER_PRIVATE_KEY", provider);
 if (hunter.address !== getAddress(process.env.HUNTER_ADDRESS)) {
   throw new Error('Hunter key does not match HUNTER_ADDRESS');
 }

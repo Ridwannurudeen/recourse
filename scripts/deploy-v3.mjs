@@ -2,7 +2,7 @@ import {
   Contract,
   JsonRpcProvider,
   VoidSigner,
-  Wallet,
+
   getAddress,
 } from "ethers";
 import { existsSync, readFileSync } from "node:fs";
@@ -36,6 +36,7 @@ import {
   v3DeploymentJournalPath,
 } from "./lib/v3-deployment.mjs";
 import { inspectDeployableRepository } from "./lib/pilot-readiness.mjs";
+import { signerFromEnvironment } from "./lib/setup.mjs";
 
 const ASSET_ABI = [
   "function decimals() view returns (uint8)",
@@ -324,10 +325,7 @@ try {
   } else {
     let signer;
     if (hasRemainingTransactions) {
-      signer = new Wallet(
-        requiredEnvironment("DEPLOYER_PRIVATE_KEY"),
-        provider,
-      );
+      signer = signerFromEnvironment("DEPLOYER_PRIVATE_KEY", provider);
       if (getAddress(signer.address) !== config.roles.deployer) {
         throw new Error("Deployment credential does not match roles.deployer");
       }

@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { Interface, keccak256 } from "ethers";
 import { summarizeQualifyingTransfers } from "../scripts/lib/evidence.mjs";
+import { signerFromEnvironment } from "../scripts/lib/setup.mjs";
 import {
   assertExactHashMultiset,
   getAttestationProvider,
@@ -201,5 +202,40 @@ test("the USC Inbox artifact is compiled from the dependency's exact OpenZeppeli
     sources.includes(
       "node_modules/@gluwa/usc-contracts/node_modules/@openzeppelin/contracts/utils/Pausable.sol",
     ),
+  );
+});
+
+test("signerFromEnvironment never echoes key material in its error", () => {
+  // a throwaway value, never used on any chain
+  const material = "ab".repeat(32);
+  for (const value of [`0x${material}x`, `${material}zz`, "not-a-key", "", "0x1234"]) {
+    assert.throws(
+      () => signerFromEnvironment("TEST_KEY", undefined, { TEST_KEY: value }),
+      (error) => {
+        assert.ok(
+          (value === "" || !error.message.includes(value)) &&
+            !error.message.includes(material.slice(0, 16)),
+          `error text must not carry the supplied value: ${error.message}`,
+        );
+        assert.match(error.message, /^TEST_KEY /);
+        return true;
+      },
+    );
+  }
+});
+
+test("signerFromEnvironment tolerates the formatting slips that leak keys", () => {
+  const key = `0x${"11".repeat(32)}`;
+  for (const value of [key, `${key}
+`, ` ${key} `, key.slice(2)]) {
+    const signer = signerFromEnvironment("TEST_KEY", undefined, { TEST_KEY: value });
+    assert.equal(signer.address, signerFromEnvironment("TEST_KEY", undefined, { TEST_KEY: key }).address);
+  }
+});
+
+test("signerFromEnvironment rejects a missing variable without naming a value", () => {
+  assert.throws(
+    () => signerFromEnvironment("ABSENT_KEY", undefined, {}),
+    /^Error: ABSENT_KEY must contain a 32-byte hex private key$/,
   );
 });

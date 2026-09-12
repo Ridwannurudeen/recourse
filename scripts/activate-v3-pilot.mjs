@@ -4,7 +4,7 @@ import {
   Contract,
   JsonRpcProvider,
   VoidSigner,
-  Wallet,
+
   ZeroAddress,
   ZeroHash,
   formatUnits,
@@ -40,6 +40,7 @@ import {
 } from "./lib/v3-activation.mjs";
 import { readCoreInterfaceArtifacts } from "./lib/v3-deployment.mjs";
 import { getAttestedHeight } from "./lib/proofs.mjs";
+import { signerFromEnvironment } from "./lib/setup.mjs";
 import {
   inspectDeployableRepository,
   inspectTrackedRepositoryFile,
@@ -149,7 +150,7 @@ const signers = Object.fromEntries(
   Object.entries(signerEnvironment).map(([role, variable]) => [
     role,
     options.broadcast
-      ? new Wallet(environment(variable), provider)
+      ? signerFromEnvironment(variable, provider)
       : new VoidSigner(config.roles[role], provider),
   ]),
 );

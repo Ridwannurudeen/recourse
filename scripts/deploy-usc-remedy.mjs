@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { JsonRpcProvider, VoidSigner, Wallet, getAddress } from "ethers";
+import { JsonRpcProvider, VoidSigner, getAddress } from "ethers";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import {
@@ -25,6 +25,7 @@ import {
   verifyUscRemedyDeploymentTransactions,
   verifyUscApprovalAnchors,
 } from "./lib/usc-remedy-deployment.mjs";
+import { signerFromEnvironment } from "./lib/setup.mjs";
 import {
   inspectDeployableRepository,
   inspectTrackedRepositoryFile,
@@ -309,12 +310,12 @@ try {
     let sourceSigner;
     let destinationSigner;
     if (hasRemainingTransactions) {
-      sourceSigner = new Wallet(
-        requiredEnvironment(config.source.privateKeyEnvironment),
+      sourceSigner = signerFromEnvironment(
+        config.source.privateKeyEnvironment,
         sourceProvider,
       );
-      destinationSigner = new Wallet(
-        requiredEnvironment(config.destination.privateKeyEnvironment),
+      destinationSigner = signerFromEnvironment(
+        config.destination.privateKeyEnvironment,
         destinationProvider,
       );
       if (getAddress(sourceSigner.address) !== config.source.deployer) {

@@ -1,4 +1,4 @@
-import { JsonRpcProvider, VoidSigner, Wallet, getAddress } from "ethers";
+import { JsonRpcProvider, VoidSigner, getAddress } from "ethers";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import {
@@ -24,6 +24,7 @@ import {
   verifyV3ExtensionTransactions,
 } from "./lib/v3-extension-deployment.mjs";
 import { atomicWriteJson } from "./lib/v3-deployment.mjs";
+import { signerFromEnvironment } from "./lib/setup.mjs";
 import {
   inspectDeployableRepository,
   inspectTrackedRepositoryFile,
@@ -338,10 +339,7 @@ async function main() {
 
     let signer;
     if (hasRemainingTransactions) {
-      signer = new Wallet(
-        requiredEnvironment(config.privateKeyEnvironment),
-        provider,
-      );
+      signer = signerFromEnvironment(config.privateKeyEnvironment, provider);
       if (getAddress(signer.address) !== config.deployer) {
         throw new Error(
           `Credential from ${config.privateKeyEnvironment} does not match extension deployer`,

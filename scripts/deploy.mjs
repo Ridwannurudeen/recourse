@@ -1,7 +1,8 @@
 import 'dotenv/config';
-import { Contract, ContractFactory, Wallet, getAddress } from 'ethers';
+import { Contract, ContractFactory, getAddress } from 'ethers';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { getProvider } from './lib/proofs.mjs';
+import { signerFromEnvironment } from "./lib/setup.mjs";
 
 const EXPECTED_CHAIN_ID = 102031n;
 const EXPECTED_VERIFIER = '0x0000000000000000000000000000000000000FD2';
@@ -29,7 +30,7 @@ if (network.chainId !== EXPECTED_CHAIN_ID) {
 const verifier = getAddress(process.env.BLOCK_PROVER_PRECOMPILE);
 if (verifier !== EXPECTED_VERIFIER) throw new Error(`Unexpected BlockProver precompile: ${verifier}`);
 
-const deployer = new Wallet(process.env.DEPLOYER_PRIVATE_KEY, provider);
+const deployer = signerFromEnvironment("DEPLOYER_PRIVATE_KEY", provider);
 if (deployer.address !== getAddress(process.env.DEPLOYER_ADDRESS)) {
   throw new Error('Deployer key does not match DEPLOYER_ADDRESS');
 }
