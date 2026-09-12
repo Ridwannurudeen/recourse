@@ -62,7 +62,7 @@ provable on Creditcoin, so covenants become executable code.
 | Capped pilot facility, Active, proof job 1 funded, Ethereum source window 25,944,522–26,024,522 | [`activation-v3-current.json`](https://github.com/Ridwannurudeen/recourse/blob/main/activation-v3-current.json) · [facility](https://creditcoin-testnet.blockscout.com/address/0x00B50626C4AA42d22ca01AAEa8649f253aEc5B1e) |
 | Portfolio pool allocation of 100,000 rUSD to a pool-created facility, project-funded test tokens on both sides | [`allocation-v3-portfolio-current.json`](https://github.com/Ridwannurudeen/recourse/blob/main/allocation-v3-portfolio-current.json) · [facility](https://creditcoin-testnet.blockscout.com/address/0x0C874e56AD2dC9789A63a9Bc63c08a5F6D3C82C8) |
 | Operator market and receipt verifier, deployed and empty, one project-operated attestor | [`deployments-v3-operator-market-current.json`](https://github.com/Ridwannurudeen/recourse/blob/main/deployments-v3-operator-market-current.json) · [`deployments-v3-operator-service-verifier-current.json`](https://github.com/Ridwannurudeen/recourse/blob/main/deployments-v3-operator-service-verifier-current.json) |
-| Live read-only V3 and portfolio observatories, every read anchored at a finalized CC3 block (the site root is the V1 wallet application) | <https://recourse.gudman.xyz/v3.html> · <https://recourse.gudman.xyz/portfolio.html> |
+| Live read-only V3 and portfolio observatories, every read anchored at a finalized CC3 block (the site root is a static evidence page; the V1 wallet application is at `/v1.html`) | <https://recourse.gudman.xyz/v3.html> · <https://recourse.gudman.xyz/portfolio.html> |
 | Tests | `forge test` → 392 · `node --test test/*.test.mjs` → 411 (410 pass, 1 skipped) · `npm --prefix sdk test` → 44 |
 | SDK | [`recourse-protocol-sdk@0.1.1`](https://www.npmjs.com/package/recourse-protocol-sdk) |
 | Deck | [`docs/RECOURSE-DECK.pdf`](https://github.com/Ridwannurudeen/recourse/blob/main/docs/RECOURSE-DECK.pdf) |
@@ -133,7 +133,7 @@ activated the facility; the pool and facility were verified Active at block 5,46
 Investor and borrower are project wallets using project-operated test tokens.
 The read-only V3 and portfolio observatories at <https://recourse.gudman.xyz/v3.html> and
 <https://recourse.gudman.xyz/portfolio.html> read this state live from CC3 at a finalized block and
-link every manifest quoted here; the site root is the V1 wallet application. This
+link every manifest quoted here; the site root is a static evidence page and the V1 wallet application is at `/v1.html`. This
 shows the allocation path, not lender demand, external capital, servicing performance,
 profitability, production readiness, completed cures, or audited loss accounting.
 

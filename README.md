@@ -23,7 +23,7 @@ The walletless route for judges, with generations labelled, is [JUDGE.md](JUDGE.
 | Capped pilot facility, Active, proof job 1 funded, Ethereum source window 25,944,522–26,024,522 | [`activation-v3-current.json`](activation-v3-current.json) · [facility](https://creditcoin-testnet.blockscout.com/address/0x00B50626C4AA42d22ca01AAEa8649f253aEc5B1e) |
 | Portfolio pool allocation of 100,000 rUSD to a pool-created facility, project-funded test tokens on both sides | [`allocation-v3-portfolio-current.json`](allocation-v3-portfolio-current.json) · [facility](https://creditcoin-testnet.blockscout.com/address/0x0C874e56AD2dC9789A63a9Bc63c08a5F6D3C82C8) |
 | Operator market and receipt verifier, deployed and empty, one project-operated attestor | [`deployments-v3-operator-market-current.json`](deployments-v3-operator-market-current.json) · [`deployments-v3-operator-service-verifier-current.json`](deployments-v3-operator-service-verifier-current.json) |
-| Live read-only V3 and portfolio observatories, every read anchored at a finalized CC3 block (the site root is the V1 wallet application) | <https://recourse.gudman.xyz/v3.html> · <https://recourse.gudman.xyz/portfolio.html> |
+| Live read-only V3 and portfolio observatories, every read anchored at a finalized CC3 block (the site root is a static evidence page; the V1 wallet application is at `/v1.html`) | <https://recourse.gudman.xyz/v3.html> · <https://recourse.gudman.xyz/portfolio.html> |
 
 ### Supporting evidence and materials
 

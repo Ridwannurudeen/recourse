@@ -439,11 +439,12 @@ test("V3 anchored reads expose the exact pinned block and reject the wrong chain
 });
 
 test("V3 observatory is walletless, safe-DOM, and names every truth boundary", async () => {
-  const [html, script, index, horizon, operator, portfolio] = await Promise.all(
+  const [html, script, index, v1, horizon, operator, portfolio] = await Promise.all(
     [
       readFile(new URL("../web/v3.html", import.meta.url), "utf8"),
       readFile(new URL("../web/v3.js", import.meta.url), "utf8"),
       readFile(new URL("../web/index.html", import.meta.url), "utf8"),
+      readFile(new URL("../web/v1.html", import.meta.url), "utf8"),
       readFile(new URL("../web/horizon1.html", import.meta.url), "utf8"),
       readFile(new URL("../web/operator.html", import.meta.url), "utf8"),
       readFile(new URL("../web/portfolio.html", import.meta.url), "utf8"),
@@ -499,7 +500,7 @@ test("V3 observatory is walletless, safe-DOM, and names every truth boundary", a
   assert.match(html, /Configured/);
   assert.match(html, /Applied effects/);
   assert.match(html, /href="#main"/);
-  for (const page of [index, horizon, operator, portfolio]) {
+  for (const page of [index, v1, horizon, operator, portfolio]) {
     assert.match(page, /href="\.\/v3\.html"/);
   }
 });

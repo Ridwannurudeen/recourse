@@ -25,7 +25,7 @@ debt in tCTC, hunter paid). No USDC moved on Ethereum as a result; Attestcoin ha
 | Capped pilot facility, Active, proof job 1 funded, committed Ethereum source window 25,944,522–26,024,522 | [`activation-v3-current.json`](activation-v3-current.json) · [facility](https://creditcoin-testnet.blockscout.com/address/0x00B50626C4AA42d22ca01AAEa8649f253aEc5B1e) |
 | Portfolio pool allocation of 100,000 rUSD to a pool-created facility, 20,000 rUSD bond, project-funded test tokens | [`allocation-v3-portfolio-current.json`](allocation-v3-portfolio-current.json) · [facility](https://creditcoin-testnet.blockscout.com/address/0x0C874e56AD2dC9789A63a9Bc63c08a5F6D3C82C8) |
 | Operator market and receipt verifier, deployed and empty, one project-operated attestor | [`deployments-v3-operator-market-current.json`](deployments-v3-operator-market-current.json) · [`deployments-v3-operator-service-verifier-current.json`](deployments-v3-operator-service-verifier-current.json) |
-| Read-only observatories, every read anchored at a finalized CC3 block | <https://recourse.gudman.xyz/v3.html> · <https://recourse.gudman.xyz/portfolio.html> (the site root is the V1 wallet application) |
+| Read-only observatories, every read anchored at a finalized CC3 block | <https://recourse.gudman.xyz/v3.html> · <https://recourse.gudman.xyz/portfolio.html> (the site root is a static evidence page; the V1 wallet application) |
 
 ## 3. Reproduce locally
 
