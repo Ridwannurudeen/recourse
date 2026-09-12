@@ -48,7 +48,7 @@ provable on Creditcoin, so covenants become executable code.
 | Portfolio pool allocation of 100,000 rUSD to a pool-created facility, project-funded test tokens on both sides | [`allocation-v3-portfolio-current.json`](https://github.com/Ridwannurudeen/recourse/blob/main/allocation-v3-portfolio-current.json) · [facility](https://creditcoin-testnet.blockscout.com/address/0x0C874e56AD2dC9789A63a9Bc63c08a5F6D3C82C8) |
 | Operator market and receipt verifier, deployed and empty, one project-operated attestor | [`deployments-v3-operator-market-current.json`](https://github.com/Ridwannurudeen/recourse/blob/main/deployments-v3-operator-market-current.json) · [`deployments-v3-operator-service-verifier-current.json`](https://github.com/Ridwannurudeen/recourse/blob/main/deployments-v3-operator-service-verifier-current.json) |
 | Live read-only V3 and portfolio observatories, every read anchored at a finalized CC3 block (the site root is the V1 wallet application) | <https://recourse.gudman.xyz/v3.html> · <https://recourse.gudman.xyz/portfolio.html> |
-| Tests | `forge test` → 392 · `node --test test/*.test.mjs` → 315 (314 pass, 1 skipped) · `npm --prefix sdk test` → 44 |
+| Tests | `forge test` → 392 · `node --test test/*.test.mjs` → 411 (410 pass, 1 skipped) · `npm --prefix sdk test` → 44 |
 | SDK | [`recourse-protocol-sdk@0.1.1`](https://www.npmjs.com/package/recourse-protocol-sdk) |
 | Deck | [`docs/RECOURSE-DECK.pdf`](https://github.com/Ridwannurudeen/recourse/blob/main/docs/RECOURSE-DECK.pdf) |
 

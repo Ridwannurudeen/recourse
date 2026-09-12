@@ -33,11 +33,11 @@ debt in tCTC, hunter paid). No USDC moved on Ethereum as a result; Attestcoin ha
 | --- | --- |
 | One-command re-check of the on-chain claims | `npm run judge:verify` (public endpoints only; tests, authorship and unattended operation are reported UNVERIFIED because an RPC cannot establish them) |
 
-Measured 2026-09-11 on `main`; these are dated local results, not chain assertions.
+Measured 2026-09-12 on `main`; these are dated local results, not chain assertions.
 
 ```bash
 forge test                          # 392 passed
-DOTENV_CONFIG_PATH=NUL node --test test/*.test.mjs   # 315 tests: 314 pass, 1 skipped (Windows symlink privilege)
+DOTENV_CONFIG_PATH=NUL node --test test/*.test.mjs   # 411 tests: 410 pass, 1 skipped (Windows symlink privilege)
 npm --prefix sdk test               # 44 passed, then a strict declaration compile
 ```
 
