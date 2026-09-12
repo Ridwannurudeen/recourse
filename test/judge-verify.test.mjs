@@ -714,6 +714,8 @@ for (const mode of ["fallback-null", "fallback-receipt", "primary-null"]) {
       if (fallback) fallbackCalls.push(method);
       if (method === "eth_chainId")
         return { ok: true, status: 200, json: async () => ({ result: "0x1" }) };
+      if (method === "eth_getBlockByNumber")
+        throw new Error("block unavailable");
       assert.equal(method, "eth_getTransactionReceipt");
       if (!fallback && mode !== "primary-null")
         throw new TypeError("Primary Ethereum receipt transport failed");
@@ -947,7 +949,9 @@ for (const field of [
       address: manifest.contracts.OperatorMarketV1,
       topics: [current.getEvent("QuotePosted").topicHash],
       data: "0x",
-      blockNumber: "0x600000",
+      blockNumber: toQuantity(
+        manifest.transactions.OperatorMarketV1.blockNumber,
+      ),
       transactionHash: hash,
       logIndex: "0x0",
     };
@@ -957,7 +961,10 @@ for (const field of [
     const report = await runJudgeVerification(f);
     const check = report.checks.find((row) => row.id === "8.activity");
     assert.equal(check.status, "UNVERIFIED", JSON.stringify(check));
-    assert.match(check.detail, new RegExp(field));
+    assert.match(
+      check.detail,
+      new RegExp(`^Missing or malformed log\\.${field}`),
+    );
   });
 }
 
@@ -1027,7 +1034,7 @@ test("Ethereum fallback identity is checked before receipts and attributed", asy
       const check = report.checks.find((row) => row.id === id);
       assert.equal(
         check.status,
-        chainId === "0x1" ? "PASS" : "FAIL",
+        chainId === "0x1" ? "PASS" : "UNVERIFIED",
         JSON.stringify(check),
       );
       if (chainId === "0x1")
@@ -1094,6 +1101,8 @@ for (const mode of [
       calls.push([url, method]);
       if (method === "eth_chainId")
         return { ok: true, json: async () => ({ result: "0x1" }) };
+      if (method === "eth_getBlockByNumber")
+        throw new Error("block unavailable");
       assert.equal(method, "eth_getTransactionReceipt");
       if (
         mode === "null and transport" &&
@@ -1127,7 +1136,7 @@ for (const mode of [
       JSON.stringify(row),
     );
     if (["all null", "null and transport"].includes(mode))
-      assert.match(row.detail, /no receipt returned by 3 public nodes/);
+      assert.match(row.detail, /no receipt and no block returned/);
     else
       assert.ok(
         row.detail.includes(
@@ -1161,7 +1170,7 @@ test("AM null CC3 historical receipts are unverified", async (t) => {
   ]) {
     const row = report.checks.find((row) => row.id === id);
     assert.equal(row.status, "UNVERIFIED", JSON.stringify(row));
-    assert.match(row.detail, /no receipt returned by 1 public nodes/);
+    assert.match(row.detail, /no receipt and no block returned/);
   }
 });
 
@@ -1195,3 +1204,150 @@ test("AM activity skips unrelated emitters and zero-topic logs", async (t) => {
   assert.equal(row.status, "PASS", JSON.stringify(row));
   assert.match(row.detail, /agreements accepted=0/);
 });
+
+for (const chain of ["Ethereum", "CC3"]) {
+  for (const name of ["cumulativeBatch", "autonomousCatch"]) {
+    for (const mode of [
+      "absent",
+      "present",
+      "unavailable",
+      "malformed",
+      "wrong block",
+      "malformed hash",
+    ]) {
+      test(`AN ${chain} ${name} null receipt membership: ${mode}`, async (t) => {
+        const f = fixture(t);
+        const record = f.evidence[name];
+        const source = record.sources?.[0] ?? record.source;
+        const tx = chain === "Ethereum" ? source.ethTx : record.cc3Tx;
+        const block = chain === "Ethereum" ? source.ethBlock : record.cc3Block;
+        const calls = [];
+        const provider = chain === "Ethereum" ? f.ethProvider : f.cc3Provider;
+        const send = provider.send;
+        provider.send = (method, params) => {
+          if (method === "eth_getTransactionReceipt" && params[0] === tx)
+            return null;
+          if (
+            method === "eth_getBlockByNumber" &&
+            params[0] === toQuantity(block)
+          ) {
+            calls.push(params);
+            if (mode === "unavailable") throw new Error("block unavailable");
+            if (mode === "malformed") return {};
+            return {
+              number: toQuantity(block + (mode === "wrong block" ? 1 : 0)),
+              hash,
+              transactions:
+                mode === "present"
+                  ? [tx.toUpperCase().replace("0X", "0x")]
+                  : mode === "malformed hash"
+                    ? ["invalid"]
+                    : [],
+            };
+          }
+          return send(method, params);
+        };
+        const report = await runJudgeVerification(f);
+        const row = report.checks.find(
+          (row) =>
+            row.id === `${chain === "Ethereum" ? "ethereum" : "v1"}-${name}`,
+        );
+        assert.equal(
+          row.status,
+          mode === "absent" ? "FAIL" : "UNVERIFIED",
+          JSON.stringify(row),
+        );
+        assert.equal(
+          row.detail,
+          mode === "absent"
+            ? `block ${block} exists and does not contain the transaction`
+            : mode === "present"
+              ? `transaction is in block ${block} but no node returned its receipt`
+              : "no receipt and no block returned",
+        );
+        assert.deepEqual(calls, [[toQuantity(block), false]]);
+      });
+    }
+  }
+}
+
+for (const mode of ["absent", "present", "unavailable", "wrong identity"]) {
+  test(`AN Ethereum fallback membership: ${mode}`, async (t) => {
+    const f = fixture(t);
+    f.ethProvider = undefined;
+    const fetch = f.fetchImpl;
+    const urls = [
+      "https://ethereum-rpc.publicnode.com",
+      "https://eth.drpc.org",
+      "https://1rpc.io/eth",
+    ];
+    const calls = [];
+    f.fetchImpl = async (url, options) => {
+      if (!urls.includes(url)) return fetch(url, options);
+      const { method, params } = JSON.parse(options.body);
+      calls.push([url, method, params]);
+      let result;
+      if (method === "eth_chainId")
+        result = mode === "wrong identity" && url === urls[1] ? "0x2" : "0x1";
+      else if (method === "eth_getTransactionReceipt")
+        result =
+          mode === "wrong identity" && url === urls[2]
+            ? f.receipts[params[0]]
+            : null;
+      else {
+        assert.equal(method, "eth_getBlockByNumber");
+        if (url === urls[0]) throw new Error("block unavailable");
+        if (url === urls[1] || mode === "unavailable") result = {};
+        else
+          result = {
+            number: params[0],
+            hash,
+            transactions: mode === "present" ? Object.keys(f.receipts) : [],
+          };
+      }
+      return { ok: true, json: async () => ({ result }) };
+    };
+    const report = await runJudgeVerification(f);
+    for (const name of ["cumulativeBatch", "autonomousCatch"]) {
+      const row = report.checks.find((row) => row.id === `ethereum-${name}`);
+      assert.equal(
+        row.status,
+        mode === "absent"
+          ? "FAIL"
+          : mode === "wrong identity"
+            ? "PASS"
+            : "UNVERIFIED",
+        JSON.stringify(row),
+      );
+      assert.match(
+        row.detail,
+        mode === "absent"
+          ? /exists and does not contain/
+          : mode === "present"
+            ? /but no node returned its receipt/
+            : mode === "wrong identity"
+              ? /skipped Ethereum nodes:.*chain ID differs from 1/
+              : /no receipt and no block returned/,
+      );
+    }
+    if (mode === "wrong identity") {
+      assert.ok(
+        !calls.some(
+          ([url, method]) => url === urls[1] && method !== "eth_chainId",
+        ),
+      );
+    } else {
+      for (const url of urls)
+        assert.ok(
+          calls.some(
+            ([node, method, params]) =>
+              node === url &&
+              method === "eth_getBlockByNumber" &&
+              params[0] ===
+                toQuantity(f.evidence.autonomousCatch.source.ethBlock) &&
+              params[1] === false,
+          ),
+        );
+    }
+  });
+}

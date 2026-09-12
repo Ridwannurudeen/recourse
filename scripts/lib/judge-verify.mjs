@@ -73,6 +73,37 @@ function validateReceipt(receipt) {
   shape(Array.isArray(receipt.logs), "receipt.logs");
   receipt.logs.forEach(validateLog);
 }
+function validateMembershipBlock(block, number) {
+  hex(block?.number, "block.number", quantity);
+  hex(block.hash, "block.hash", hash32);
+  shape(
+    BigInt(block.number) === BigInt(number),
+    "block.number (requested height)",
+  );
+  shape(Array.isArray(block.transactions), "block.transactions");
+  for (const tx of block.transactions)
+    hex(tx, "block transaction hash", hash32);
+}
+async function missingReceipt(call, number, tx) {
+  let block;
+  try {
+    block = await call("eth_getBlockByNumber", [
+      `0x${BigInt(number).toString(16)}`,
+      false,
+    ]);
+    validateMembershipBlock(block, number);
+  } catch (error) {
+    if (error.name !== "TransportError") throw error;
+    throw new TransportError("no receipt and no block returned");
+  }
+  assert(
+    block.transactions.some((hash) => same(hash, tx)),
+    `block ${number} exists and does not contain the transaction`,
+  );
+  throw new TransportError(
+    `transaction is in block ${number} but no node returned its receipt`,
+  );
+}
 function decodeResponse(operation, field) {
   try {
     const result = operation();
@@ -177,6 +208,7 @@ export async function runJudgeVerification({
   const fallbackUrls = ["https://eth.drpc.org", "https://1rpc.io/eth"];
   const fallbackReady = new Set();
   const fallbackUsed = new Set();
+  const fallbackFaults = new Set();
   async function ethCall(method, params) {
     const urls = [
       ethRpc,
@@ -189,7 +221,7 @@ export async function runJudgeVerification({
         if (index > 0 && !fallbackReady.has(url)) {
           const chainId = await rpcCall(target, "eth_chainId", []);
           hex(chainId, "fallback eth_chainId", quantity);
-          assert(
+          shape(
             BigInt(chainId) === 1n,
             `Ethereum fallback ${url} chain ID differs from 1`,
           );
@@ -197,25 +229,28 @@ export async function runJudgeVerification({
         }
         const result = await rpcCall(target, method, params);
         if (result === null && method === "eth_getTransactionReceipt") continue;
+        if (method === "eth_getBlockByNumber")
+          validateMembershipBlock(result, params[0]);
         if (index > 0) fallbackUsed.add(url);
         return result;
       } catch (error) {
         if (error.name !== "TransportError") throw error;
+        if (index > 0) fallbackFaults.add(`${url}: ${error.message}`);
         lastError = error;
       }
     }
-    if (method === "eth_getTransactionReceipt")
-      throw new TransportError(
-        `no receipt returned by ${urls.length} public nodes (${urls.join(", ")})${lastError ? `; ${lastError.message}` : ""}`,
-      );
+    if (method === "eth_getTransactionReceipt") return null;
     throw lastError;
   }
   async function check(id, title, source, operation) {
     fallbackUsed.clear();
+    fallbackFaults.clear();
     try {
       let detail = await operation();
       if (fallbackUsed.size)
         detail += `; Ethereum fallback ${[...fallbackUsed].join(", ")} (chainId 1 verified)`;
+      if (fallbackFaults.size)
+        detail += `; skipped Ethereum nodes: ${[...fallbackFaults].join("; ")}`;
       checks.push({ id, title, status: "PASS", detail, source });
       return true;
     } catch (error) {
@@ -227,6 +262,9 @@ export async function runJudgeVerification({
           error.message +
           (fallbackUsed.size
             ? `; Ethereum fallback ${[...fallbackUsed].join(", ")}`
+            : "") +
+          (fallbackFaults.size
+            ? `; skipped Ethereum nodes: ${[...fallbackFaults].join("; ")}`
             : ""),
         source,
       });
@@ -318,9 +356,7 @@ export async function runJudgeVerification({
             record.cc3Tx,
           ]);
           if (receipt === null)
-            throw new TransportError(
-              `no receipt returned by 1 public nodes (${cc3Rpc})`,
-            );
+            await missingReceipt(historicalRpc, record.cc3Block, record.cc3Tx);
           validateReceipt(receipt);
           assert(
             same(receipt.transactionHash, record.cc3Tx),
@@ -462,6 +498,7 @@ export async function runJudgeVerification({
               ? `${explorer}/transactions/${record.cc3Tx}/internal-transactions?${new URLSearchParams(page.next_page_params)}`
               : null;
           }
+          // An explorer may omit precompile traces even when other calls are indexed.
           if (count === 0)
             throw new TransportError(
               "Explorer reports no internal transactions",
@@ -489,6 +526,8 @@ export async function runJudgeVerification({
             const receipt = await ethCall("eth_getTransactionReceipt", [
               row.ethTx,
             ]);
+            if (receipt === null)
+              await missingReceipt(ethCall, row.ethBlock, row.ethTx);
             validateReceipt(receipt);
             hex(receipt.transactionIndex, "receipt.transactionIndex", quantity);
             assert(
@@ -681,9 +720,7 @@ export async function runJudgeVerification({
         "npm dist.integrity",
       );
       assert(
-        data.name === "recourse-protocol-sdk" &&
-          data.version === "0.1.1" &&
-          typeof data.dist?.integrity === "string",
+        data.name === "recourse-protocol-sdk" && data.version === "0.1.1",
         "SDK package/version/integrity metadata differs",
       );
       return `${data.name}@${data.version}; ${data.dist.integrity}`;
@@ -994,9 +1031,7 @@ export async function verifyCurrent({ manifests, rpc, anchor, check }) {
   async function receipt(record, to) {
     const result = await rpc("eth_getTransactionReceipt", [record.hash]);
     if (result === null)
-      throw new TransportError(
-        `no receipt returned by 1 public nodes; historical receipt ${record.hash}`,
-      );
+      await missingReceipt(rpc, record.blockNumber, record.hash);
     validateReceipt(result);
     hex(result.blockHash, "receipt.blockHash", hash32);
     equal(
