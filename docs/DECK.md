@@ -6,6 +6,8 @@ Content draft for 13 slides. Deployment and operating status below reflect the r
 
 Recourse is an undercollateralized credit facility on Creditcoin where cryptographic proofs enforce covenants over a borrower's Ethereum conduct.
 
+In its documented V1 operator run, an unattended watcher detected a real **147.41949 USDC** Ethereum mainnet outflow, built an Attestcoin proof, and triggered a breach on CC3 testnet that froze undrawn credit, applied the borrower's bond against debt, and paid the hunter ([transaction](https://creditcoin-testnet.blockscout.com/tx/0x96bf3081614a76c8df459eaeffe50975556883dd0e39d622758ca468f7528192), block 5,371,828). A separate historical five-transfer batch demonstrates cumulative enforcement. The newer V3 core is deployed with an activated test-token facility and a funded proof job, and has not yet adjudicated a proof.
+
 Source: [README](../README.md), [submission description](submission-form.md).
 
 ## 2. Credit needs enforceable promises

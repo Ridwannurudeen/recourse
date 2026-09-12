@@ -1,60 +1,54 @@
-# Recourse — demo video runbook (target 3:30, hard cap 4:00)
+# Recourse — demo video runbook (target 3:20, hard cap 4:00)
 
 Record at 1080p, one continuous screen capture with voice-over. Every claim below is backed by a URL you show on
-screen; do not say anything the screen does not prove. Read the addresses from the committed manifests, not from
-memory: `deployments.json` (v1), `deployments-horizon1.json`, `deployments-v3-current.json`, `activation-v3-current.json`,
-`deployments-v3-operator-service-verifier-current.json`, `deployments-v3-operator-market-current.json`,
-`deployments-v3-portfolio-core-current.json`, `allocation-v3-portfolio-current.json`.
+screen; do not say anything the screen does not prove. Read every address and hash from the committed manifests and
+the README's "Verify every claim in five minutes" table, never from memory. Say "V1" and "V3" out loud where the
+script does: both catches ran on the V1 generation; the V3 core is deployed and activated but has not adjudicated a
+proof yet.
 
-## 0:00–0:25 — The problem (README open, "The problem" section)
-"Credit runs on covenants: promises about what a borrower will and won't do after they draw. DeFi threw those
-away and replaced them with over-collateralisation, because one chain can't see what a borrower does on another.
-Recourse puts covenants back, enforced by cryptographic proof instead of trust."
+## 0:00–0:40 — Open on the catch (Blockscout, the autonomous-catch transaction)
+Open `https://creditcoin-testnet.blockscout.com/tx/0x96bf3081614a76c8df459eaeffe50975556883dd0e39d622758ca468f7528192`.
+Show: status success, block 5,371,828, the adjudicator `0x6abB74F57c99986Ff205d4EF396Dd6d61d2659eB` (source-verified,
+so the events decode), the breach event, the debt reduction and the hunter reward.
+"This is a Recourse V1 facility on Creditcoin's CC3 testnet responding to Ethereum mainnet evidence. The covenant was
+committed on CC3 before this Ethereum block was mined. An unattended operator watched mainnet, saw a real 147.41949
+USDC outflow leave the committed treasury, waited for Attestcoin attestation, built the proof and submitted this
+transaction with no human step. Undrawn credit froze, the bond was applied against debt, and the hunter was paid."
 
-## 0:25–0:55 — What Attestcoin lets us prove (docs/attestcoin-integration.md open)
-"Attestcoin proves that an Ethereum transaction was included, and gives us its receipt and logs on Creditcoin.
-It deliberately does NOT tell us whether the transaction succeeded, so Recourse checks the receipt status itself,
-binds the emitting contract address, derives replay-safe transaction indices, and verifies batch continuity.
-Those four checks are what make a cumulative covenant possible: no single transfer breaches the cap, only their
-verified sum does."
+## 0:40–1:00 — The source event (Etherscan)
+Open `https://etherscan.io/tx/0xc8481d8afbc2d439df53a6756fea1c61b0c2253703e53f4b5416d45fdbf55f79` (Ethereum block 25,832,534, position 146: the 147.41949 USDC transfer).
+"This is the mainnet transaction that was proved. We did not stage it; the covenant was written first and the conduct
+came later. That is what a post-draw covenant is: a promise about future behaviour that the credit facility itself can
+enforce."
 
-## 0:55–1:45 — The real autonomous catch (Blockscout, facility 2 breach transaction)
-Open the breach transaction `0x96bf3081614a76c8df459eaeffe50975556883dd0e39d622758ca468f7528192` on
-creditcoin-testnet.blockscout.com (linked from `docs/attestcoin-integration.md`, "Two deployed generations", and from the README's verify table). Show: status success, the emitting facility, the
-events. Then show the mainnet treasury outflow it proved (Etherscan link from the integration note).
-"This facility's policy window was configured on Creditcoin BEFORE the qualifying Ethereum block was mined. The
-unattended operator watched mainnet, saw a real treasury push 147 USDC past a 100 USDC cap, waited for
-attestation, built the proof and submitted the breach with no human step. Debt was reduced by the slashed bond,
-undrawn credit froze, and the hunter was paid. That is a genuine cross-chain enforcement on real mainnet conduct."
+## 1:00–1:45 — The cumulative batch (Blockscout, the batch transaction)
+Open `https://creditcoin-testnet.blockscout.com/tx/0x7c180209bedaa64b4e1acff02d2822e8c76b0db98f105b7b75e3b95ac7e5d5b6` (block 5,371,462, 699,409 gas). Then show the five source
+transactions in `docs/attestcoin-integration.md`, "The adjudicated evidence".
+"Five real mainnet transfers in five blocks. The largest is 190.30 USDC, under the 232.545 cap; their verified sum is
+274.79. No single transfer breaches; only the sum does. One continuity proof covers all five. The contract checks that
+each receipt succeeded, that USDC itself emitted the event, derives a replay-safe index for each, and evaluates the sum
+on chain. That is the depth Attestcoin makes possible."
 
-## 1:45–2:40 — What is live today (Blockscout, the fresh V3 core + activated facility + the pool allocation)
-Show the six V3 core addresses from `deployments-v3-current.json` (kernel, verified credit state, registry, capped
-factory, multi-chain policy, proof jobs) — click the kernel, show verified runtime code. Then open the pilot facility
-`0x00B50626C4AA42d22ca01AAEa8649f253aEc5B1e`: status Active, 100,000 rUSD funded, 20,000 rUSD bond, policy id 1,
-proof job 1. Then open the portfolio pool `0x7dd538A9ab77a4d2953b28f3bCe710145a0eC8C2`
-(`deployments-v3-portfolio-core-current.json`) and the facility it created,
-`0x0C874e56AD2dC9789A63a9Bc63c08a5F6D3C82C8` (`allocation-v3-portfolio-current.json`): status Active, lender = the
-pool, 100,000 rUSD funded, 20,000 rUSD bond.
-"Today the hardened V3 generation is deployed from the audited commit, with every runtime hash verified, and a
-capped pilot facility is active on it: a lender funded 100,000 demo-dollars, the borrower posted a 20,000 bond and
-committed a live Ethereum source window that opens in the future, so any qualifying outflow during judging can be
-proven and adjudicated by anyone through the permissionless proof-job market. Beside it, a portfolio pool holding
-100,000 project-operated test dollars allocated the whole amount to a facility it created itself, under a mandate that
-pins the same policy set the pilot runs; the operator market and its receipt verifier are deployed, with no operators
-yet and a single project-operated attestor."
+## 1:45–2:35 — What is live today (the V3 observatory)
+Open `https://recourse.gudman.xyz/v3.html`, then `https://recourse.gudman.xyz/portfolio.html`. Show the finalized
+anchor, the six source-verified core contracts, the Active pilot facility with proof job 1 funded, and the portfolio
+allocation.
+"The hardened V3 generation is deployed from an internally reviewed commit, every runtime hash and every source is
+verified, and a capped pilot facility is active with a funded proof job over the committed Ethereum source window
+25,944,522 to 26,024,522. A portfolio pool allocated 100,000 test-token rUSD to a facility it created. V3 has not yet
+adjudicated a proof; the catches you saw ran on V1."
 
-## 2:40–3:05 — Honest limits (docs/ROADMAP.md, items 5–10 headings)
-"What this is not: it is testnet software with an internal review, not an independent audit. Cross-chain remedies
-wait on Attestcoin writability, which is not live. The pool allocation you saw was funded and borrowed by project
-wallets with test tokens: it proves the allocation path, not lender demand or external capital. The operator market
-has no operators and one project-run attestor. The SDK is published for interface discovery, not as a frozen
-dependency."
+## 2:35–3:00 — Honest limits (README, "Honest limitations")
+"This is testnet software with an internal review, not an independent audit. There is no write-back to Ethereum until
+Attestcoin writability ships. The pool is funded with project-operated test tokens on both sides. The operator market
+is deployed and empty. The SDK is published for interface discovery, not as a frozen dependency."
 
-## 3:05–3:30 — Close (README top)
-"Recourse is the credit-policy layer on Creditcoin: verified conduct in, enforceable consequences out. The repo,
-the manifests, and every transaction shown here are public. Thank you."
+## 3:00–3:20 — Close (README, "Verify every claim in five minutes")
+"Every claim in this video is in one table at the top of the README, with the transaction, the contract, and the command
+to reproduce it. Recourse: verified conduct in, enforceable consequences out. Thank you."
 
 ## Checklist before upload
-- [ ] Every address/hash on screen came from a committed manifest or the integration note
+- [ ] Every address and hash on screen came from a committed manifest, the README table, or the integration note
+- [ ] "V1" said for both catches; "V3 has not yet adjudicated a proof" said once
 - [ ] No "audited", "production", "customer", or "partner" wording
 - [ ] Upload unlisted to YouTube; paste the URL into the DoraHacks form field "Prototype Demo Video URL"
