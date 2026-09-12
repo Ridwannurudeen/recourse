@@ -135,6 +135,7 @@ export async function runJudgeVerification({
   ethRpc = ETH,
   explorer = EXPLORER,
   timeout = 20_000,
+  maxResponseBytes = 8 * 1024 * 1024,
 } = {}) {
   const checks = [];
   let anchor = null;
@@ -154,11 +155,50 @@ export async function runJudgeVerification({
       clearTimeout(timer);
     }
   }
+  async function readJson(response) {
+    const declared = Number(response.headers?.get?.("content-length"));
+    if (Number.isFinite(declared) && declared > maxResponseBytes) {
+      throw new TransportError(
+        `Response body declares ${declared} bytes, over the ${maxResponseBytes} byte limit`,
+      );
+    }
+    const body = response.body;
+    if (!body || typeof body.getReader !== "function") return response.json();
+    const reader = body.getReader();
+    const chunks = [];
+    let size = 0;
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        size += value.byteLength;
+        if (size > maxResponseBytes) {
+          throw new TransportError(
+            `Response body exceeds the ${maxResponseBytes} byte limit`,
+          );
+        }
+        chunks.push(value);
+      }
+    } finally {
+      await reader.cancel().catch(() => {});
+    }
+    const buffer = new Uint8Array(size);
+    let offset = 0;
+    for (const chunk of chunks) {
+      buffer.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return JSON.parse(new TextDecoder().decode(buffer));
+  }
   async function http(url, options = {}, json = true) {
     let response;
     try {
       response = await bounded(() =>
-        fetchImpl(url, { ...options, signal: AbortSignal.timeout(timeout) }),
+        fetchImpl(url, {
+          ...options,
+          redirect: "error",
+          signal: AbortSignal.timeout(timeout),
+        }),
       );
     } catch (error) {
       throw new TransportError(error.message);
@@ -170,8 +210,9 @@ export async function runJudgeVerification({
     }
     if (!json) return response.status;
     try {
-      return await bounded(() => response.json());
+      return await bounded(() => readJson(response));
     } catch (error) {
+      if (error instanceof TransportError) throw error;
       throw new TransportError(`Response body: ${error.message}`);
     }
   }

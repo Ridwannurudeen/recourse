@@ -1351,3 +1351,102 @@ for (const mode of ["absent", "present", "unavailable", "wrong identity"]) {
     }
   });
 }
+
+test("transport refuses to follow redirects away from the requested host", async (t) => {
+  const f = fixture(t);
+  const originalFetch = f.fetchImpl;
+  let sawRedirectPolicy = null;
+  f.fetchImpl = async (url, options) => {
+    if (String(url).includes("recourse.gudman.xyz/v3.html")) {
+      sawRedirectPolicy = options?.redirect ?? null;
+      const error = new Error("unexpected redirect");
+      error.name = "TypeError";
+      throw error;
+    }
+    return originalFetch(url, options);
+  };
+  const report = await runJudgeVerification(f);
+  assert.equal(
+    sawRedirectPolicy,
+    "error",
+    "every outbound request must forbid redirects so a hostile endpoint cannot steer the judge's machine",
+  );
+  assert.equal(
+    report.checks.find((check) => check.id === "site-v3.html").status,
+    "UNVERIFIED",
+  );
+});
+
+test("an oversized streamed body is cut off instead of being buffered whole", async (t) => {
+  const f = fixture(t);
+  const originalFetch = f.fetchImpl;
+  let bytesPulled = 0;
+  let jsonCalled = false;
+  let cancelled = false;
+  f.fetchImpl = async (url, options) => {
+    if (String(url).includes("registry.npmjs.org")) {
+      return {
+        ok: true,
+        status: 200,
+        headers: new Headers(),
+        body: {
+          getReader() {
+            return {
+              async read() {
+                bytesPulled += 512;
+                return { done: false, value: new Uint8Array(512) };
+              },
+              async cancel() {
+                cancelled = true;
+              },
+            };
+          },
+        },
+        json: async () => {
+          jsonCalled = true;
+          return {};
+        },
+      };
+    }
+    return originalFetch(url, options);
+  };
+  const report = await runJudgeVerification({ ...f, maxResponseBytes: 1024 });
+  assert.equal(jsonCalled, false, "a streamed body must not be handed to response.json()");
+  assert.ok(
+    bytesPulled <= 1024 + 512,
+    `reading must stop at the limit; pulled ${bytesPulled} bytes`,
+  );
+  assert.equal(cancelled, true, "the stream must be cancelled once the limit is passed");
+  assert.equal(report.checks.find((check) => check.id === "npm-sdk").status, "UNVERIFIED");
+});
+
+test("an oversized content-length is rejected before the body is touched", async (t) => {
+  const f = fixture(t);
+  const originalFetch = f.fetchImpl;
+  let readerRequested = false;
+  let jsonCalled = false;
+  f.fetchImpl = async (url, options) => {
+    if (String(url).includes("registry.npmjs.org")) {
+      return {
+        ok: true,
+        status: 200,
+        headers: new Headers({ "content-length": "999999999" }),
+        body: {
+          getReader() {
+            readerRequested = true;
+            return { async read() { return { done: true }; }, async cancel() {} };
+          },
+        },
+        json: async () => {
+          jsonCalled = true;
+          return {};
+        },
+      };
+    }
+    return originalFetch(url, options);
+  };
+  const report = await runJudgeVerification({ ...f, maxResponseBytes: 1024 });
+  assert.equal(readerRequested, false, "a declared oversize must short-circuit before reading");
+  assert.equal(jsonCalled, false, "a declared oversize must not be parsed");
+  assert.equal(report.checks.find((check) => check.id === "npm-sdk").status, "UNVERIFIED");
+});
