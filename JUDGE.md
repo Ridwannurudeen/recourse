@@ -1,10 +1,13 @@
 # For judges: the walletless evidence route
 
-Nothing on this page needs a key, a wallet, or an RPC endpoint of your own. Every link is public. Generations are
-labelled: both catches ran on the **V1** contracts; the **V3** core is deployed and activated and has not yet
-adjudicated a proof. Chain: Creditcoin CC3 Testnet, chain id 102031; evidence chain: Ethereum mainnet, chain id 1.
+Nothing on this page needs a key, a wallet, or an RPC endpoint of your own. Every link is public. Start with the
+prospective V1 receipt: covenant commitment before the source event, proof verification on CC3, then credit
+consequences. Next inspect the cumulative V1 receipt: five transfers, each below the cap, whose verified sum crosses
+it. Both use unrelated third-party Ethereum mainnet conduct and project-funded testnet credit; neither establishes a
+borrower violation. The **V3** core is deployed and activated and has not adjudicated a proof. Chain: Creditcoin CC3
+Testnet, chain id 102031; evidence chain: Ethereum mainnet, chain id 1.
 
-## 1. The two V1 catches, real mainnet evidence adjudicated on CC3
+## 1. Two V1 adjudications: prospective enforcement mechanics and cumulative verification
 
 | What | Where |
 | --- | --- |
@@ -14,8 +17,10 @@ adjudicated a proof. Chain: Creditcoin CC3 Testnet, chain id 102031; evidence ch
 | The five source transfers (blocks, amounts, cap) | [docs/attestcoin-integration.md, "The adjudicated evidence"](docs/attestcoin-integration.md#the-adjudicated-evidence) |
 | The V1 contracts, all source-verified so Blockscout decodes their events | [adjudicator](https://creditcoin-testnet.blockscout.com/address/0x6abB74F57c99986Ff205d4EF396Dd6d61d2659eB) · [facility](https://creditcoin-testnet.blockscout.com/address/0x144048E22e822269814D592aeaC34734c603dCA7) · [outflow-cap covenant](https://creditcoin-testnet.blockscout.com/address/0x873C1344B850bB80c758E191D1DCA31CE86030Ef) |
 
-The consequences recorded in those receipts are testnet credit consequences (undrawn credit frozen, bond applied against
-debt in tCTC, hunter paid). No USDC moved on Ethereum as a result; Attestcoin has no write-back today.
+These receipts demonstrate consequences for committed testnet capital: undrawn credit freezes, the posted bond reduces
+debt in tCTC, and the hunter receives payment. They do not demonstrate Ethereum asset recovery; Attestcoin has no
+write-back today. The V3 pilot separately records 100,000 rUSD capacity, a 20,000 rUSD bond, a 200 bps draw fee and a
+175 rUSD proof-job escrow; its proof adjudication is not yet demonstrated.
 
 ## 2. The V3 generation: deployed, activated, not yet adjudicated
 
@@ -33,11 +38,11 @@ debt in tCTC, hunter paid). No USDC moved on Ethereum as a result; Attestcoin ha
 | --- | --- |
 | Re-check the on-chain claims in two steps; no Foundry, no submodules, no `.env` | `npm ci --omit=dev` then `npm run judge:verify` (public endpoints only; tests, authorship and unattended operation are reported UNVERIFIED because an RPC cannot establish them) |
 
-Measured 2026-09-12 on `main`; these are dated local results, not chain assertions.
+Measured 2026-09-13 on `main`; these are dated local results, not chain assertions.
 
 ```bash
 forge test                          # 392 passed
-DOTENV_CONFIG_PATH=NUL node --test test/*.test.mjs   # 411 tests: 410 pass, 1 skipped (Windows symlink privilege)
+DOTENV_CONFIG_PATH=NUL node --test test/*.test.mjs   # 417 tests: 416 pass, 1 skipped (Windows symlink privilege)
 npm --prefix sdk test               # 44 passed, then a strict declaration compile
 ```
 

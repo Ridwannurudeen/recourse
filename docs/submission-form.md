@@ -17,7 +17,7 @@ DeFi
 
 ## One-line vision (the BUIDL card)
 
-Covenant-enforced credit on Creditcoin: a proven Ethereum event freezes undrawn credit, applies the bond against debt, and pays the hunter. An unattended operator did it under a covenant committed 260 seconds earlier — against a public third-party contract, so it shows prospective adjudication, not a borrower breach.
+Credit covenants enforced by Attestcoin proofs: a rule committed before the Ethereum event, an unattended proof submission, and automatic consequences for a funded Creditcoin testnet facility. Demonstrated on unrelated third-party conduct, with public receipts and a walletless verifier.
 
 ## Project Description
 
@@ -38,8 +38,8 @@ Attestcoin's documentation states that [writability](https://docs.attestcoin.org
 What is uncommon in this field is the combination: an operator that acted unattended, a published npm SDK
 ([`recourse-protocol-sdk@0.1.1`](https://www.npmjs.com/package/recourse-protocol-sdk)), deployed coordination
 contracts — policy kernel, proof-job market, operator market and portfolio pool — and a machine-checkable
-evidence artefact. `npm run judge:verify` re-checks every public on-chain claim in roughly 30 to 45 seconds:
-46 PASS, 0 FAIL, 3 UNVERIFIED on 2026-09-12. From a fresh clone run `npm ci --omit=dev` first; no Foundry,
+evidence artefact. `npm run judge:verify` re-checks the listed public on-chain claims:
+46 PASS, 0 FAIL, 3 UNVERIFIED on 2026-09-13. From a fresh clone run `npm ci --omit=dev` first; no Foundry,
 submodules or `.env` is needed. Tests, authorship and unattended operation stay UNVERIFIED because a public
 RPC cannot establish them.
 
@@ -49,8 +49,11 @@ acted without a human; the consequence lands on the credit facility: undrawn cre
 of the borrower's posted bond reduces outstanding debt, and the remaining 20% of that same bond is
 transferred directly by the facility to the hunter who proved the conduct. Two
 adjudications over real Ethereum mainnet evidence is a small footprint next to entries that prove
-thousands of source events; what those entries change on chain is a score or a discount, not what
-committed capital is allowed to do.
+thousands of source events. Judge the integration by its complete sequence instead: in the prospective
+record, undrawn credit fell from 600 to zero tCTC, debt fell from 408 to 248 tCTC through the posted
+bond, and the hunter received 40 tCTC, all under a rule that existed before the event. Recourse ships
+funded credit capacity with explicit borrower-bond and draw-fee terms, plus sponsor-escrowed proof
+rewards and hunter commit bonds: credit and proof-service economics, not an insurance coverage product.
 
 The prospective adjudication: [`0x96bf3081…f7528192`](https://creditcoin-testnet.blockscout.com/tx/0x96bf3081614a76c8df459eaeffe50975556883dd0e39d622758ca468f7528192) on CC3, proving [`0xc8481d8a…bf55f79`](https://etherscan.io/tx/0xc8481d8afbc2d439df53a6756fea1c61b0c2253703e53f4b5416d45fdbf55f79) on Ethereum mainnet.
 
@@ -72,7 +75,7 @@ provable on Creditcoin, so covenants become executable code.
 | Portfolio pool allocation of 100,000 rUSD to a pool-created facility, project-funded test tokens on both sides | [`allocation-v3-portfolio-current.json`](https://github.com/Ridwannurudeen/recourse/blob/main/allocation-v3-portfolio-current.json) · [facility](https://creditcoin-testnet.blockscout.com/address/0x0C874e56AD2dC9789A63a9Bc63c08a5F6D3C82C8) |
 | Operator market and receipt verifier, deployed and empty, one project-operated attestor | [`deployments-v3-operator-market-current.json`](https://github.com/Ridwannurudeen/recourse/blob/main/deployments-v3-operator-market-current.json) · [`deployments-v3-operator-service-verifier-current.json`](https://github.com/Ridwannurudeen/recourse/blob/main/deployments-v3-operator-service-verifier-current.json) |
 | Live read-only V3 and portfolio observatories, every read anchored at a finalized CC3 block (the site root is a static evidence page; the V1 wallet application is at `/v1.html`) | <https://recourse.gudman.xyz/v3.html> · <https://recourse.gudman.xyz/portfolio.html> |
-| Tests | `forge test` → 392 · `node --test test/*.test.mjs` → 411 (410 pass, 1 skipped) · `npm --prefix sdk test` → 44 |
+| Tests | `forge test` → 392 · `node --test test/*.test.mjs` → 417 (416 pass, 1 skipped) · `npm --prefix sdk test` → 44 |
 | SDK | [`recourse-protocol-sdk@0.1.1`](https://www.npmjs.com/package/recourse-protocol-sdk) |
 | Deck | [`docs/RECOURSE-DECK.pdf`](https://github.com/Ridwannurudeen/recourse/blob/main/docs/RECOURSE-DECK.pdf) |
 

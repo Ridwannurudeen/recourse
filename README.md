@@ -1,6 +1,8 @@
 # Recourse
 
-Recourse is an undercollateralized credit facility on Creditcoin where cryptographic proofs enforce covenants over a borrower's Ethereum conduct. A proven violation freezes undrawn credit, applies the borrower's penalty bond against debt, and pays the permissionless hunter who submitted the evidence.
+Recourse is covenant-enforced credit on Creditcoin. In its documented prospective V1 demonstration, a covenant committed 260 seconds before a real Ethereum mainnet event was enforced by an unattended operator: undrawn testnet credit froze, the posted bond reduced debt, and the hunter was paid.
+
+The monitored address was an unrelated third-party contract, so this demonstrates prospective adjudication mechanics rather than a borrower violation. A separate retrospective batch proves a cap breach across five transfers that individually remain below the cap. The current V3 generation is deployed and activated, but has not adjudicated a proof.
 
 The proof does not release an escrow. It changes credit risk.
 
@@ -30,7 +32,7 @@ The walletless route for judges, with generations labelled, is [JUDGE.md](JUDGE.
 | What | Where |
 | --- | --- |
 | The five mainnet source transactions behind the retrospective cumulative verification | [integration note, adjudicated evidence](docs/attestcoin-integration.md#the-adjudicated-evidence) |
-| Tests | `forge test` → 392 · `node --test test/*.test.mjs` → 411 (410 pass, 1 skipped) · `npm --prefix sdk test` → 44 |
+| Tests | `forge test` → 392 · `node --test test/*.test.mjs` → 417 (416 pass, 1 skipped) · `npm --prefix sdk test` → 44 |
 | SDK | [`recourse-protocol-sdk@0.1.1`](https://www.npmjs.com/package/recourse-protocol-sdk) |
 | Deck | [`docs/RECOURSE-DECK.pdf`](docs/RECOURSE-DECK.pdf) |
 
@@ -228,7 +230,7 @@ The borrower's activation commits to an ordered hash covering both the identity 
 
 ## Testing
 
-The test suites pass 392 Forge tests, 410 root Node tests, and 44 SDK tests across the deployed generations and the local roadmap build, followed by a strict SDK declaration compile. One Windows-only symlink test is skipped when the process lacks symlink privilege, for 411 root Node tests in total. Coverage includes exact pilot loss settlement, remedy retry/timeout/acknowledgement recovery, multi-rule transaction accumulation, per-policy source ordering and the later-weak/earlier-severe front-running regression, sponsor-bound operator-market escrow, registry declarations and exact audit scopes, ABI parity, block-hash-bound pagination, reorg-anchored aggregate reads, target-first crash recovery, signed-call substitution rejection, native proof/receipt binding, bounded adaptive source scans, queue-saturation recovery, transaction finality, conservative cures, extension deployment approval and journal recovery, and end-to-end policy flows.
+The test suites pass 392 Forge tests, 416 root Node tests, and 44 SDK tests across the deployed generations and the local roadmap build, followed by a strict SDK declaration compile. One Windows-only symlink test is skipped when the process lacks symlink privilege, for 417 root Node tests in total. Coverage includes exact pilot loss settlement, remedy retry/timeout/acknowledgement recovery, multi-rule transaction accumulation, per-policy source ordering and the later-weak/earlier-severe front-running regression, sponsor-bound operator-market escrow, registry declarations and exact audit scopes, ABI parity, block-hash-bound pagination, reorg-anchored aggregate reads, target-first crash recovery, signed-call substitution rejection, native proof/receipt binding, bounded adaptive source scans, queue-saturation recovery, transaction finality, conservative cures, extension deployment approval and journal recovery, and end-to-end policy flows.
 
 Twelve stateful invariant checks (eight distinct properties) each complete 256 runs and 128,000 calls with zero handler reverts. They cover native and ERC-20 asset conservation, claim solvency, Horizon 1 and capped-pilot facility bounds, default loss distribution, inactive credit availability, portfolio recovery and loss bounds, and fully collateralized operator-market obligations even when unsolicited token transfers create surplus. A separate regression test asserts that the original-generation bond can be claimed at most once.
 
