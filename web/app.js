@@ -323,6 +323,15 @@ async function currentWalletState() {
   return { account: accounts[0] ?? null, chainId };
 }
 
+function walletErrorHasCode(error, code) {
+  return [
+    error?.code,
+    error?.data?.originalError?.code,
+    error?.data?.code,
+    error?.cause?.code,
+  ].includes(code);
+}
+
 async function switchToCc3() {
   try {
     await window.ethereum.request({
@@ -330,19 +339,30 @@ async function switchToCc3() {
       params: [{ chainId: CC3_NETWORK.chainId }],
     });
   } catch (error) {
-    if (error.code !== 4902) throw error;
-    await window.ethereum.request({
-      method: "wallet_addEthereumChain",
-      params: [CC3_NETWORK],
-    });
+    if (!walletErrorHasCode(error, 4902)) throw error;
+    try {
+      await window.ethereum.request({
+        method: "wallet_addEthereumChain",
+        params: [CC3_NETWORK],
+      });
+    } catch (cause) {
+      const error = new Error("Adding the wallet network failed.", { cause });
+      error.code = "CHAIN_ADD_FAILED";
+      throw error;
+    }
   }
 }
 
 async function connectWallet() {
   if (!window.ethereum) return;
   const button = byId("wallet-button");
+  const status = byId("wallet-status");
+  const network = `${CC3_NETWORK.chainName} (${CC3_NETWORK.chainId})`;
   button.disabled = true;
   button.textContent = "Check wallet";
+  status.hidden = false;
+  status.className = "dialog-status pending";
+  status.textContent = `Check your wallet to connect to ${network}.`;
   try {
     let { account, chainId } = await currentWalletState();
     if (!account) {
@@ -355,22 +375,43 @@ async function connectWallet() {
     if (account && chainId.toLowerCase() !== CC3_NETWORK.chainId) {
       await switchToCc3();
       chainId = await window.ethereum.request({ method: "eth_chainId" });
+      if (chainId.toLowerCase() !== CC3_NETWORK.chainId) {
+        const error = new Error("The wallet network did not change.");
+        error.code = "CHAIN_SWITCH_INCOMPLETE";
+        throw error;
+      }
     }
     walletState = { account, chainId };
     setWalletButton(account, chainId);
     renderActions();
+    status.hidden = true;
+    status.textContent = "";
   } catch (error) {
     console.error(error);
-    const state = await currentWalletState().catch(() => ({
-      account: null,
-      chainId: null,
-    }));
+    const addingChain = error?.code === "CHAIN_ADD_FAILED";
+    const walletError = addingChain ? error.cause : error;
+    let message;
+    if (walletErrorHasCode(walletError, 4001)) {
+      message = addingChain
+        ? `Your wallet did not recognize ${network}, and you rejected adding it.`
+        : `You rejected the wallet request for ${network}.`;
+    } else if (addingChain && walletErrorHasCode(walletError, -32601)) {
+      message = `Your wallet does not support adding ${network}.`;
+    } else if (error?.code === "CHAIN_SWITCH_INCOMPLETE") {
+      message = `Your wallet is still not on ${network}.`;
+    } else {
+      message = `Wallet request failed for ${network}.`;
+    }
+    status.className = "dialog-status error";
+    status.textContent = `${message} Add or select this network manually, then retry. No transaction was sent.`;
+    const state = await currentWalletState().catch((stateError) => {
+      console.error(stateError);
+      status.textContent += " Wallet state could not be refreshed.";
+      return { account: null, chainId: null };
+    });
     walletState = state;
     setWalletButton(state.account, state.chainId);
     renderActions();
-    if (error.code === 4001) {
-      button.title = "Wallet request rejected. No transaction was sent.";
-    }
   }
 }
 
@@ -3002,6 +3043,14 @@ byId("theme-toggle").addEventListener("click", () => {
     `Theme · ${theme[0].toUpperCase()}${theme.slice(1)}`;
 });
 byId("retry-button").addEventListener("click", loadDashboard);
+const walletStatus = document.createElement("div");
+walletStatus.id = "wallet-status";
+walletStatus.className = "dialog-status";
+walletStatus.hidden = true;
+walletStatus.setAttribute("role", "status");
+walletStatus.setAttribute("aria-live", "polite");
+walletStatus.setAttribute("aria-atomic", "true");
+byId("main").prepend(walletStatus);
 byId("wallet-button").addEventListener("click", connectWallet);
 byId("transaction-confirm").addEventListener("click", confirmTransaction);
 byId("transaction-dialog").addEventListener("close", () => {
