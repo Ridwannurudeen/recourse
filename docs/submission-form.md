@@ -43,6 +43,15 @@ evidence artefact. `npm run judge:verify` re-checks every public on-chain claim 
 submodules or `.env` is needed. Tests, authorship and unattended operation stay UNVERIFIED because a public
 RPC cannot establish them.
 
+Recourse is not a credit score, not retroactive cover, and not a payout to the claimant. In the recorded
+prospective adjudication, the covenant was committed before the source block existed and the operator
+acted without a human; the consequence lands on the credit facility: undrawn credit freezes, up to 80%
+of the borrower's posted bond reduces outstanding debt, and the remaining 20% of that same bond is
+transferred directly by the facility to the hunter who proved the conduct. Two
+adjudications over real Ethereum mainnet evidence is a small footprint next to entries that prove
+thousands of source events; what those entries change on chain is a score or a discount, not what
+committed capital is allowed to do.
+
 The prospective adjudication: [`0x96bf3081…f7528192`](https://creditcoin-testnet.blockscout.com/tx/0x96bf3081614a76c8df459eaeffe50975556883dd0e39d622758ca468f7528192) on CC3, proving [`0xc8481d8a…bf55f79`](https://etherscan.io/tx/0xc8481d8afbc2d439df53a6756fea1c61b0c2253703e53f4b5416d45fdbf55f79) on Ethereum mainnet.
 
 Traditional credit is governed by covenants: enforceable promises not to strip a treasury, take on
