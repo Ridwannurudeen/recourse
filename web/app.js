@@ -434,9 +434,10 @@ function selectFacility(facilityId) {
 
 function readProvider() {
   const connection = new ethers.FetchRequest(CONFIG.rpcUrl);
-  connection.timeout = 15000;
+  connection.timeout = 30000;
   return new ethers.JsonRpcProvider(connection, CONFIG.chainId, {
     staticNetwork: true,
+    batchMaxCount: 1,
   });
 }
 
