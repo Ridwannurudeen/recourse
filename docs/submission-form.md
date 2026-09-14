@@ -212,6 +212,8 @@ The owner reviews `docs/RECOURSE-DECK.pdf` before pasting the URL into the form.
 
 https://youtu.be/IUYcdB285ho
 
+A second recording of the same walkthrough is at https://youtu.be/3M3M-3MZczU. The form takes one URL; the owner chooses which to paste.
+
 ## Project Logo
 
 Optional. Not currently produced.
@@ -238,5 +240,5 @@ Owner confirms these personally.
 - [x] Integrates the Attestcoin Protocol as a core feature
 - [x] Does not infringe third-party IP (permissively licensed dependencies, required notices retained)
 - [x] Public GitHub repository with README
-- [x] Demo video — <https://youtu.be/IUYcdB285ho>
+- [x] Demo video — <https://youtu.be/IUYcdB285ho> (second recording: <https://youtu.be/3M3M-3MZczU>)
 - [x] Deck / whitepaper PDF — docs/RECOURSE-DECK.pdf (owner reviews before pasting the URL)

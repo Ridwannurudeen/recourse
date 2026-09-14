@@ -35,6 +35,7 @@ The walletless route for judges, with generations labelled, is [JUDGE.md](JUDGE.
 | Tests | `forge test` → 392 · `node --test test/*.test.mjs` → 417 (416 pass, 1 skipped) · `npm --prefix sdk test` → 44 |
 | SDK | [`recourse-protocol-sdk@0.1.1`](https://www.npmjs.com/package/recourse-protocol-sdk) |
 | Demo video | <https://youtu.be/IUYcdB285ho> |
+| Demo video · second recording | <https://youtu.be/3M3M-3MZczU> |
 | Deck | [`docs/RECOURSE-DECK.pdf`](docs/RECOURSE-DECK.pdf) |
 
 22 of the 25 Recourse contracts on CC3 are source-verified on Blockscout, including all six current V3 core contracts, both V3 facilities and the five V1 contracts that executed both catches, so the explorer decodes their events without trusting this repository. The three still unverified are Horizon 1's kernel, demonstration facility and credit state.
